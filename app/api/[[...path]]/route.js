@@ -197,31 +197,32 @@ function openPack(cards) {
     return card;
   };
 
-  // Helper to select rare-or-better based on AUTHENTIC TCG odds
+  // Helper to select rare-or-better based on REALISTIC TCG odds
+  // These are VERY conservative to match actual booster box statistics
   const selectRareOrBetter = () => {
     const roll = Math.random() * 100;
     
-    // Hyper Rare (Gold): ~2% (1-2 per booster box of 36 packs)
-    if (roll < 2 && hyperRares.length > 0) {
+    // Hyper Rare (Gold): ~1% (1 per 100 packs, roughly 3 per case)
+    if (roll < 1 && hyperRares.length > 0) {
       return getUniqueCard(hyperRares);
     }
-    // Special Illustration Rare: ~3% (1-2 per box)
-    else if (roll < 5 && specialIllustrationRares.length > 0) {
+    // Special Illustration Rare: ~2% (2 per 100 packs)
+    else if (roll < 3 && specialIllustrationRares.length > 0) {
       return getUniqueCard(specialIllustrationRares);
     }
-    // Ultra Rare (Full Art): ~5% (2-3 per box)
-    else if (roll < 10 && ultraRares.length > 0) {
+    // Ultra Rare (Full Art): ~4% (4 per 100 packs)
+    else if (roll < 7 && ultraRares.length > 0) {
       return getUniqueCard(ultraRares);
     }
-    // Illustration Rare: ~8% (3-4 per box)
-    else if (roll < 18 && illustrationRares.length > 0) {
+    // Illustration Rare: ~5% (5 per 100 packs)
+    else if (roll < 12 && illustrationRares.length > 0) {
       return getUniqueCard(illustrationRares);
     }
-    // Double Rare (ex cards): ~12% (4-5 per box)
-    else if (roll < 30 && doubleRares.length > 0) {
+    // Double Rare (ex cards): ~10% (10 per 100 packs)
+    else if (roll < 22 && doubleRares.length > 0) {
       return getUniqueCard(doubleRares);
     }
-    // Regular Rare/Rare Holo: ~70% (most packs)
+    // Regular Rare/Rare Holo: ~78% (most packs get regular rare/holo)
     else if (rares.length > 0) {
       return getUniqueCard(rares);
     }
@@ -264,7 +265,7 @@ function openPack(cards) {
     }
   }
 
-  // 3. Pull 1 guaranteed rare-or-better (with authentic TCG weighted odds)
+  // 3. Pull 1 guaranteed rare-or-better (with realistic TCG weighted odds)
   const guaranteedRare = selectRareOrBetter();
   if (guaranteedRare) {
     pulledCards.push(guaranteedRare);
@@ -273,19 +274,10 @@ function openPack(cards) {
     if (card) pulledCards.push(card);
   }
 
-  // 4. Pull 2 reverse holo slots (these are almost always just reverse holos, NOT extra rares)
-  // Only 3% chance per slot to get a rare-or-better instead of reverse holo
+  // 4. Pull 2 reverse holo slots (ONLY reverse holos - no bonus rares)
+  // In real packs, getting multiple ultra-rares in one pack is EXTREMELY rare
   for (let i = 0; i < 2; i++) {
-    // 3% chance for a rare-or-better (very rare to get 2+ ultra rares in one pack!)
-    if (Math.random() < 0.03) {
-      const specialCard = selectRareOrBetter();
-      if (specialCard) {
-        pulledCards.push(specialCard);
-        continue;
-      }
-    }
-    
-    // 97% of the time: Reverse holo (can be common, uncommon, or rare)
+    // Reverse holo (can be common, uncommon, or rare)
     const reverseCard = getUniqueCard(nonEnergyCards);
     if (reverseCard) {
       pulledCards.push({ ...reverseCard, isReverseHolo: true });
