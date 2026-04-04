@@ -57,6 +57,8 @@ export default function App() {
   const [tradeSearchOffer, setTradeSearchOffer] = useState('');
   const [viewingFriend, setViewingFriend] = useState(null);
   const [viewingFriendCollection, setViewingFriendCollection] = useState([]);
+  const [breakdownMode, setBreakdownMode] = useState(false);
+  const [selectedForBreakdown, setSelectedForBreakdown] = useState([]);
 
   useEffect(() => {
     // Check if user is logged in
@@ -491,6 +493,72 @@ export default function App() {
     } catch (err) {
       console.error('Error loading friend collection:', err);
       setViewingFriendCollection([]);
+    }
+  };
+
+  const toggleBreakdownCard = (card) => {
+    const isSelected = selectedForBreakdown.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
+    if (isSelected) {
+      setSelectedForBreakdown(selectedForBreakdown.filter(c => !(c.id === card.id && c.pulledAt === card.pulledAt)));
+    } else {
+      setSelectedForBreakdown([...selectedForBreakdown, card]);
+    }
+  };
+
+  const calculateBreakdownPoints = () => {
+    const breakdownValues = {
+      'Common': 10,
+      'Uncommon': 20,
+      'Rare': 50,
+      'Rare Holo': 50,
+      'Double Rare': 100,
+      'Illustration Rare': 200,
+      'Ultra Rare': 200,
+      'Rare Ultra': 200,
+      'Rare Rainbow': 200,
+      'Special Illustration Rare': 400,
+      'Hyper Rare': 500,
+      'Rare Secret': 500,
+      'Secret Rare': 500
+    };
+    
+    return selectedForBreakdown.reduce((total, card) => {
+      return total + (breakdownValues[card.rarity] || 10);
+    }, 0);
+  };
+
+  const handleBreakdownCards = async () => {
+    if (selectedForBreakdown.length === 0) {
+      alert('Please select cards to break down');
+      return;
+    }
+
+    const pointsToGain = calculateBreakdownPoints();
+    
+    if (!window.confirm(`Break down ${selectedForBreakdown.length} card(s) for ${pointsToGain} points? This cannot be undone!`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/cards/breakdown', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, cards: selectedForBreakdown })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        alert(`Successfully broke down ${data.cardsBreakdown} cards for ${data.pointsAwarded} points!`);
+        setSelectedForBreakdown([]);
+        setBreakdownMode(false);
+        loadCollection();
+        // Update user points
+        setUser(prev => ({ ...prev, points: prev.points + data.pointsAwarded }));
+      } else {
+        alert(data.error);
+      }
+    } catch (err) {
+      alert('Error breaking down cards');
     }
   };
 
@@ -1111,6 +1179,40 @@ export default function App() {
               </div>
             </div>
 
+            {/* Breakdown Mode Toggle */}
+            <div className="flex justify-end mb-4">
+              <Button
+                onClick={() => {
+                  setBreakdownMode(!breakdownMode);
+                  setSelectedForBreakdown([]);
+                }}
+                className={breakdownMode ? 'bg-red-500 hover:bg-red-400' : 'bg-orange-500 hover:bg-orange-400'}
+              >
+                {breakdownMode ? 'Cancel Breakdown' : '🔥 Breakdown Mode'}
+              </Button>
+            </div>
+
+            {/* Breakdown Action Bar */}
+            {breakdownMode && (
+              <div className="bg-gradient-to-r from-orange-900/50 to-red-900/50 border-2 border-orange-500/50 rounded-lg p-4 mb-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-orange-400 font-bold">Breakdown Mode Active</p>
+                    <p className="text-sm text-orange-100/70">
+                      Selected: {selectedForBreakdown.length} cards = {calculateBreakdownPoints()} points
+                    </p>
+                  </div>
+                  <Button
+                    onClick={handleBreakdownCards}
+                    disabled={selectedForBreakdown.length === 0}
+                    className="bg-red-500 hover:bg-red-400 text-white font-bold"
+                  >
+                    Break Down Cards
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {/* Search and Filters */}
             <div className="bg-slate-800/50 backdrop-blur-sm border-2 border-cyan-500/30 rounded-lg p-4 mb-6 shadow-[0_0_20px_rgba(6,182,212,0.2)]">
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
@@ -1252,41 +1354,54 @@ export default function App() {
                     <p className="text-white text-lg font-medium">No cards yet! Open some packs to start your collection.</p>
                   </div>
                 ) : (
-                  groupedAndSortedCollection.map((card) => (
-                    <Card 
-                      key={card.id} 
-                      className="overflow-visible hover:scale-110 hover:z-50 transition-transform bg-slate-800/50 backdrop-blur-sm border-2 border-cyan-500/30 hover:border-cyan-500 hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] cursor-pointer relative"
-                      onClick={() => handleCardClick(card)}
-                    >
-                      <div className="relative">
-                        <img
-                          src={card.images?.small || '/placeholder.png'}
-                          alt={card.name}
-                          className="w-full h-auto rounded-t"
-                        />
-                        {/* NEW Badge */}
-                        {isCardNew(card) && (
-                          <Badge className="absolute top-2 left-2 bg-gradient-to-r from-yellow-400 to-orange-500 text-black border-2 border-yellow-300 text-xs font-bold px-2 py-1 shadow-[0_0_15px_rgba(234,179,8,0.8)] animate-pulse">
-                            NEW
+                  groupedAndSortedCollection.map((card) => {
+                    const isSelectedForBreakdown = breakdownMode && selectedForBreakdown.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
+                    return (
+                      <Card 
+                        key={card.id} 
+                        className={`overflow-visible hover:scale-110 hover:z-50 transition-transform bg-slate-800/50 backdrop-blur-sm border-2 ${
+                          isSelectedForBreakdown 
+                            ? 'border-4 border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.8)]' 
+                            : 'border-cyan-500/30 hover:border-cyan-500 hover:shadow-[0_0_25px_rgba(6,182,212,0.5)]'
+                        } cursor-pointer relative`}
+                        onClick={() => breakdownMode ? toggleBreakdownCard(card) : handleCardClick(card)}
+                      >
+                        <div className="relative">
+                          <img
+                            src={card.images?.small || '/placeholder.png'}
+                            alt={card.name}
+                            className="w-full h-auto rounded-t"
+                          />
+                          {/* Breakdown Selected Indicator */}
+                          {isSelectedForBreakdown && (
+                            <div className="absolute inset-0 bg-red-500/30 flex items-center justify-center">
+                              <Check className="h-12 w-12 text-white drop-shadow-lg" />
+                            </div>
+                          )}
+                          {/* NEW Badge */}
+                          {!breakdownMode && isCardNew(card) && (
+                            <Badge className="absolute top-2 left-2 bg-gradient-to-r from-yellow-400 to-orange-500 text-black border-2 border-yellow-300 text-xs font-bold px-2 py-1 shadow-[0_0_15px_rgba(234,179,8,0.8)] animate-pulse">
+                              NEW
+                            </Badge>
+                          )}
+                          {/* Count Badge */}
+                          {!breakdownMode && card.count > 1 && (
+                            <Badge className={`absolute ${isCardNew(card) ? 'top-10' : 'top-2'} left-2 bg-cyan-500 text-black border-2 border-cyan-400 text-lg font-bold px-2 py-1 shadow-[0_0_15px_rgba(6,182,212,0.6)]`}>
+                              x{card.count}
+                            </Badge>
+                          )}
+                          {!breakdownMode && card.isReverseHolo && (
+                            <Badge className="absolute top-2 right-2 bg-gradient-to-r from-cyan-400 to-blue-500 text-white border border-cyan-300 text-xs shadow-[0_0_10px_rgba(6,182,212,0.5)]">
+                              Reverse
+                            </Badge>
+                          )}
+                          <Badge className={`absolute bottom-2 left-2 border-2 border-cyan-500/50 text-xs shadow-[0_0_10px_rgba(0,0,0,0.5)] ${getRarityColor(card.rarity)}`}>
+                            {card.rarity || 'Common'}
                           </Badge>
-                        )}
-                        {/* Count Badge */}
-                        {card.count > 1 && (
-                          <Badge className={`absolute ${isCardNew(card) ? 'top-10' : 'top-2'} left-2 bg-cyan-500 text-black border-2 border-cyan-400 text-lg font-bold px-2 py-1 shadow-[0_0_15px_rgba(6,182,212,0.6)]`}>
-                            x{card.count}
-                          </Badge>
-                        )}
-                        {card.isReverseHolo && (
-                          <Badge className="absolute top-2 right-2 bg-gradient-to-r from-cyan-400 to-blue-500 text-white border border-cyan-300 text-xs shadow-[0_0_10px_rgba(6,182,212,0.5)]">
-                            Reverse
-                          </Badge>
-                        )}
-                        <Badge className={`absolute bottom-2 left-2 border-2 border-cyan-500/50 text-xs shadow-[0_0_10px_rgba(0,0,0,0.5)] ${getRarityColor(card.rarity)}`}>
-                          {card.rarity || 'Common'}
-                        </Badge>
-                      </div>
-                    </Card>
-                  ))
+                        </div>
+                      </Card>
+                    );
+                  })
                 )}
               </div>
             </ScrollArea>

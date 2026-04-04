@@ -21,6 +21,23 @@ const ACHIEVEMENTS = {
   COMPLETE_SET: { threshold: 'complete', reward: 1500, name: 'Complete Set' }
 };
 
+// Card breakdown values (points awarded for breaking down cards)
+const BREAKDOWN_VALUES = {
+  'Common': 10,
+  'Uncommon': 20,
+  'Rare': 50,
+  'Rare Holo': 50,
+  'Double Rare': 100,
+  'Illustration Rare': 200,
+  'Ultra Rare': 200,
+  'Rare Ultra': 200,
+  'Rare Rainbow': 200,
+  'Special Illustration Rare': 400,
+  'Hyper Rare': 500,
+  'Rare Secret': 500,
+  'Secret Rare': 500
+};
+
 let client;
 let db;
 
@@ -1082,6 +1099,44 @@ export async function POST(request) {
       );
 
       return NextResponse.json({ success: true });
+    }
+
+    // Breakdown cards for points
+    if (pathname.includes('/api/cards/breakdown')) {
+      const { userId, cards } = body;
+      
+      if (!userId || !cards || !Array.isArray(cards) || cards.length === 0) {
+        return NextResponse.json({ error: 'Invalid breakdown request' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const user = await database.collection('users').findOne({ id: userId });
+
+      if (!user) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      // Calculate total points from breakdown
+      let totalPoints = 0;
+      cards.forEach(card => {
+        const pointValue = BREAKDOWN_VALUES[card.rarity] || 10;
+        totalPoints += pointValue;
+      });
+
+      // Remove cards from collection and award points
+      await database.collection('users').updateOne(
+        { id: userId },
+        { 
+          $pull: { collection: { $or: cards.map(card => ({ id: card.id, pulledAt: card.pulledAt })) } },
+          $inc: { points: totalPoints }
+        }
+      );
+
+      return NextResponse.json({ 
+        success: true, 
+        pointsAwarded: totalPoints,
+        cardsBreakdown: cards.length
+      });
     }
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
