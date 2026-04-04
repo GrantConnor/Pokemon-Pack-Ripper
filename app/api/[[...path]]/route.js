@@ -376,6 +376,49 @@ export async function GET(request) {
       return NextResponse.json({ collection: user.collection || [] });
     }
 
+    // Get friends and pending requests
+    if (pathname.includes('/api/friends')) {
+      const userId = searchParams.get('userId');
+      if (!userId) {
+        return NextResponse.json({ error: 'User ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const user = await database.collection('users').findOne({ id: userId });
+      
+      if (!user) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      // Get friend details
+      const friendIds = user.friends || [];
+      const friends = await database.collection('users')
+        .find({ id: { $in: friendIds } })
+        .project({ id: 1, username: 1 })
+        .toArray();
+
+      // Get pending request details
+      const requestIds = user.friendRequests || [];
+      const requests = await database.collection('users')
+        .find({ id: { $in: requestIds } })
+        .project({ id: 1, username: 1 })
+        .toArray();
+
+      // Get sent request details
+      const sentIds = user.sentFriendRequests || [];
+      const sentRequests = await database.collection('users')
+        .find({ id: { $in: sentIds } })
+        .project({ id: 1, username: 1 })
+        .toArray();
+
+      return NextResponse.json({ 
+        friends,
+        pendingRequests: requests,
+        sentRequests,
+        tradeRequests: user.tradeRequests || []
+      });
+    }
+
     // Check session and update points
     if (pathname.includes('/api/session')) {
       const userId = searchParams.get('userId');
@@ -458,6 +501,10 @@ export async function POST(request) {
         password: hashPassword(password),
         collection: [],
         setAchievements: {},
+        friends: [],
+        friendRequests: [],
+        sentFriendRequests: [],
+        tradeRequests: [],
         points: username === 'Spheal' ? 999999 : STARTING_POINTS,
         lastPointsRefresh: new Date().toISOString(),
         createdAt: new Date().toISOString()
@@ -698,6 +745,232 @@ export async function POST(request) {
         success: true, 
         message: `Successfully removed collection for ${targetUser.username}`
       });
+    }
+
+    // Friends: Send friend request
+    if (pathname.includes('/api/friends/send-request')) {
+      const { userId, targetUsername } = body;
+      
+      if (!userId || !targetUsername) {
+        return NextResponse.json({ error: 'User ID and target username required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const user = await database.collection('users').findOne({ id: userId });
+      const targetUser = await database.collection('users').findOne({ 
+        username: { $regex: new RegExp(`^${targetUsername}$`, 'i') } 
+      });
+
+      if (!user || !targetUser) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      if (user.id === targetUser.id) {
+        return NextResponse.json({ error: 'Cannot add yourself as friend' }, { status: 400 });
+      }
+
+      // Check if already friends
+      if (user.friends?.includes(targetUser.id)) {
+        return NextResponse.json({ error: 'Already friends' }, { status: 400 });
+      }
+
+      // Check if request already sent
+      if (targetUser.friendRequests?.includes(user.id)) {
+        return NextResponse.json({ error: 'Friend request already sent' }, { status: 400 });
+      }
+
+      // Add friend request
+      await database.collection('users').updateOne(
+        { id: targetUser.id },
+        { $addToSet: { friendRequests: user.id } }
+      );
+
+      await database.collection('users').updateOne(
+        { id: user.id },
+        { $addToSet: { sentFriendRequests: targetUser.id } }
+      );
+
+      return NextResponse.json({ 
+        success: true, 
+        message: `Friend request sent to ${targetUser.username}` 
+      });
+    }
+
+    // Friends: Accept friend request
+    if (pathname.includes('/api/friends/accept')) {
+      const { userId, friendId } = body;
+      
+      if (!userId || !friendId) {
+        return NextResponse.json({ error: 'User ID and friend ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      
+      // Add to both users' friend lists
+      await database.collection('users').updateOne(
+        { id: userId },
+        { 
+          $addToSet: { friends: friendId },
+          $pull: { friendRequests: friendId }
+        }
+      );
+
+      await database.collection('users').updateOne(
+        { id: friendId },
+        { 
+          $addToSet: { friends: userId },
+          $pull: { sentFriendRequests: userId }
+        }
+      );
+
+      return NextResponse.json({ success: true });
+    }
+
+    // Friends: Decline friend request
+    if (pathname.includes('/api/friends/decline')) {
+      const { userId, friendId } = body;
+      
+      if (!userId || !friendId) {
+        return NextResponse.json({ error: 'User ID and friend ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      
+      await database.collection('users').updateOne(
+        { id: userId },
+        { $pull: { friendRequests: friendId } }
+      );
+
+      await database.collection('users').updateOne(
+        { id: friendId },
+        { $pull: { sentFriendRequests: userId } }
+      );
+
+      return NextResponse.json({ success: true });
+    }
+
+    // Trades: Send trade request
+    if (pathname.includes('/api/trades/send')) {
+      const { userId, friendId, offeredCards } = body;
+      
+      if (!userId || !friendId || !offeredCards || !Array.isArray(offeredCards)) {
+        return NextResponse.json({ error: 'Invalid trade request' }, { status: 400 });
+      }
+
+      if (offeredCards.length === 0 || offeredCards.length > 10) {
+        return NextResponse.json({ error: 'Must offer 1-10 cards' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const user = await database.collection('users').findOne({ id: userId });
+      const friend = await database.collection('users').findOne({ id: friendId });
+
+      if (!user || !friend) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      // Check if users are friends
+      if (!user.friends?.includes(friendId)) {
+        return NextResponse.json({ error: 'Can only trade with friends' }, { status: 403 });
+      }
+
+      const tradeRequest = {
+        id: uuidv4(),
+        from: userId,
+        fromUsername: user.username,
+        to: friendId,
+        toUsername: friend.username,
+        offeredCards: offeredCards,
+        requestedCards: [],
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+
+      await database.collection('users').updateOne(
+        { id: friendId },
+        { $push: { tradeRequests: tradeRequest } }
+      );
+
+      return NextResponse.json({ 
+        success: true, 
+        message: `Trade request sent to ${friend.username}` 
+      });
+    }
+
+    // Trades: Accept trade
+    if (pathname.includes('/api/trades/accept')) {
+      const { userId, tradeId, requestedCards } = body;
+      
+      if (!userId || !tradeId || !requestedCards || !Array.isArray(requestedCards)) {
+        return NextResponse.json({ error: 'Invalid trade acceptance' }, { status: 400 });
+      }
+
+      if (requestedCards.length === 0 || requestedCards.length > 10) {
+        return NextResponse.json({ error: 'Must request 1-10 cards' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const user = await database.collection('users').findOne({ id: userId });
+
+      if (!user) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      // Find the trade request
+      const trade = user.tradeRequests?.find(t => t.id === tradeId);
+      if (!trade) {
+        return NextResponse.json({ error: 'Trade request not found' }, { status: 404 });
+      }
+
+      const fromUser = await database.collection('users').findOne({ id: trade.from });
+      if (!fromUser) {
+        return NextResponse.json({ error: 'Sender not found' }, { status: 404 });
+      }
+
+      // Execute the trade: swap cards
+      // Remove offered cards from sender, add to receiver
+      await database.collection('users').updateOne(
+        { id: trade.from },
+        { 
+          $pull: { collection: { $or: trade.offeredCards.map(card => ({ id: card.id, pulledAt: card.pulledAt })) } },
+          $push: { collection: { $each: requestedCards } }
+        }
+      );
+
+      // Remove requested cards from receiver, add offered cards
+      await database.collection('users').updateOne(
+        { id: userId },
+        { 
+          $pull: { 
+            collection: { $or: requestedCards.map(card => ({ id: card.id, pulledAt: card.pulledAt })) },
+            tradeRequests: { id: tradeId }
+          },
+          $push: { collection: { $each: trade.offeredCards } }
+        }
+      );
+
+      return NextResponse.json({ 
+        success: true, 
+        message: `Trade completed with ${trade.fromUsername}` 
+      });
+    }
+
+    // Trades: Decline trade
+    if (pathname.includes('/api/trades/decline')) {
+      const { userId, tradeId } = body;
+      
+      if (!userId || !tradeId) {
+        return NextResponse.json({ error: 'User ID and trade ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      
+      await database.collection('users').updateOne(
+        { id: userId },
+        { $pull: { tradeRequests: { id: tradeId } } }
+      );
+
+      return NextResponse.json({ success: true });
     }
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });

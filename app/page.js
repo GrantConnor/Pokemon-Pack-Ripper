@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sparkles, Package, Library, LogOut, Coins, Search, Clock, Eye } from 'lucide-react';
+import { Sparkles, Package, Library, LogOut, Coins, Search, Clock, Eye, Users, Send, X, Check } from 'lucide-react';
 
 export default function App() {
   const [user, setUser] = useState(null);
