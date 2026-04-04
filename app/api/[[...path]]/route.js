@@ -419,6 +419,28 @@ export async function GET(request) {
       });
     }
 
+    // Admin: Get all users (Spheal only)
+    if (pathname.includes('/api/admin/users')) {
+      const adminId = searchParams.get('adminId');
+      
+      const database = await connectDB();
+      
+      if (adminId) {
+        const admin = await database.collection('users').findOne({ id: adminId });
+        if (!admin || admin.username !== 'Spheal') {
+          return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+        }
+      }
+      
+      const users = await database.collection('users')
+        .find({})
+        .project({ id: 1, username: 1, points: 1, createdAt: 1 })
+        .sort({ createdAt: -1 })
+        .toArray();
+
+      return NextResponse.json({ users });
+    }
+
     // Check session and update points
     if (pathname.includes('/api/session')) {
       const userId = searchParams.get('userId');

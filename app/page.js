@@ -40,6 +40,20 @@ export default function App() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest'); // Default to newest
 
+  // Friends & Trading state
+  const [friends, setFriends] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [sentRequests, setSentRequests] = useState([]);
+  const [tradeRequests, setTradeRequests] = useState([]);
+  const [friendUsername, setFriendUsername] = useState('');
+  const [friendMessage, setFriendMessage] = useState('');
+  const [showTradeModal, setShowTradeModal] = useState(false);
+  const [tradeFriend, setTradeFriend] = useState(null);
+  const [selectedTradeCards, setSelectedTradeCards] = useState([]);
+  const [activeTrade, setActiveTrade] = useState(null);
+  const [selectedResponseCards, setSelectedResponseCards] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
+
   useEffect(() => {
     // Check if user is logged in
     const storedUserId = localStorage.getItem('userId');
@@ -94,6 +108,10 @@ export default function App() {
     if (user) {
       loadSets();
       loadCollection();
+      loadFriends();
+      if (user.username === 'Spheal') {
+        loadAllUsers();
+      }
     }
   }, [user]);
 
@@ -246,6 +264,186 @@ export default function App() {
       setCollection(data.collection || []);
     } catch (err) {
       console.error('Error loading collection:', err);
+    }
+  };
+
+  const loadFriends = async () => {
+    if (!user) return;
+    try {
+      const response = await fetch(`/api/friends?userId=${user.id}`);
+      const data = await response.json();
+      setFriends(data.friends || []);
+      setPendingRequests(data.pendingRequests || []);
+      setSentRequests(data.sentRequests || []);
+      setTradeRequests(data.tradeRequests || []);
+    } catch (err) {
+      console.error('Error loading friends:', err);
+    }
+  };
+
+  const loadAllUsers = async () => {
+    try {
+      const response = await fetch('/api/admin/users');
+      const data = await response.json();
+      setAllUsers(data.users || []);
+    } catch (err) {
+      console.error('Error loading users:', err);
+    }
+  };
+
+  const handleAddFriend = async (e) => {
+    e.preventDefault();
+    setFriendMessage('');
+    
+    try {
+      const response = await fetch('/api/friends/send-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, targetUsername: friendUsername })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setFriendMessage(`✅ ${data.message}`);
+        setFriendUsername('');
+        loadFriends();
+      } else {
+        setFriendMessage(`❌ ${data.error}`);
+      }
+    } catch (err) {
+      setFriendMessage('❌ An error occurred');
+    }
+  };
+
+  const handleAcceptFriend = async (friendId) => {
+    try {
+      await fetch('/api/friends/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, friendId })
+      });
+      loadFriends();
+    } catch (err) {
+      console.error('Error accepting friend:', err);
+    }
+  };
+
+  const handleDeclineFriend = async (friendId) => {
+    try {
+      await fetch('/api/friends/decline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, friendId })
+      });
+      loadFriends();
+    } catch (err) {
+      console.error('Error declining friend:', err);
+    }
+  };
+
+  const handleOpenTradeModal = (friend) => {
+    setTradeFriend(friend);
+    setSelectedTradeCards([]);
+    setShowTradeModal(true);
+  };
+
+  const toggleTradeCard = (card) => {
+    if (selectedTradeCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt)) {
+      setSelectedTradeCards(selectedTradeCards.filter(c => !(c.id === card.id && c.pulledAt === card.pulledAt)));
+    } else if (selectedTradeCards.length < 10) {
+      setSelectedTradeCards([...selectedTradeCards, card]);
+    }
+  };
+
+  const handleSendTrade = async () => {
+    if (selectedTradeCards.length === 0) {
+      alert('Please select at least 1 card to trade');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/trades/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          friendId: tradeFriend.id,
+          offeredCards: selectedTradeCards
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        alert(data.message);
+        setShowTradeModal(false);
+        setSelectedTradeCards([]);
+        loadFriends();
+        loadCollection();
+      } else {
+        alert(data.error);
+      }
+    } catch (err) {
+      alert('Error sending trade');
+    }
+  };
+
+  const handleViewTrade = (trade) => {
+    setActiveTrade(trade);
+    setSelectedResponseCards([]);
+  };
+
+  const toggleResponseCard = (card) => {
+    if (selectedResponseCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt)) {
+      setSelectedResponseCards(selectedResponseCards.filter(c => !(c.id === card.id && c.pulledAt === card.pulledAt)));
+    } else if (selectedResponseCards.length < 10) {
+      setSelectedResponseCards([...selectedResponseCards, card]);
+    }
+  };
+
+  const handleAcceptTrade = async () => {
+    if (selectedResponseCards.length === 0) {
+      alert('Please select at least 1 card to trade back');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/trades/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          tradeId: activeTrade.id,
+          requestedCards: selectedResponseCards
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        alert(data.message);
+        setActiveTrade(null);
+        setSelectedResponseCards([]);
+        loadFriends();
+        loadCollection();
+      } else {
+        alert(data.error);
+      }
+    } catch (err) {
+      alert('Error accepting trade');
+    }
+  };
+
+  const handleDeclineTrade = async (tradeId) => {
+    try {
+      await fetch('/api/trades/decline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, tradeId })
+      });
+      setActiveTrade(null);
+      loadFriends();
+    } catch (err) {
+      console.error('Error declining trade:', err);
     }
   };
 
@@ -687,6 +885,23 @@ export default function App() {
                 {adminMessage}
               </p>
             )}
+
+            {/* All Users List */}
+            {allUsers.length > 0 && (
+              <div className="border-t border-purple-500/30 pt-4 mt-4">
+                <h4 className="text-sm font-semibold text-purple-200 mb-2">👥 All Registered Users ({allUsers.length})</h4>
+                <ScrollArea className="h-40 border border-purple-500/20 rounded-lg bg-slate-900/50 p-2">
+                  <div className="space-y-1">
+                    {allUsers.map((u) => (
+                      <div key={u.id} className="flex items-center justify-between py-1 px-2 hover:bg-purple-500/10 rounded text-xs">
+                        <span className="text-purple-100">{u.username}</span>
+                        <span className="text-purple-300">{u.points} pts</span>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -694,7 +909,7 @@ export default function App() {
       {/* Navigation */}
       <div className="container mx-auto px-4 py-6 relative z-10">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-6 bg-slate-800/50 backdrop-blur-sm h-12 border-2 border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+          <TabsList className="grid w-full max-w-2xl mx-auto grid-cols-3 mb-6 bg-slate-800/50 backdrop-blur-sm h-12 border-2 border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
             <TabsTrigger value="packs" className="flex items-center gap-2 data-[state=active]:bg-cyan-500 data-[state=active]:text-black data-[state=active]:shadow-[0_0_20px_rgba(6,182,212,0.6)] font-bold text-cyan-100 transition-all">
               <Package className="h-4 w-4" />
               Open Packs
@@ -702,6 +917,10 @@ export default function App() {
             <TabsTrigger value="collection" className="flex items-center gap-2 data-[state=active]:bg-cyan-500 data-[state=active]:text-black data-[state=active]:shadow-[0_0_20px_rgba(6,182,212,0.6)] font-bold text-cyan-100 transition-all">
               <Library className="h-4 w-4" />
               My Collection
+            </TabsTrigger>
+            <TabsTrigger value="friends" className="flex items-center gap-2 data-[state=active]:bg-cyan-500 data-[state=active]:text-black data-[state=active]:shadow-[0_0_20px_rgba(6,182,212,0.6)] font-bold text-cyan-100 transition-all">
+              <Users className="h-4 w-4" />
+              Friends
             </TabsTrigger>
           </TabsList>
 
@@ -1011,6 +1230,143 @@ export default function App() {
               </div>
             </ScrollArea>
           </TabsContent>
+
+          {/* Friends Tab */}
+          <TabsContent value="friends" className="space-y-6">
+            <div className="text-center mb-6">
+              <h2 className="text-3xl font-bold text-white drop-shadow-[0_0_10px_rgba(6,182,212,0.5)] mb-2">Friends & Trading</h2>
+              <p className="text-cyan-100/70 font-medium">Add friends and trade Pokemon cards!</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Add Friend */}
+              <Card className="border-2 border-cyan-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(6,182,212,0.2)]">
+                <CardHeader>
+                  <CardTitle className="text-cyan-400">Add Friend</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleAddFriend} className="space-y-3">
+                    <Input
+                      placeholder="Username"
+                      value={friendUsername}
+                      onChange={(e) => setFriendUsername(e.target.value)}
+                      className="border-2 border-cyan-500/30 bg-slate-700/50 text-white"
+                      required
+                    />
+                    <Button type="submit" className="w-full bg-cyan-500 text-black hover:bg-cyan-400">
+                      <Send className="h-4 w-4 mr-2" />
+                      Send Request
+                    </Button>
+                  </form>
+                  {friendMessage && (
+                    <p className={`mt-2 text-sm ${friendMessage.includes('✅') ? 'text-green-400' : 'text-red-400'}`}>
+                      {friendMessage}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Friends List */}
+              <Card className="border-2 border-cyan-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(6,182,212,0.2)]">
+                <CardHeader>
+                  <CardTitle className="text-cyan-400">My Friends ({friends.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-40">
+                    {friends.length === 0 ? (
+                      <p className="text-cyan-100/50 text-center py-4">No friends yet</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {friends.map((friend) => (
+                          <div key={friend.id} className="flex items-center justify-between p-2 bg-slate-700/50 rounded">
+                            <span className="text-white">{friend.username}</span>
+                            <Button
+                              size="sm"
+                              onClick={() => handleOpenTradeModal(friend)}
+                              className="bg-purple-500 text-white hover:bg-purple-400"
+                            >
+                              Trade
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+
+              {/* Pending Requests */}
+              <Card className="border-2 border-yellow-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(234,179,8,0.2)]">
+                <CardHeader>
+                  <CardTitle className="text-yellow-400">Friend Requests ({pendingRequests.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-40">
+                    {pendingRequests.length === 0 ? (
+                      <p className="text-cyan-100/50 text-center py-4">No pending requests</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {pendingRequests.map((req) => (
+                          <div key={req.id} className="flex items-center justify-between p-2 bg-slate-700/50 rounded">
+                            <span className="text-white">{req.username}</span>
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                onClick={() => handleAcceptFriend(req.id)}
+                                className="bg-green-500 text-white hover:bg-green-400"
+                              >
+                                <Check className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleDeclineFriend(req.id)}
+                                className="bg-red-500 text-white hover:bg-red-400"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+
+              {/* Trade Requests */}
+              <Card className="border-2 border-purple-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(168,85,247,0.2)]">
+                <CardHeader>
+                  <CardTitle className="text-purple-400">Trade Requests ({tradeRequests.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-40">
+                    {tradeRequests.length === 0 ? (
+                      <p className="text-cyan-100/50 text-center py-4">No trade requests</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {tradeRequests.map((trade) => (
+                          <div key={trade.id} className="p-2 bg-slate-700/50 rounded">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-white font-semibold">{trade.fromUsername}</span>
+                              <Badge className="bg-purple-500">{trade.offeredCards.length} cards</Badge>
+                            </div>
+                            <Button
+                              size="sm"
+                              onClick={() => handleViewTrade(trade)}
+                              className="w-full bg-purple-500 text-white hover:bg-purple-400"
+                            >
+                              View Trade
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
         </Tabs>
       </div>
 
@@ -1220,6 +1576,137 @@ export default function App() {
           </div>
         </DialogContent>
       </Dialog>
+
+
+      {/* Trade Modal - Send Trade */}
+      <Dialog open={showTradeModal} onOpenChange={setShowTradeModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-purple-400">
+              Trade with {tradeFriend?.username}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-cyan-100">Select up to 10 cards to offer ({selectedTradeCards.length}/10)</p>
+            <ScrollArea className="h-96">
+              <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                {groupedAndSortedCollection.map((card, index) => {
+                  const isSelected = selectedTradeCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
+                  return (
+                    <Card
+                      key={index}
+                      onClick={() => toggleTradeCard(card)}
+                      className={`cursor-pointer transition-all ${
+                        isSelected 
+                          ? 'border-4 border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.8)]' 
+                          : 'border-2 border-cyan-500/30 hover:border-cyan-500'
+                      }`}
+                    >
+                      <div className="relative">
+                        <img src={card.images?.small} alt={card.name} className="w-full" />
+                        {isSelected && (
+                          <div className="absolute top-1 right-1 bg-purple-500 rounded-full p-1">
+                            <Check className="h-4 w-4 text-white" />
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setShowTradeModal(false)} variant="outline">
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleSendTrade}
+                disabled={selectedTradeCards.length === 0}
+                className="bg-purple-500 text-white hover:bg-purple-400"
+              >
+                Send Trade Offer
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Trade View Modal - Accept/Decline Trade */}
+      <Dialog open={!!activeTrade} onOpenChange={() => setActiveTrade(null)}>
+        <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-purple-400">
+              Trade from {activeTrade?.fromUsername}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-4">
+            {/* Their Offer */}
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-cyan-400">They're offering:</h3>
+              <ScrollArea className="h-80 border border-purple-500/30 rounded p-2">
+                <div className="grid grid-cols-2 gap-2">
+                  {activeTrade?.offeredCards.map((card, index) => (
+                    <Card key={index} className="border-2 border-purple-500/30">
+                      <img src={card.images?.small} alt={card.name} className="w-full" />
+                      <p className="text-xs text-center text-white p-1">{card.name}</p>
+                    </Card>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+
+            {/* Your Response */}
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-cyan-400">
+                Select your cards ({selectedResponseCards.length}/10)
+              </h3>
+              <ScrollArea className="h-80 border border-cyan-500/30 rounded p-2">
+                <div className="grid grid-cols-2 gap-2">
+                  {groupedAndSortedCollection.map((card, index) => {
+                    const isSelected = selectedResponseCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
+                    return (
+                      <Card
+                        key={index}
+                        onClick={() => toggleResponseCard(card)}
+                        className={`cursor-pointer transition-all ${
+                          isSelected 
+                            ? 'border-4 border-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.8)]' 
+                            : 'border-2 border-cyan-500/30 hover:border-cyan-500'
+                        }`}
+                      >
+                        <div className="relative">
+                          <img src={card.images?.small} alt={card.name} className="w-full" />
+                          {isSelected && (
+                            <div className="absolute top-1 right-1 bg-cyan-500 rounded-full p-1">
+                              <Check className="h-4 w-4 text-black" />
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button 
+              onClick={() => activeTrade && handleDeclineTrade(activeTrade.id)}
+              className="bg-red-500 text-white hover:bg-red-400"
+            >
+              Decline Trade
+            </Button>
+            <Button 
+              onClick={handleAcceptTrade}
+              disabled={selectedResponseCards.length === 0}
+              className="bg-green-500 text-white hover:bg-green-400"
+            >
+              Accept Trade
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }

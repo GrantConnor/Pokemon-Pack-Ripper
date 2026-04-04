@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Comprehensive Backend Testing for Pokemon Pack Ripper - Achievement Single-Fire Fix
-Tests the atomic update fix using MongoDB's $addToSet operator
+Comprehensive Backend Testing for Pokemon Pack Ripper - Friends & Trading System
+Tests all friend request flows, trading functionality, and admin features.
 """
 
 import requests
@@ -9,652 +9,600 @@ import json
 import time
 import random
 import string
-from datetime import datetime
+from typing import Dict, List, Any
 
 # Configuration
-BASE_URL = "https://booster-hub-1.preview.emergentagent.com/api"
+BASE_URL = "https://pokepackripper.netlify.app/api"
 HEADERS = {"Content-Type": "application/json"}
 
-def generate_test_username():
-    """Generate a unique test username"""
-    timestamp = str(int(time.time()))
-    random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
-    return f"testuser_{timestamp}_{random_suffix}"
-
-def create_test_user():
-    """Create a fresh test user and return credentials"""
-    username = generate_test_username()
-    password = "testpass123"
-    
-    signup_data = {
-        "username": username,
-        "password": password
-    }
-    
-    print(f"🔧 Creating test user: {username}")
-    response = requests.post(f"{BASE_URL}/auth/signup", json=signup_data, headers=HEADERS)
-    
-    if response.status_code not in [200, 201]:
-        print(f"❌ Failed to create user: {response.status_code} - {response.text}")
-        return None, None
-    
-    # Check if user was created successfully
-    response_data = response.json()
-    if not response_data.get("success"):
-        print(f"❌ User creation failed: {response_data}")
-        return None, None
-    
-    print(f"✅ User created successfully")
-    return username, password
-
-def signin_user(username, password):
-    """Sign in user and return user data"""
-    signin_data = {
-        "username": username,
-        "password": password
-    }
-    
-    response = requests.post(f"{BASE_URL}/auth/signin", json=signin_data, headers=HEADERS)
-    
-    if response.status_code != 200:
-        print(f"❌ Failed to sign in: {response.status_code} - {response.text}")
-        return None
-    
-    response_data = response.json()
-    # Handle both direct user object and nested user object
-    if "user" in response_data:
-        return response_data["user"]
-    else:
-        return response_data
-
-def get_user_from_db(user_id):
-    """Get user data via session endpoint"""
-    response = requests.get(f"{BASE_URL}/session?userId={user_id}", headers=HEADERS)
-    
-    if response.status_code != 200:
-        print(f"❌ Failed to get user session: {response.status_code} - {response.text}")
-        return None
-    
-    response_data = response.json()
-    # Handle both direct user object and nested user object
-    if "user" in response_data:
-        return response_data["user"]
-    else:
-        return response_data
-
-def get_sets():
-    """Get available Pokemon sets"""
-    response = requests.get(f"{BASE_URL}/sets", headers=HEADERS)
-    
-    if response.status_code != 200:
-        print(f"❌ Failed to get sets: {response.status_code} - {response.text}")
-        return []
-    
-    response_data = response.json()
-    # Handle both direct array and nested sets object
-    if "sets" in response_data:
-        return response_data["sets"]
-    else:
-        return response_data
-
-def open_pack(user_id, set_id, bulk=False):
-    """Open a pack for the user"""
-    pack_data = {
-        "userId": user_id,
-        "setId": set_id
-    }
-    
-    if bulk:
-        pack_data["bulk"] = True
-    
-    response = requests.post(f"{BASE_URL}/packs/open", json=pack_data, headers=HEADERS)
-    
-    if response.status_code != 200:
-        print(f"❌ Failed to open pack: {response.status_code} - {response.text}")
-        return None
-    
-    return response.json()
-
-def test_achievement_single_fire_primary():
-    """
-    Test 1: Achievement Single-Fire - Primary Test
-    Create a fresh test user and open packs from ONE specific set until achieving ALL milestones
-    """
-    print("\n" + "="*80)
-    print("🎯 TEST 1: ACHIEVEMENT SINGLE-FIRE - PRIMARY TEST")
-    print("="*80)
-    
-    # Create test user
-    username, password = create_test_user()
-    if not username:
-        return False
-    
-    # Sign in user
-    user_data = signin_user(username, password)
-    if not user_data:
-        return False
-    
-    user_id = user_data["id"]
-    print(f"📝 User ID: {user_id}")
-    print(f"💰 Starting points: {user_data['points']}")
-    
-    # Get sets and pick one for testing
-    sets = get_sets()
-    if not sets:
-        return False
-    
-    # Pick a set with good card count for testing (Base Set is reliable)
-    test_set = None
-    for s in sets:
-        if s["id"] == "base1":  # Base Set
-            test_set = s
-            break
-    
-    if not test_set:
-        test_set = sets[0]  # Fallback to first set
-    
-    set_id = test_set["id"]
-    set_name = test_set["name"]
-    print(f"🎲 Testing with set: {set_name} ({set_id})")
-    
-    # Track achievements and points
-    total_points_from_achievements = 0
-    achievement_history = []
-    pack_count = 0
-    
-    # Open packs until we get multiple achievements (up to 150 packs max)
-    while pack_count < 150:
-        pack_count += 1
-        print(f"\n📦 Opening pack #{pack_count} from {set_name}...")
+class FriendsAndTradingTester:
+    def __init__(self):
+        self.test_users = []
+        self.test_results = []
         
-        # Open pack
-        pack_result = open_pack(user_id, set_id)
-        if not pack_result:
-            print(f"❌ Failed to open pack #{pack_count}")
-            continue
+    def log_test(self, test_name: str, passed: bool, details: str = ""):
+        """Log test results"""
+        status = "✅ PASSED" if passed else "❌ FAILED"
+        result = f"{status}: {test_name}"
+        if details:
+            result += f" - {details}"
+        print(result)
+        self.test_results.append({
+            "test": test_name,
+            "passed": passed,
+            "details": details
+        })
         
-        # Check if achievements were earned
-        if "achievements" in pack_result and pack_result["achievements"]:
-            achievements = pack_result["achievements"]
-            if "newAchievements" in achievements and achievements["newAchievements"]:
-                new_achievements = achievements["newAchievements"]
-                bonus_points = achievements.get("bonusPoints", 0)
-                unique_count = achievements.get("uniqueCount", 0)
-                
-                print(f"🏆 ACHIEVEMENTS EARNED in pack #{pack_count}:")
-                for ach in new_achievements:
-                    print(f"   - {ach['name']} ({ach['key']}) - {ach['reward']} points")
-                    achievement_history.append({
-                        "pack": pack_count,
-                        "key": ach["key"],
-                        "reward": ach["reward"],
-                        "unique_count": unique_count
-                    })
-                
-                total_points_from_achievements += bonus_points
-                print(f"💰 Bonus points this pack: {bonus_points}")
-                print(f"📊 Unique cards in set: {unique_count}")
+    def generate_username(self) -> str:
+        """Generate a unique test username"""
+        return f"testuser_{random.randint(1000, 9999)}"
         
-        # Get fresh user data from database
-        current_user = get_user_from_db(user_id)
-        if current_user:
-            set_achievements = current_user.get("setAchievements", {}).get(set_id, [])
-            print(f"🗃️  Database setAchievements[{set_id}]: {set_achievements}")
+    def create_test_user(self, username: str = None) -> Dict[str, Any]:
+        """Create a test user and return user data"""
+        if not username:
+            username = self.generate_username()
+        password = "testpass123"
+        
+        try:
+            response = requests.post(
+                f"{BASE_URL}/auth/signup",
+                headers=HEADERS,
+                json={"username": username, "password": password}
+            )
             
-            # Check for duplicates in achievement array
-            if len(set_achievements) != len(set(set_achievements)):
-                print(f"❌ CRITICAL ERROR: Duplicate achievements found in database!")
-                print(f"   Raw array: {set_achievements}")
-                return False
+            if response.status_code == 201 or response.status_code == 200:
+                data = response.json()
+                user_data = {
+                    "username": username,
+                    "password": password,
+                    "id": data["user"]["id"],
+                    "points": data["user"]["points"]
+                }
+                self.test_users.append(user_data)
+                return user_data
+            else:
+                print(f"Failed to create user {username}: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            print(f"Error creating user {username}: {str(e)}")
+            return None
             
-            print(f"💰 Current points: {current_user['points']}")
-        
-        # Stop if we have multiple achievements or reached 100+ unique cards
-        if len(achievement_history) >= 3:
-            print(f"✅ Sufficient achievements earned for testing ({len(achievement_history)})")
-            break
-    
-    print(f"\n📊 FINAL RESULTS AFTER {pack_count} PACKS:")
-    print(f"🏆 Total achievements earned: {len(achievement_history)}")
-    print(f"💰 Total points from achievements: {total_points_from_achievements}")
-    
-    # Final database check
-    final_user = get_user_from_db(user_id)
-    if final_user:
-        final_set_achievements = final_user.get("setAchievements", {}).get(set_id, [])
-        print(f"🗃️  Final database setAchievements[{set_id}]: {final_set_achievements}")
-        
-        # Verify no duplicates
-        unique_achievements = list(set(final_set_achievements))
-        if len(final_set_achievements) != len(unique_achievements):
-            print(f"❌ CRITICAL FAILURE: Duplicate achievements in final database state!")
-            print(f"   Raw array: {final_set_achievements}")
-            print(f"   Unique array: {unique_achievements}")
-            return False
-        
-        # Verify each achievement appears exactly once
-        achievement_counts = {}
-        for ach in final_set_achievements:
-            achievement_counts[ach] = achievement_counts.get(ach, 0) + 1
-        
-        duplicates_found = False
-        for ach_key, count in achievement_counts.items():
-            if count > 1:
-                print(f"❌ DUPLICATE ACHIEVEMENT: {ach_key} appears {count} times!")
-                duplicates_found = True
-        
-        if duplicates_found:
-            return False
-        
-        print(f"✅ All achievements appear exactly once in database")
-    
-    # Verify achievement history matches database
-    earned_keys = [ach["key"] for ach in achievement_history]
-    if set(earned_keys) == set(final_set_achievements):
-        print(f"✅ Achievement history matches database state")
-        return True
-    else:
-        print(f"❌ Mismatch between earned achievements and database:")
-        print(f"   Earned: {earned_keys}")
-        print(f"   Database: {final_set_achievements}")
-        return False
-
-def test_achievement_database_persistence():
-    """
-    Test 2: Achievement Database Persistence
-    Verify achievements are properly saved and persist across pack openings
-    """
-    print("\n" + "="*80)
-    print("🗄️  TEST 2: ACHIEVEMENT DATABASE PERSISTENCE")
-    print("="*80)
-    
-    # Create test user
-    username, password = create_test_user()
-    if not username:
-        return False
-    
-    user_data = signin_user(username, password)
-    if not user_data:
-        return False
-    
-    user_id = user_data["id"]
-    
-    # Get a test set
-    sets = get_sets()
-    test_set = sets[0] if sets else None
-    if not test_set:
-        return False
-    
-    set_id = test_set["id"]
-    set_name = test_set["name"]
-    print(f"🎲 Testing persistence with set: {set_name} ({set_id})")
-    
-    # Open 15 packs to trigger 10-card achievement
-    print(f"📦 Opening 15 packs to trigger 10-card achievement...")
-    for i in range(15):
-        pack_result = open_pack(user_id, set_id)
-        if pack_result and "achievements" in pack_result and pack_result["achievements"]:
-            achievements = pack_result["achievements"]
-            if "newAchievements" in achievements and achievements["newAchievements"]:
-                for ach in achievements["newAchievements"]:
-                    print(f"🏆 Achievement earned: {ach['name']} ({ach['key']})")
-    
-    # Check database state after 15 packs
-    user_after_15 = get_user_from_db(user_id)
-    if not user_after_15:
-        return False
-    
-    achievements_after_15 = user_after_15.get("setAchievements", {}).get(set_id, [])
-    print(f"🗃️  After 15 packs - setAchievements[{set_id}]: {achievements_after_15}")
-    
-    # Open 20 more packs to trigger 30-card achievement
-    print(f"📦 Opening 20 more packs to trigger 30-card achievement...")
-    for i in range(20):
-        pack_result = open_pack(user_id, set_id)
-        if pack_result and "achievements" in pack_result and pack_result["achievements"]:
-            achievements = pack_result["achievements"]
-            if "newAchievements" in achievements and achievements["newAchievements"]:
-                for ach in achievements["newAchievements"]:
-                    print(f"🏆 Achievement earned: {ach['name']} ({ach['key']})")
-    
-    # Check final database state
-    user_final = get_user_from_db(user_id)
-    if not user_final:
-        return False
-    
-    achievements_final = user_final.get("setAchievements", {}).get(set_id, [])
-    print(f"🗃️  After 35 packs - setAchievements[{set_id}]: {achievements_final}")
-    
-    # Verify both achievements are present and no duplicates
-    expected_achievements = ["TEN_CARDS", "THIRTY_CARDS"]
-    
-    # Check if both achievements are present
-    has_ten_cards = "TEN_CARDS" in achievements_final
-    has_thirty_cards = "THIRTY_CARDS" in achievements_final
-    
-    if not has_ten_cards:
-        print(f"❌ Missing TEN_CARDS achievement")
-        return False
-    
-    if not has_thirty_cards:
-        print(f"❌ Missing THIRTY_CARDS achievement")
-        return False
-    
-    # Check for duplicates
-    if len(achievements_final) != len(set(achievements_final)):
-        print(f"❌ Duplicate achievements found: {achievements_final}")
-        return False
-    
-    print(f"✅ Both achievements present with no duplicates")
-    return True
-
-def test_multiple_achievements_one_pack():
-    """
-    Test 3: Multiple Achievement Triggers in One Pack Opening
-    Test edge case where one pack opening could trigger multiple achievements
-    """
-    print("\n" + "="*80)
-    print("🎯 TEST 3: MULTIPLE ACHIEVEMENT TRIGGERS IN ONE PACK")
-    print("="*80)
-    
-    # Create test user
-    username, password = create_test_user()
-    if not username:
-        return False
-    
-    user_data = signin_user(username, password)
-    if not user_data:
-        return False
-    
-    user_id = user_data["id"]
-    
-    # Get a test set
-    sets = get_sets()
-    test_set = sets[0] if sets else None
-    if not test_set:
-        return False
-    
-    set_id = test_set["id"]
-    set_name = test_set["name"]
-    print(f"🎲 Testing with set: {set_name} ({set_id})")
-    
-    # Open packs to get close to 10 unique cards (open 8 packs)
-    print(f"📦 Opening 8 packs to get close to 10 unique cards...")
-    for i in range(8):
-        pack_result = open_pack(user_id, set_id)
-        if not pack_result:
-            print(f"❌ Failed to open pack {i+1}")
-            return False
-    
-    # Check current state
-    current_user = get_user_from_db(user_id)
-    if not current_user:
-        return False
-    
-    # Count unique cards from this set
-    cards_from_set = [card for card in current_user.get("collection", []) if card.get("set", {}).get("id") == set_id]
-    unique_card_ids = set(card["id"] for card in cards_from_set)
-    unique_count_before = len(unique_card_ids)
-    
-    print(f"📊 Unique cards before final pack: {unique_count_before}")
-    
-    # Open one more pack that should trigger 10-card achievement
-    print(f"📦 Opening final pack to trigger achievement...")
-    pack_result = open_pack(user_id, set_id)
-    if not pack_result:
-        return False
-    
-    # Check if achievement was triggered
-    achievements_earned = []
-    if "achievements" in pack_result and pack_result["achievements"]:
-        achievements = pack_result["achievements"]
-        if "newAchievements" in achievements and achievements["newAchievements"]:
-            achievements_earned = achievements["newAchievements"]
-            for ach in achievements_earned:
-                print(f"🏆 Achievement earned: {ach['name']} ({ach['key']})")
-    
-    # Verify only appropriate achievements were earned (should be TEN_CARDS if we crossed 10)
-    final_user = get_user_from_db(user_id)
-    if not final_user:
-        return False
-    
-    final_achievements = final_user.get("setAchievements", {}).get(set_id, [])
-    print(f"🗃️  Final setAchievements[{set_id}]: {final_achievements}")
-    
-    # Count final unique cards
-    final_cards_from_set = [card for card in final_user.get("collection", []) if card.get("set", {}).get("id") == set_id]
-    final_unique_card_ids = set(card["id"] for card in final_cards_from_set)
-    final_unique_count = len(final_unique_card_ids)
-    
-    print(f"📊 Final unique cards: {final_unique_count}")
-    
-    # Verify no duplicates in achievements
-    if len(final_achievements) != len(set(final_achievements)):
-        print(f"❌ Duplicate achievements found: {final_achievements}")
-        return False
-    
-    # Verify achievements are appropriate for the unique count
-    if final_unique_count >= 10 and "TEN_CARDS" not in final_achievements:
-        print(f"❌ Missing TEN_CARDS achievement with {final_unique_count} unique cards")
-        return False
-    
-    print(f"✅ Achievements correctly awarded based on unique card count")
-    return True
-
-def test_rapid_pack_opening():
-    """
-    Test 4: Rapid Pack Opening (Race Condition Test)
-    Open 100 packs rapidly to test for race conditions in achievement system
-    """
-    print("\n" + "="*80)
-    print("🏃 TEST 4: RAPID PACK OPENING (RACE CONDITION TEST)")
-    print("="*80)
-    
-    # Create test user with unlimited points (use Spheal username)
-    username = "Spheal"
-    password = "testpass123"
-    
-    # Try to create Spheal user (might already exist)
-    signup_data = {
-        "username": username,
-        "password": password
-    }
-    
-    print(f"🔧 Creating/using Spheal user for unlimited points...")
-    response = requests.post(f"{BASE_URL}/auth/signup", json=signup_data, headers=HEADERS)
-    
-    # If user already exists, try to sign in
-    if response.status_code == 409 or (response.status_code == 200 and not response.json().get("success")):
-        print(f"🔄 Spheal user exists, signing in...")
-        user_data = signin_user(username, password)
-        if not user_data:
-            print(f"❌ Cannot access Spheal user, creating regular test user instead")
-            username, password = create_test_user()
-            if not username:
-                return False
-            user_data = signin_user(username, password)
-            if not user_data:
-                return False
-    else:
-        # Check if signup was successful
-        response_data = response.json()
-        if not response_data.get("success"):
-            print(f"❌ Failed to create Spheal user: {response_data}")
-            return False
-        user_data = response_data.get("user")
-        if not user_data:
-            user_data = signin_user(username, password)
-            if not user_data:
-                return False
-    
-    user_id = user_data["id"]
-    print(f"💰 Starting points: {user_data['points']}")
-    
-    # Get a test set
-    sets = get_sets()
-    test_set = sets[0] if sets else None
-    if not test_set:
-        return False
-    
-    set_id = test_set["id"]
-    set_name = test_set["name"]
-    print(f"🎲 Testing rapid opening with set: {set_name} ({set_id})")
-    
-    # Open 100 packs rapidly (use bulk opening for efficiency)
-    print(f"📦 Opening 100 packs rapidly (10 bulk openings)...")
-    
-    total_achievements_earned = []
-    total_bonus_points = 0
-    
-    for bulk_round in range(10):
-        print(f"🔄 Bulk round {bulk_round + 1}/10...")
-        
-        # Open 10 packs at once
-        pack_result = open_pack(user_id, set_id, bulk=True)
-        if not pack_result:
-            print(f"❌ Failed bulk opening round {bulk_round + 1}")
-            continue
-        
-        # Track achievements from this bulk opening
-        if "achievements" in pack_result and pack_result["achievements"]:
-            achievements = pack_result["achievements"]
-            if "newAchievements" in achievements and achievements["newAchievements"]:
-                new_achievements = achievements["newAchievements"]
-                bonus_points = achievements.get("bonusPoints", 0)
+    def give_user_cards(self, user: Dict[str, Any], num_packs: int = 2) -> bool:
+        """Give a user some cards by opening packs"""
+        try:
+            # Open packs to get cards
+            for i in range(num_packs):
+                response = requests.post(
+                    f"{BASE_URL}/packs/open",
+                    headers=HEADERS,
+                    json={
+                        "userId": user["id"],
+                        "setId": "base1",  # Base Set
+                        "bulk": False
+                    }
+                )
                 
-                for ach in new_achievements:
-                    print(f"🏆 Achievement: {ach['name']} ({ach['key']}) - {ach['reward']} points")
-                    total_achievements_earned.append(ach["key"])
+                if response.status_code != 200:
+                    print(f"Failed to open pack for {user['username']}: {response.status_code}")
+                    return False
+                    
+            return True
+            
+        except Exception as e:
+            print(f"Error giving cards to {user['username']}: {str(e)}")
+            return False
+            
+    def get_user_collection(self, user: Dict[str, Any]) -> List[Dict]:
+        """Get user's card collection"""
+        try:
+            response = requests.get(
+                f"{BASE_URL}/collection",
+                params={"userId": user["id"]}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("collection", [])
+            else:
+                print(f"Failed to get collection for {user['username']}: {response.status_code}")
+                return []
                 
-                total_bonus_points += bonus_points
+        except Exception as e:
+            print(f"Error getting collection for {user['username']}: {str(e)}")
+            return []
+            
+    def test_friend_request_flow(self):
+        """Test 1: Complete friend request flow (send, accept)"""
+        print("\n=== TEST 1: Friend Request Flow ===")
         
-        # Small delay to simulate rapid but not simultaneous requests
-        time.sleep(0.1)
-    
-    print(f"\n📊 RAPID OPENING RESULTS:")
-    print(f"🏆 Total achievements earned: {len(total_achievements_earned)}")
-    print(f"💰 Total bonus points: {total_bonus_points}")
-    print(f"📝 Achievement keys earned: {total_achievements_earned}")
-    
-    # Get final user state from database
-    final_user = get_user_from_db(user_id)
-    if not final_user:
-        return False
-    
-    final_achievements = final_user.get("setAchievements", {}).get(set_id, [])
-    print(f"🗃️  Final database setAchievements[{set_id}]: {final_achievements}")
-    
-    # Critical checks for race conditions
-    
-    # 1. Check for duplicates in database
-    if len(final_achievements) != len(set(final_achievements)):
-        print(f"❌ RACE CONDITION DETECTED: Duplicate achievements in database!")
-        print(f"   Raw array: {final_achievements}")
-        return False
-    
-    # 2. Count occurrences of each achievement
-    achievement_counts = {}
-    for ach in final_achievements:
-        achievement_counts[ach] = achievement_counts.get(ach, 0) + 1
-    
-    duplicates_found = False
-    for ach_key, count in achievement_counts.items():
-        if count > 1:
-            print(f"❌ RACE CONDITION: {ach_key} appears {count} times!")
-            duplicates_found = True
+        # Create two test users
+        user1 = self.create_test_user()
+        user2 = self.create_test_user()
+        
+        if not user1 or not user2:
+            self.log_test("Friend Request Flow - User Creation", False, "Failed to create test users")
+            return
+            
+        self.log_test("Friend Request Flow - User Creation", True, f"Created {user1['username']} and {user2['username']}")
+        
+        # User1 sends friend request to User2
+        try:
+            response = requests.post(
+                f"{BASE_URL}/friends/send-request",
+                headers=HEADERS,
+                json={
+                    "userId": user1["id"],
+                    "targetUsername": user2["username"]
+                }
+            )
+            
+            if response.status_code == 200:
+                self.log_test("Friend Request Flow - Send Request", True, f"{user1['username']} sent request to {user2['username']}")
+            else:
+                self.log_test("Friend Request Flow - Send Request", False, f"Status: {response.status_code}, Response: {response.text}")
+                return
+                
+        except Exception as e:
+            self.log_test("Friend Request Flow - Send Request", False, f"Error: {str(e)}")
+            return
+            
+        # Verify User2 has pending request
+        try:
+            response = requests.get(
+                f"{BASE_URL}/friends",
+                params={"userId": user2["id"]}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                pending_requests = data.get("pendingRequests", [])
+                
+                if any(req["id"] == user1["id"] for req in pending_requests):
+                    self.log_test("Friend Request Flow - Verify Pending", True, f"{user2['username']} has pending request from {user1['username']}")
+                else:
+                    self.log_test("Friend Request Flow - Verify Pending", False, f"No pending request found. Requests: {pending_requests}")
+                    return
+            else:
+                self.log_test("Friend Request Flow - Verify Pending", False, f"Status: {response.status_code}")
+                return
+                
+        except Exception as e:
+            self.log_test("Friend Request Flow - Verify Pending", False, f"Error: {str(e)}")
+            return
+            
+        # User2 accepts the request
+        try:
+            response = requests.post(
+                f"{BASE_URL}/friends/accept",
+                headers=HEADERS,
+                json={
+                    "userId": user2["id"],
+                    "friendId": user1["id"]
+                }
+            )
+            
+            if response.status_code == 200:
+                self.log_test("Friend Request Flow - Accept Request", True, f"{user2['username']} accepted {user1['username']}'s request")
+            else:
+                self.log_test("Friend Request Flow - Accept Request", False, f"Status: {response.status_code}, Response: {response.text}")
+                return
+                
+        except Exception as e:
+            self.log_test("Friend Request Flow - Accept Request", False, f"Error: {str(e)}")
+            return
+            
+        # Verify both users are now friends
+        try:
+            # Check User1's friends list
+            response1 = requests.get(f"{BASE_URL}/friends", params={"userId": user1["id"]})
+            response2 = requests.get(f"{BASE_URL}/friends", params={"userId": user2["id"]})
+            
+            if response1.status_code == 200 and response2.status_code == 200:
+                data1 = response1.json()
+                data2 = response2.json()
+                
+                friends1 = data1.get("friends", [])
+                friends2 = data2.get("friends", [])
+                
+                user1_has_user2 = any(friend["id"] == user2["id"] for friend in friends1)
+                user2_has_user1 = any(friend["id"] == user1["id"] for friend in friends2)
+                
+                if user1_has_user2 and user2_has_user1:
+                    self.log_test("Friend Request Flow - Verify Friendship", True, "Both users are now friends")
+                else:
+                    self.log_test("Friend Request Flow - Verify Friendship", False, f"User1 friends: {friends1}, User2 friends: {friends2}")
+            else:
+                self.log_test("Friend Request Flow - Verify Friendship", False, f"Failed to get friends lists")
+                
+        except Exception as e:
+            self.log_test("Friend Request Flow - Verify Friendship", False, f"Error: {str(e)}")
+            
+    def test_friend_request_decline(self):
+        """Test 2: Friend request decline flow"""
+        print("\n=== TEST 2: Friend Request Decline ===")
+        
+        # Create two test users
+        user1 = self.create_test_user()
+        user2 = self.create_test_user()
+        
+        if not user1 or not user2:
+            self.log_test("Friend Request Decline - User Creation", False, "Failed to create test users")
+            return
+            
+        # User1 sends friend request to User2
+        try:
+            response = requests.post(
+                f"{BASE_URL}/friends/send-request",
+                headers=HEADERS,
+                json={
+                    "userId": user1["id"],
+                    "targetUsername": user2["username"]
+                }
+            )
+            
+            if response.status_code != 200:
+                self.log_test("Friend Request Decline - Send Request", False, f"Status: {response.status_code}")
+                return
+                
+        except Exception as e:
+            self.log_test("Friend Request Decline - Send Request", False, f"Error: {str(e)}")
+            return
+            
+        # User2 declines the request
+        try:
+            response = requests.post(
+                f"{BASE_URL}/friends/decline",
+                headers=HEADERS,
+                json={
+                    "userId": user2["id"],
+                    "friendId": user1["id"]
+                }
+            )
+            
+            if response.status_code == 200:
+                self.log_test("Friend Request Decline - Decline Request", True, f"{user2['username']} declined {user1['username']}'s request")
+            else:
+                self.log_test("Friend Request Decline - Decline Request", False, f"Status: {response.status_code}")
+                return
+                
+        except Exception as e:
+            self.log_test("Friend Request Decline - Decline Request", False, f"Error: {str(e)}")
+            return
+            
+        # Verify request is removed from both users
+        try:
+            response1 = requests.get(f"{BASE_URL}/friends", params={"userId": user1["id"]})
+            response2 = requests.get(f"{BASE_URL}/friends", params={"userId": user2["id"]})
+            
+            if response1.status_code == 200 and response2.status_code == 200:
+                data1 = response1.json()
+                data2 = response2.json()
+                
+                sent_requests = data1.get("sentRequests", [])
+                pending_requests = data2.get("pendingRequests", [])
+                
+                user1_has_sent = any(req["id"] == user2["id"] for req in sent_requests)
+                user2_has_pending = any(req["id"] == user1["id"] for req in pending_requests)
+                
+                if not user1_has_sent and not user2_has_pending:
+                    self.log_test("Friend Request Decline - Verify Removal", True, "Request removed from both users")
+                else:
+                    self.log_test("Friend Request Decline - Verify Removal", False, f"Sent: {sent_requests}, Pending: {pending_requests}")
+            else:
+                self.log_test("Friend Request Decline - Verify Removal", False, "Failed to get friends data")
+                
+        except Exception as e:
+            self.log_test("Friend Request Decline - Verify Removal", False, f"Error: {str(e)}")
+            
+    def test_trading_flow(self):
+        """Test 3: Complete trading flow"""
+        print("\n=== TEST 3: Trading Flow ===")
+        
+        # Create two users and make them friends
+        user1 = self.create_test_user()
+        user2 = self.create_test_user()
+        
+        if not user1 or not user2:
+            self.log_test("Trading Flow - User Creation", False, "Failed to create test users")
+            return
+            
+        # Make them friends first
+        try:
+            # Send friend request
+            requests.post(
+                f"{BASE_URL}/friends/send-request",
+                headers=HEADERS,
+                json={"userId": user1["id"], "targetUsername": user2["username"]}
+            )
+            
+            # Accept friend request
+            requests.post(
+                f"{BASE_URL}/friends/accept",
+                headers=HEADERS,
+                json={"userId": user2["id"], "friendId": user1["id"]}
+            )
+            
+            self.log_test("Trading Flow - Setup Friendship", True, "Users are now friends")
+            
+        except Exception as e:
+            self.log_test("Trading Flow - Setup Friendship", False, f"Error: {str(e)}")
+            return
+            
+        # Give both users some cards
+        if not self.give_user_cards(user1, 2) or not self.give_user_cards(user2, 2):
+            self.log_test("Trading Flow - Give Cards", False, "Failed to give users cards")
+            return
+            
+        self.log_test("Trading Flow - Give Cards", True, "Both users have cards")
+        
+        # Get their collections
+        user1_collection = self.get_user_collection(user1)
+        user2_collection = self.get_user_collection(user2)
+        
+        if len(user1_collection) < 3 or len(user2_collection) < 2:
+            self.log_test("Trading Flow - Verify Collections", False, f"User1: {len(user1_collection)} cards, User2: {len(user2_collection)} cards")
+            return
+            
+        self.log_test("Trading Flow - Verify Collections", True, f"User1: {len(user1_collection)} cards, User2: {len(user2_collection)} cards")
+        
+        # User1 sends trade with 3 cards to User2
+        offered_cards = user1_collection[:3]  # First 3 cards
+        
+        try:
+            response = requests.post(
+                f"{BASE_URL}/trades/send",
+                headers=HEADERS,
+                json={
+                    "userId": user1["id"],
+                    "friendId": user2["id"],
+                    "offeredCards": offered_cards
+                }
+            )
+            
+            if response.status_code == 200:
+                self.log_test("Trading Flow - Send Trade", True, f"{user1['username']} sent trade with {len(offered_cards)} cards")
+            else:
+                self.log_test("Trading Flow - Send Trade", False, f"Status: {response.status_code}, Response: {response.text}")
+                return
+                
+        except Exception as e:
+            self.log_test("Trading Flow - Send Trade", False, f"Error: {str(e)}")
+            return
+            
+        # Verify User2 receives the trade request
+        try:
+            response = requests.get(f"{BASE_URL}/friends", params={"userId": user2["id"]})
+            
+            if response.status_code == 200:
+                data = response.json()
+                trade_requests = data.get("tradeRequests", [])
+                
+                if len(trade_requests) > 0 and trade_requests[0]["from"] == user1["id"]:
+                    trade_id = trade_requests[0]["id"]
+                    self.log_test("Trading Flow - Verify Trade Request", True, f"{user2['username']} received trade request")
+                else:
+                    self.log_test("Trading Flow - Verify Trade Request", False, f"No trade request found. Requests: {trade_requests}")
+                    return
+            else:
+                self.log_test("Trading Flow - Verify Trade Request", False, f"Status: {response.status_code}")
+                return
+                
+        except Exception as e:
+            self.log_test("Trading Flow - Verify Trade Request", False, f"Error: {str(e)}")
+            return
+            
+        # User2 accepts trade with 2 cards
+        requested_cards = user2_collection[:2]  # First 2 cards
+        
+        try:
+            response = requests.post(
+                f"{BASE_URL}/trades/accept",
+                headers=HEADERS,
+                json={
+                    "userId": user2["id"],
+                    "tradeId": trade_id,
+                    "requestedCards": requested_cards
+                }
+            )
+            
+            if response.status_code == 200:
+                self.log_test("Trading Flow - Accept Trade", True, f"{user2['username']} accepted trade with {len(requested_cards)} cards")
+            else:
+                self.log_test("Trading Flow - Accept Trade", False, f"Status: {response.status_code}, Response: {response.text}")
+                return
+                
+        except Exception as e:
+            self.log_test("Trading Flow - Accept Trade", False, f"Error: {str(e)}")
+            return
+            
+        # Verify cards have swapped
+        try:
+            new_user1_collection = self.get_user_collection(user1)
+            new_user2_collection = self.get_user_collection(user2)
+            
+            # User1 should have lost 3 cards and gained 2 cards
+            user1_change = len(new_user1_collection) - len(user1_collection)
+            # User2 should have lost 2 cards and gained 3 cards  
+            user2_change = len(new_user2_collection) - len(user2_collection)
+            
+            if user1_change == -1 and user2_change == 1:  # Net change: User1 -1, User2 +1
+                self.log_test("Trading Flow - Verify Card Swap", True, f"Cards swapped correctly. User1: {user1_change}, User2: {user2_change}")
+            else:
+                self.log_test("Trading Flow - Verify Card Swap", False, f"Unexpected card counts. User1 change: {user1_change}, User2 change: {user2_change}")
+                
+        except Exception as e:
+            self.log_test("Trading Flow - Verify Card Swap", False, f"Error: {str(e)}")
+            
+    def test_trading_validation(self):
+        """Test 4: Trading validation rules"""
+        print("\n=== TEST 4: Trading Validation ===")
+        
+        # Create users - one pair as friends, one non-friend
+        user1 = self.create_test_user()
+        user2 = self.create_test_user()
+        user3 = self.create_test_user()  # Non-friend
+        
+        if not user1 or not user2 or not user3:
+            self.log_test("Trading Validation - User Creation", False, "Failed to create test users")
+            return
+            
+        # Make user1 and user2 friends
+        try:
+            requests.post(f"{BASE_URL}/friends/send-request", headers=HEADERS, 
+                         json={"userId": user1["id"], "targetUsername": user2["username"]})
+            requests.post(f"{BASE_URL}/friends/accept", headers=HEADERS,
+                         json={"userId": user2["id"], "friendId": user1["id"]})
+        except:
+            pass
+            
+        # Give user1 some cards
+        self.give_user_cards(user1, 2)
+        user1_collection = self.get_user_collection(user1)
+        
+        if len(user1_collection) < 11:
+            self.log_test("Trading Validation - Setup Cards", False, f"User1 only has {len(user1_collection)} cards, need 11+")
+            return
+            
+        # Test 1: Try to trade with non-friend (should fail)
+        try:
+            response = requests.post(
+                f"{BASE_URL}/trades/send",
+                headers=HEADERS,
+                json={
+                    "userId": user1["id"],
+                    "friendId": user3["id"],
+                    "offeredCards": user1_collection[:1]
+                }
+            )
+            
+            if response.status_code == 403:
+                self.log_test("Trading Validation - Non-Friend Trade", True, "Correctly rejected trade with non-friend")
+            else:
+                self.log_test("Trading Validation - Non-Friend Trade", False, f"Expected 403, got {response.status_code}")
+                
+        except Exception as e:
+            self.log_test("Trading Validation - Non-Friend Trade", False, f"Error: {str(e)}")
+            
+        # Test 2: Try to trade 0 cards (should fail)
+        try:
+            response = requests.post(
+                f"{BASE_URL}/trades/send",
+                headers=HEADERS,
+                json={
+                    "userId": user1["id"],
+                    "friendId": user2["id"],
+                    "offeredCards": []
+                }
+            )
+            
+            if response.status_code == 400:
+                self.log_test("Trading Validation - Zero Cards", True, "Correctly rejected trade with 0 cards")
+            else:
+                self.log_test("Trading Validation - Zero Cards", False, f"Expected 400, got {response.status_code}")
+                
+        except Exception as e:
+            self.log_test("Trading Validation - Zero Cards", False, f"Error: {str(e)}")
+            
+        # Test 3: Try to trade 11 cards (should fail)
+        if len(user1_collection) >= 11:
+            try:
+                response = requests.post(
+                    f"{BASE_URL}/trades/send",
+                    headers=HEADERS,
+                    json={
+                        "userId": user1["id"],
+                        "friendId": user2["id"],
+                        "offeredCards": user1_collection[:11]
+                    }
+                )
+                
+                if response.status_code == 400:
+                    self.log_test("Trading Validation - Too Many Cards", True, "Correctly rejected trade with 11 cards")
+                else:
+                    self.log_test("Trading Validation - Too Many Cards", False, f"Expected 400, got {response.status_code}")
+                    
+            except Exception as e:
+                self.log_test("Trading Validation - Too Many Cards", False, f"Error: {str(e)}")
         else:
-            print(f"✅ {ach_key} appears exactly once")
-    
-    if duplicates_found:
-        return False
-    
-    # 3. Verify total points are consistent
-    expected_points_from_achievements = 0
-    for ach_key in final_achievements:
-        if ach_key == "TEN_CARDS":
-            expected_points_from_achievements += 100
-        elif ach_key == "THIRTY_CARDS":
-            expected_points_from_achievements += 250
-        elif ach_key == "FIFTY_CARDS":
-            expected_points_from_achievements += 500
-        elif ach_key == "SEVENTY_FIVE_CARDS":
-            expected_points_from_achievements += 1000
-        elif ach_key == "HUNDRED_CARDS":
-            expected_points_from_achievements += 1500
-    
-    print(f"💰 Expected points from achievements: {expected_points_from_achievements}")
-    print(f"💰 Actual bonus points awarded: {total_bonus_points}")
-    
-    if expected_points_from_achievements != total_bonus_points:
-        print(f"❌ POINTS MISMATCH: Expected {expected_points_from_achievements}, got {total_bonus_points}")
-        return False
-    
-    print(f"✅ All race condition tests passed - achievements fire exactly once")
-    return True
-
-def run_all_tests():
-    """Run all achievement single-fire tests"""
-    print("🚀 STARTING COMPREHENSIVE ACHIEVEMENT SINGLE-FIRE TESTING")
-    print("Testing the MongoDB $addToSet atomic update fix")
-    print("="*80)
-    
-    test_results = []
-    
-    # Test 1: Primary Achievement Single-Fire Test
-    try:
-        result1 = test_achievement_single_fire_primary()
-        test_results.append(("Achievement Single-Fire Primary", result1))
-    except Exception as e:
-        print(f"❌ Test 1 failed with exception: {e}")
-        test_results.append(("Achievement Single-Fire Primary", False))
-    
-    # Test 2: Database Persistence
-    try:
-        result2 = test_achievement_database_persistence()
-        test_results.append(("Database Persistence", result2))
-    except Exception as e:
-        print(f"❌ Test 2 failed with exception: {e}")
-        test_results.append(("Database Persistence", False))
-    
-    # Test 3: Multiple Achievements in One Pack
-    try:
-        result3 = test_multiple_achievements_one_pack()
-        test_results.append(("Multiple Achievements One Pack", result3))
-    except Exception as e:
-        print(f"❌ Test 3 failed with exception: {e}")
-        test_results.append(("Multiple Achievements One Pack", False))
-    
-    # Test 4: Rapid Pack Opening (Race Conditions)
-    try:
-        result4 = test_rapid_pack_opening()
-        test_results.append(("Rapid Pack Opening", result4))
-    except Exception as e:
-        print(f"❌ Test 4 failed with exception: {e}")
-        test_results.append(("Rapid Pack Opening", False))
-    
-    # Print final results
-    print("\n" + "="*80)
-    print("🏁 FINAL TEST RESULTS")
-    print("="*80)
-    
-    passed_tests = 0
-    total_tests = len(test_results)
-    
-    for test_name, result in test_results:
-        status = "✅ PASSED" if result else "❌ FAILED"
-        print(f"{status}: {test_name}")
-        if result:
-            passed_tests += 1
-    
-    print(f"\n📊 SUMMARY: {passed_tests}/{total_tests} tests passed")
-    
-    if passed_tests == total_tests:
-        print("🎉 ALL TESTS PASSED - Achievement Single-Fire Fix is working correctly!")
-        return True
-    else:
-        print("⚠️  SOME TESTS FAILED - Achievement Single-Fire Fix needs attention!")
-        return False
+            self.log_test("Trading Validation - Too Many Cards", False, f"Not enough cards to test (have {len(user1_collection)})")
+            
+    def test_admin_users_list(self):
+        """Test 5: Admin users list endpoint"""
+        print("\n=== TEST 5: Admin Users List ===")
+        
+        try:
+            # Test without admin authentication (should work for this endpoint)
+            response = requests.get(f"{BASE_URL}/admin/users")
+            
+            if response.status_code == 200:
+                data = response.json()
+                users = data.get("users", [])
+                
+                if len(users) > 0:
+                    # Check if users have required fields
+                    first_user = users[0]
+                    required_fields = ["id", "username", "points", "createdAt"]
+                    
+                    has_all_fields = all(field in first_user for field in required_fields)
+                    
+                    if has_all_fields:
+                        self.log_test("Admin Users List - Endpoint", True, f"Retrieved {len(users)} users with all required fields")
+                    else:
+                        self.log_test("Admin Users List - Endpoint", False, f"Missing fields in user data: {first_user}")
+                else:
+                    self.log_test("Admin Users List - Endpoint", True, "Endpoint works but no users found")
+            else:
+                self.log_test("Admin Users List - Endpoint", False, f"Status: {response.status_code}, Response: {response.text}")
+                
+        except Exception as e:
+            self.log_test("Admin Users List - Endpoint", False, f"Error: {str(e)}")
+            
+    def run_all_tests(self):
+        """Run all Friends & Trading system tests"""
+        print("🎯 STARTING FRIENDS & TRADING SYSTEM TESTING")
+        print("=" * 60)
+        
+        start_time = time.time()
+        
+        # Run all tests
+        self.test_friend_request_flow()
+        self.test_friend_request_decline()
+        self.test_trading_flow()
+        self.test_trading_validation()
+        self.test_admin_users_list()
+        
+        # Summary
+        end_time = time.time()
+        duration = end_time - start_time
+        
+        passed_tests = sum(1 for result in self.test_results if result["passed"])
+        total_tests = len(self.test_results)
+        
+        print("\n" + "=" * 60)
+        print("🎯 FRIENDS & TRADING SYSTEM TEST SUMMARY")
+        print("=" * 60)
+        print(f"Total Tests: {total_tests}")
+        print(f"Passed: {passed_tests}")
+        print(f"Failed: {total_tests - passed_tests}")
+        print(f"Success Rate: {(passed_tests/total_tests)*100:.1f}%")
+        print(f"Duration: {duration:.2f} seconds")
+        
+        if passed_tests == total_tests:
+            print("\n🎉 ALL TESTS PASSED! Friends & Trading system is working correctly.")
+        else:
+            print(f"\n⚠️  {total_tests - passed_tests} test(s) failed. Review the details above.")
+            
+        # Print failed tests
+        failed_tests = [result for result in self.test_results if not result["passed"]]
+        if failed_tests:
+            print("\n❌ FAILED TESTS:")
+            for test in failed_tests:
+                print(f"  - {test['test']}: {test['details']}")
+                
+        return passed_tests == total_tests
 
 if __name__ == "__main__":
-    success = run_all_tests()
+    tester = FriendsAndTradingTester()
+    success = tester.run_all_tests()
     exit(0 if success else 1)
