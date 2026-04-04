@@ -316,6 +316,46 @@ export default function App() {
     setSets([]);
   };
 
+  // Admin command console state
+  const [adminTargetUser, setAdminTargetUser] = useState('');
+  const [adminPointAmount, setAdminPointAmount] = useState('');
+  const [adminMessage, setAdminMessage] = useState('');
+
+  const handleSendPoints = async (e) => {
+    e.preventDefault();
+    setAdminMessage('');
+    
+    const points = parseInt(adminPointAmount);
+    if (isNaN(points) || points <= 0) {
+      setAdminMessage('Please enter a valid point amount');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/admin/send-points', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          adminId: user.id, 
+          targetUsername: adminTargetUser, 
+          points: points 
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setAdminMessage(`✅ Successfully sent ${points} points to ${adminTargetUser}`);
+        setAdminTargetUser('');
+        setAdminPointAmount('');
+      } else {
+        setAdminMessage(`❌ Error: ${data.error}`);
+      }
+    } catch (err) {
+      setAdminMessage('❌ An error occurred. Please try again.');
+    }
+  };
+
   const handleOpenPack = async (set, bulk = false) => {
     setSelectedSet(set);
     setOpeningPack(true);
@@ -538,6 +578,51 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {/* Admin Command Console (Only for Spheal) */}
+      {user.username === 'Spheal' && (
+        <div className="container mx-auto px-4 py-4 relative z-10">
+          <div className="bg-gradient-to-r from-purple-900/50 via-purple-800/50 to-purple-900/50 backdrop-blur-sm border-2 border-purple-500/50 rounded-lg p-4 shadow-[0_0_30px_rgba(168,85,247,0.3)]">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="h-5 w-5 text-purple-400" />
+              <h3 className="text-lg font-bold text-purple-300">Admin Command Console</h3>
+            </div>
+            <form onSubmit={handleSendPoints} className="flex flex-col md:flex-row gap-3">
+              <div className="flex-1">
+                <Input
+                  placeholder="Username"
+                  value={adminTargetUser}
+                  onChange={(e) => setAdminTargetUser(e.target.value)}
+                  className="border-2 border-purple-500/30 bg-slate-800/50 text-white placeholder:text-slate-400 font-medium focus:border-purple-500"
+                  required
+                />
+              </div>
+              <div className="flex-1">
+                <Input
+                  type="number"
+                  placeholder="Points Amount"
+                  value={adminPointAmount}
+                  onChange={(e) => setAdminPointAmount(e.target.value)}
+                  className="border-2 border-purple-500/30 bg-slate-800/50 text-white placeholder:text-slate-400 font-medium focus:border-purple-500"
+                  required
+                />
+              </div>
+              <Button 
+                type="submit"
+                className="bg-purple-500 text-white hover:bg-purple-400 border-2 border-purple-400 font-bold shadow-[0_0_20px_rgba(168,85,247,0.5)] hover:shadow-[0_0_30px_rgba(168,85,247,0.8)] transition-all"
+              >
+                <Coins className="h-4 w-4 mr-2" />
+                Send Points
+              </Button>
+            </form>
+            {adminMessage && (
+              <p className={`mt-3 text-sm font-medium ${adminMessage.includes('✅') ? 'text-green-400' : 'text-red-400'}`}>
+                {adminMessage}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Navigation */}
       <div className="container mx-auto px-4 py-6 relative z-10">

@@ -620,6 +620,44 @@ export async function POST(request) {
       });
     }
 
+    // Admin: Send points to user (Spheal only)
+    if (pathname.includes('/api/admin/send-points')) {
+      const { adminId, targetUsername, points } = body;
+      
+      if (!adminId || !targetUsername || !points) {
+        return NextResponse.json({ error: 'Admin ID, target username, and points required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      
+      // Verify admin is Spheal
+      const admin = await database.collection('users').findOne({ id: adminId });
+      if (!admin || admin.username !== 'Spheal') {
+        return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
+      }
+
+      // Find target user
+      const targetUser = await database.collection('users').findOne({ 
+        username: { $regex: new RegExp(`^${targetUsername}$`, 'i') } 
+      });
+
+      if (!targetUser) {
+        return NextResponse.json({ error: `User '${targetUsername}' not found` }, { status: 404 });
+      }
+
+      // Add points to target user
+      await database.collection('users').updateOne(
+        { id: targetUser.id },
+        { $inc: { points: points } }
+      );
+
+      return NextResponse.json({ 
+        success: true, 
+        message: `Successfully sent ${points} points to ${targetUser.username}`,
+        newBalance: targetUser.points + points
+      });
+    }
+
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (error) {
     console.error('POST Error:', error);
