@@ -1341,8 +1341,7 @@ export default function App() {
                         {friends.map((friend) => (
                           <div 
                             key={friend.id} 
-                            className="flex items-center justify-between p-2 bg-slate-700/50 rounded hover:bg-slate-600/50 transition-colors cursor-pointer"
-                            onClick={() => handleViewFriendProfile(friend)}
+                            className="flex items-center justify-between p-2 bg-slate-700/50 rounded"
                           >
                             <div className="flex items-center gap-2">
                               <Users className="h-4 w-4 text-cyan-400" />
@@ -1351,16 +1350,23 @@ export default function App() {
                                 <p className="text-xs text-cyan-400">{friend.tradesCompleted || 0} trades completed</p>
                               </div>
                             </div>
-                            <Button
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenTradeModal(friend);
-                              }}
-                              className="bg-purple-500 text-white hover:bg-purple-400"
-                            >
-                              Trade
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                onClick={() => handleViewFriendProfile(friend)}
+                                className="bg-cyan-500 text-black hover:bg-cyan-400 text-xs"
+                              >
+                                <Eye className="h-3 w-3 mr-1" />
+                                View
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleOpenTradeModal(friend)}
+                                className="bg-purple-500 text-white hover:bg-purple-400 text-xs"
+                              >
+                                Trade
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>
