@@ -320,6 +320,7 @@ export default function App() {
   const [adminTargetUser, setAdminTargetUser] = useState('');
   const [adminPointAmount, setAdminPointAmount] = useState('');
   const [adminMessage, setAdminMessage] = useState('');
+  const [adminRemoveUser, setAdminRemoveUser] = useState('');
 
   const handleSendPoints = async (e) => {
     e.preventDefault();
@@ -348,6 +349,43 @@ export default function App() {
         setAdminMessage(`✅ Successfully sent ${points} points to ${adminTargetUser}`);
         setAdminTargetUser('');
         setAdminPointAmount('');
+      } else {
+        setAdminMessage(`❌ Error: ${data.error}`);
+      }
+    } catch (err) {
+      setAdminMessage('❌ An error occurred. Please try again.');
+    }
+  };
+
+  const handleRemoveCollection = async (e) => {
+    e.preventDefault();
+    setAdminMessage('');
+    
+    if (!adminRemoveUser) {
+      setAdminMessage('Please enter a username');
+      return;
+    }
+
+    // Confirmation
+    if (!window.confirm(`Are you sure you want to DELETE the entire collection for user "${adminRemoveUser}"? This cannot be undone!`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/admin/remove-collection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          adminId: user.id, 
+          targetUsername: adminRemoveUser
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setAdminMessage(`✅ Successfully removed collection for ${adminRemoveUser}`);
+        setAdminRemoveUser('');
       } else {
         setAdminMessage(`❌ Error: ${data.error}`);
       }
@@ -587,34 +625,63 @@ export default function App() {
               <Sparkles className="h-5 w-5 text-purple-400" />
               <h3 className="text-lg font-bold text-purple-300">Admin Command Console</h3>
             </div>
-            <form onSubmit={handleSendPoints} className="flex flex-col md:flex-row gap-3">
-              <div className="flex-1">
-                <Input
-                  placeholder="Username"
-                  value={adminTargetUser}
-                  onChange={(e) => setAdminTargetUser(e.target.value)}
-                  className="border-2 border-purple-500/30 bg-slate-800/50 text-white placeholder:text-slate-400 font-medium focus:border-purple-500"
-                  required
-                />
-              </div>
-              <div className="flex-1">
-                <Input
-                  type="number"
-                  placeholder="Points Amount"
-                  value={adminPointAmount}
-                  onChange={(e) => setAdminPointAmount(e.target.value)}
-                  className="border-2 border-purple-500/30 bg-slate-800/50 text-white placeholder:text-slate-400 font-medium focus:border-purple-500"
-                  required
-                />
-              </div>
-              <Button 
-                type="submit"
-                className="bg-purple-500 text-white hover:bg-purple-400 border-2 border-purple-400 font-bold shadow-[0_0_20px_rgba(168,85,247,0.5)] hover:shadow-[0_0_30px_rgba(168,85,247,0.8)] transition-all"
-              >
-                <Coins className="h-4 w-4 mr-2" />
-                Send Points
-              </Button>
-            </form>
+            
+            {/* Send Points Command */}
+            <div className="mb-4">
+              <h4 className="text-sm font-semibold text-purple-200 mb-2">💰 Send Points</h4>
+              <form onSubmit={handleSendPoints} className="flex flex-col md:flex-row gap-3">
+                <div className="flex-1">
+                  <Input
+                    placeholder="Username"
+                    value={adminTargetUser}
+                    onChange={(e) => setAdminTargetUser(e.target.value)}
+                    className="border-2 border-purple-500/30 bg-slate-800/50 text-white placeholder:text-slate-400 font-medium focus:border-purple-500"
+                    required
+                  />
+                </div>
+                <div className="flex-1">
+                  <Input
+                    type="number"
+                    placeholder="Points Amount"
+                    value={adminPointAmount}
+                    onChange={(e) => setAdminPointAmount(e.target.value)}
+                    className="border-2 border-purple-500/30 bg-slate-800/50 text-white placeholder:text-slate-400 font-medium focus:border-purple-500"
+                    required
+                  />
+                </div>
+                <Button 
+                  type="submit"
+                  className="bg-purple-500 text-white hover:bg-purple-400 border-2 border-purple-400 font-bold shadow-[0_0_20px_rgba(168,85,247,0.5)] hover:shadow-[0_0_30px_rgba(168,85,247,0.8)] transition-all"
+                >
+                  <Coins className="h-4 w-4 mr-2" />
+                  Send Points
+                </Button>
+              </form>
+            </div>
+
+            {/* Remove Collection Command */}
+            <div className="border-t border-purple-500/30 pt-4">
+              <h4 className="text-sm font-semibold text-purple-200 mb-2">🗑️ Remove Collection</h4>
+              <form onSubmit={handleRemoveCollection} className="flex flex-col md:flex-row gap-3">
+                <div className="flex-1">
+                  <Input
+                    placeholder="Username"
+                    value={adminRemoveUser}
+                    onChange={(e) => setAdminRemoveUser(e.target.value)}
+                    className="border-2 border-red-500/30 bg-slate-800/50 text-white placeholder:text-slate-400 font-medium focus:border-red-500"
+                    required
+                  />
+                </div>
+                <Button 
+                  type="submit"
+                  className="bg-red-500 text-white hover:bg-red-400 border-2 border-red-400 font-bold shadow-[0_0_20px_rgba(239,68,68,0.5)] hover:shadow-[0_0_30px_rgba(239,68,68,0.8)] transition-all"
+                >
+                  <Library className="h-4 w-4 mr-2" />
+                  Remove Collection
+                </Button>
+              </form>
+            </div>
+
             {adminMessage && (
               <p className={`mt-3 text-sm font-medium ${adminMessage.includes('✅') ? 'text-green-400' : 'text-red-400'}`}>
                 {adminMessage}
