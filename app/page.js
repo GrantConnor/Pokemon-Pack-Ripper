@@ -367,6 +367,7 @@ export default function App() {
     setTradeFriend(friend);
     setSelectedTradeCards([]);
     setSelectedResponseCards([]);
+    setShowTradeModal(true); // Open modal first
     
     // Load friend's collection
     try {
@@ -375,9 +376,8 @@ export default function App() {
       setTradeFriend({ ...friend, collection: data.collection || [] });
     } catch (err) {
       console.error('Error loading friend collection:', err);
+      setTradeFriend({ ...friend, collection: [] });
     }
-    
-    setShowTradeModal(true);
   };
 
   const toggleTradeCard = (card) => {
@@ -1468,7 +1468,10 @@ export default function App() {
                             <div className="flex gap-1">
                               <Button
                                 size="sm"
-                                onClick={() => handleViewFriendProfile(friend)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleViewFriendProfile(friend);
+                                }}
                                 className="bg-cyan-500 text-black hover:bg-cyan-400 text-xs"
                               >
                                 <Eye className="h-3 w-3 mr-1" />
@@ -1476,7 +1479,10 @@ export default function App() {
                               </Button>
                               <Button
                                 size="sm"
-                                onClick={() => handleOpenTradeModal(friend)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenTradeModal(friend);
+                                }}
                                 className="bg-purple-500 text-white hover:bg-purple-400 text-xs"
                               >
                                 Trade
@@ -1815,7 +1821,14 @@ export default function App() {
               </div>
 
               <ScrollArea className="h-96 border-2 border-cyan-500/30 rounded p-2 bg-slate-800/30">
-                {tradeFriend?.collection && tradeFriend.collection.length > 0 ? (
+                {!tradeFriend?.collection ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-400 mx-auto mb-2"></div>
+                      <p className="text-cyan-100/70">Loading collection...</p>
+                    </div>
+                  </div>
+                ) : tradeFriend.collection.length > 0 ? (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                     {tradeFriend.collection
                       .filter(card => !tradeSearchWant || card.name.toLowerCase().includes(tradeSearchWant.toLowerCase()))
@@ -1844,7 +1857,7 @@ export default function App() {
                       })}
                   </div>
                 ) : (
-                  <p className="text-center text-cyan-100/50 py-8">Loading collection...</p>
+                  <p className="text-center text-cyan-100/50 py-8">No cards in collection</p>
                 )}
               </ScrollArea>
             </div>
