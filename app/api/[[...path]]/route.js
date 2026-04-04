@@ -181,8 +181,10 @@ function openPack(cards) {
   const doubleRares = nonEnergyCards.filter(c => c.rarity && (c.rarity.includes('Double Rare') || c.rarity.toLowerCase().includes(' ex')));
   const illustrationRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Illustration Rare') && !c.rarity.includes('Special'));
   const ultraRares = nonEnergyCards.filter(c => c.rarity && (c.rarity.includes('Ultra Rare') || c.rarity.includes('Rare Ultra')));
+  const rainbowRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Rare Rainbow'));
   const specialIllustrationRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Special Illustration Rare'));
-  const hyperRares = nonEnergyCards.filter(c => c.rarity && (c.rarity.includes('Hyper Rare') || c.rarity.includes('Rare Secret') || c.rarity.includes('Secret Rare')));
+  const hyperRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Hyper Rare'));
+  const secretRares = nonEnergyCards.filter(c => c.rarity && (c.rarity.includes('Rare Secret') || c.rarity.includes('Secret Rare')));
 
   const pulledCards = [];
   const pulledCardIds = new Set(); // Track pulled card IDs to prevent duplicates
@@ -218,22 +220,32 @@ function openPack(cards) {
         const card = getUniqueCard(hyperRares);
         if (card) return card;
       }
+      // Secret Rare: 5% of upgrades (0.5% overall) - SAME AS HYPER RARE
+      else if (specialRoll < 10 && secretRares.length > 0) {
+        const card = getUniqueCard(secretRares);
+        if (card) return card;
+      }
       // Special Illustration Rare: 10% of upgrades (1% overall)
-      else if (specialRoll < 15 && specialIllustrationRares.length > 0) {
+      else if (specialRoll < 20 && specialIllustrationRares.length > 0) {
         const card = getUniqueCard(specialIllustrationRares);
         if (card) return card;
       }
       // Ultra Rare: 20% of upgrades (2% overall)
-      else if (specialRoll < 35 && ultraRares.length > 0) {
+      else if (specialRoll < 40 && ultraRares.length > 0) {
         const card = getUniqueCard(ultraRares);
         if (card) return card;
       }
-      // Illustration Rare: 30% of upgrades (3% overall)
-      else if (specialRoll < 65 && illustrationRares.length > 0) {
+      // Rainbow Rare: 20% of upgrades (2% overall) - SAME AS ULTRA RARE
+      else if (specialRoll < 60 && rainbowRares.length > 0) {
+        const card = getUniqueCard(rainbowRares);
+        if (card) return card;
+      }
+      // Illustration Rare: 20% of upgrades (2% overall)
+      else if (specialRoll < 80 && illustrationRares.length > 0) {
         const card = getUniqueCard(illustrationRares);
         if (card) return card;
       }
-      // Double Rare: 35% of upgrades (3.5% overall)
+      // Double Rare: 20% of upgrades (2% overall)
       else if (specialRoll < 100 && doubleRares.length > 0) {
         const card = getUniqueCard(doubleRares);
         if (card) return card;
@@ -660,20 +672,40 @@ export async function POST(request) {
 
       // Open packs
       let allPulledCards = [];
+      let individualPacks = []; // Track each pack separately for bulk openings
+      
       for (let i = 0; i < packCount; i++) {
         const pulledCards = openPack(allCards);
         allPulledCards = [...allPulledCards, ...pulledCards];
+        
+        if (bulk) {
+          // Store each pack separately with pack number
+          individualPacks.push({
+            packNumber: i + 1,
+            cards: pulledCards
+          });
+        }
       }
 
       // Deduct points and save to user's collection
       const newPoints = user.username === 'Spheal' ? 999999 : user.points - totalCost;
       
-      // Add pulledAt timestamp and packId to cards for both response and database
-      const cardsWithTimestamp = allPulledCards.map(card => ({
+      // Add pulledAt timestamp to cards for both response and database
+      const cardsWithTimestamp = allPulledCards.map((card, index) => ({
         ...card,
         pulledAt: new Date().toISOString(),
-        packId: uuidv4()
+        packNumber: bulk ? Math.floor(index / 10) + 1 : 1 // Assign pack number
       }));
+      
+      // Prepare individual packs with timestamps for response
+      const packsWithTimestamps = bulk ? individualPacks.map(pack => ({
+        packNumber: pack.packNumber,
+        cards: pack.cards.map(card => ({
+          ...card,
+          pulledAt: new Date().toISOString(),
+          packNumber: pack.packNumber
+        }))
+      })) : null;
       
       await database.collection('users').updateOne(
         { id: userId },
@@ -704,6 +736,8 @@ export async function POST(request) {
       return NextResponse.json({ 
         success: true, 
         cards: cardsWithTimestamp,
+        packs: packsWithTimestamps, // Include individual packs for bulk openings
+        isBulk: bulk,
         pointsRemaining: user.points,
         achievements: achievementResult.newAchievements.length > 0 ? achievementResult : null
       });

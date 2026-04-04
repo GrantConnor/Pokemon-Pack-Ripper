@@ -224,6 +224,7 @@ export default function App() {
         'Illustration Rare': 6,
         'Ultra Rare': 7,
         'Rare Ultra': 7,
+        'Rare Rainbow': 7,
         'Special Illustration Rare': 8,
         'Hyper Rare': 9,
         'Rare Secret': 9,
@@ -657,12 +658,26 @@ export default function App() {
         setTimeout(() => {
           // Mark cards as new if not already owned
           const ownedCardIds = new Set(collection.map(c => c.id));
-          const cardsWithNewFlag = data.cards.map(card => ({
-            ...card,
-            isNewCard: !ownedCardIds.has(card.id)
-          }));
           
-          setPulledCards(cardsWithNewFlag);
+          if (data.isBulk && data.packs) {
+            // For bulk openings, store individual packs
+            const packsWithNewFlags = data.packs.map(pack => ({
+              ...pack,
+              cards: pack.cards.map(card => ({
+                ...card,
+                isNewCard: !ownedCardIds.has(card.id)
+              }))
+            }));
+            setPulledCards(packsWithNewFlags); // Store array of packs
+          } else {
+            // For single pack, mark cards as new
+            const cardsWithNewFlag = data.cards.map(card => ({
+              ...card,
+              isNewCard: !ownedCardIds.has(card.id)
+            }));
+            setPulledCards([{ packNumber: 1, cards: cardsWithNewFlag }]); // Wrap in pack structure
+          }
+          
           setShowPackAnimation(false);
           setUser(prev => ({ ...prev, points: data.pointsRemaining }));
           
@@ -1447,40 +1462,54 @@ export default function App() {
 
       {/* Pack Results Dialog */}
       <Dialog open={pulledCards.length > 0} onOpenChange={closePackResults}>
-        <DialogContent className="max-w-4xl max-h-[90vh] border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_60px_rgba(6,182,212,0.6)]">
+        <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_60px_rgba(6,182,212,0.6)]">
           <DialogHeader>
             <DialogTitle className="text-center text-2xl font-bold text-white bg-gradient-to-r from-cyan-500/20 to-transparent py-3 -mx-6 -mt-6 mb-4 border-b-4 border-cyan-500/50 drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]">
-              You pulled these cards!
+              {pulledCards.length > 1 ? `Opened ${pulledCards.length} Packs!` : 'You pulled these cards!'}
             </DialogTitle>
           </DialogHeader>
           <ScrollArea className="max-h-[70vh]">
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4">
-              {pulledCards.map((card, index) => (
-                <div key={index} className="relative animate-in fade-in zoom-in duration-500" style={{ animationDelay: `${index * 100}ms` }}>
-                  <Card className="overflow-hidden border-2 border-cyan-500/30 bg-slate-800/50 backdrop-blur-sm hover:border-cyan-500 hover:shadow-[0_0_20px_rgba(6,182,212,0.5)] transition-all">
-                    <div className="relative">
-                      <img
-                        src={card.images?.large || card.images?.small || '/placeholder.png'}
-                        alt={card.name}
-                        className="w-full h-auto"
-                      />
-                      {/* NEW Badge only on cards not already owned */}
-                      {card.isNewCard && (
-                        <Badge className="absolute top-2 left-2 bg-gradient-to-r from-yellow-400 to-orange-500 text-black border-2 border-yellow-300 text-xs font-bold px-2 py-1 shadow-[0_0_15px_rgba(234,179,8,0.8)] animate-pulse">
-                          NEW
-                        </Badge>
-                      )}
-                      {card.isReverseHolo && (
-                        <Badge className="absolute top-2 right-2 bg-gradient-to-r from-cyan-400 to-blue-500 text-white border border-cyan-300 font-bold shadow-[0_0_15px_rgba(6,182,212,0.6)]">
-                          Reverse Holo!
-                        </Badge>
-                      )}
-                      <Badge className={`absolute bottom-2 left-2 border-2 border-cyan-500/50 shadow-[0_0_10px_rgba(0,0,0,0.5)] ${getRarityColor(card.rarity)}`}>
-                        {card.rarity || 'Common'}
-                      </Badge>
-                    </div>
-                  </Card>
-                  <p className="text-center mt-2 font-bold text-sm text-cyan-100">{card.name}</p>
+            <div className="space-y-6 p-4">
+              {pulledCards.map((pack, packIndex) => (
+                <div key={packIndex} className="space-y-3">
+                  {pulledCards.length > 1 && (
+                    <h3 className="text-lg font-bold text-cyan-400 border-b border-cyan-500/30 pb-2">
+                      Pack #{pack.packNumber}
+                    </h3>
+                  )}
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    {pack.cards.map((card, cardIndex) => (
+                      <div key={cardIndex} className="relative animate-in fade-in zoom-in duration-500" style={{ animationDelay: `${cardIndex * 50}ms` }}>
+                        <Card className="overflow-hidden border-2 border-cyan-500/30 bg-slate-800/50 backdrop-blur-sm hover:border-cyan-500 hover:shadow-[0_0_20px_rgba(6,182,212,0.5)] transition-all">
+                          <div className="relative">
+                            <img
+                              src={card.images?.small || '/placeholder.png'}
+                              alt={card.name}
+                              className="w-full h-auto"
+                            />
+                            {/* NEW Badge only on cards not already owned */}
+                            {card.isNewCard && (
+                              <Badge className="absolute top-1 left-1 bg-gradient-to-r from-yellow-400 to-orange-500 text-black border-2 border-yellow-300 text-xs font-bold px-1.5 py-0.5 shadow-[0_0_15px_rgba(234,179,8,0.8)] animate-pulse">
+                                NEW
+                              </Badge>
+                            )}
+                            {card.isReverseHolo && (
+                              <Badge className="absolute top-1 right-1 bg-gradient-to-r from-cyan-400 to-blue-500 text-white border border-cyan-300 text-xs font-bold px-1.5 py-0.5 shadow-[0_0_15px_rgba(6,182,212,0.6)]">
+                                RH
+                              </Badge>
+                            )}
+                            <Badge className={`absolute bottom-1 left-1 border border-cyan-500/50 text-xs px-1.5 py-0.5 shadow-[0_0_10px_rgba(0,0,0,0.5)] ${getRarityColor(card.rarity)}`}>
+                              {card.rarity?.split(' ')[0] || 'Common'}
+                            </Badge>
+                          </div>
+                        </Card>
+                        <p className="text-center mt-1 text-xs text-cyan-100 truncate">{card.name}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {packIndex < pulledCards.length - 1 && (
+                    <div className="border-t-2 border-cyan-500/20 pt-2"></div>
+                  )}
                 </div>
               ))}
             </div>
