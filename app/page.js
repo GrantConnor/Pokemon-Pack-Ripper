@@ -1186,9 +1186,9 @@ export default function App() {
                   setBreakdownMode(!breakdownMode);
                   setSelectedForBreakdown([]);
                 }}
-                className={breakdownMode ? 'bg-red-500 hover:bg-red-400' : 'bg-orange-500 hover:bg-orange-400'}
+                className={breakdownMode ? 'bg-gray-600 hover:bg-gray-500' : 'bg-red-600 hover:bg-red-500 text-white font-bold'}
               >
-                {breakdownMode ? 'Cancel Breakdown' : '🔥 Breakdown Mode'}
+                {breakdownMode ? 'Cancel Breakdown' : 'Breakdown Mode'}
               </Button>
             </div>
 
@@ -1465,29 +1465,16 @@ export default function App() {
                                 <p className="text-xs text-cyan-400">{friend.tradesCompleted || 0} trades completed</p>
                               </div>
                             </div>
-                            <div className="flex gap-1">
-                              <Button
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleViewFriendProfile(friend);
-                                }}
-                                className="bg-cyan-500 text-black hover:bg-cyan-400 text-xs"
-                              >
-                                <Eye className="h-3 w-3 mr-1" />
-                                View
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenTradeModal(friend);
-                                }}
-                                className="bg-purple-500 text-white hover:bg-purple-400 text-xs"
-                              >
-                                Trade
-                              </Button>
-                            </div>
+                            <Button
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenTradeModal(friend);
+                              }}
+                              className="bg-purple-500 text-white hover:bg-purple-400 text-xs"
+                            >
+                              Trade
+                            </Button>
                           </div>
                         ))}
                       </div>
@@ -1944,7 +1931,7 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-purple-400" />
+      {/* Trade View Modal - Accept/Decline Trade */}
                 <Input
                   placeholder="Search your cards..."
                   value={tradeSearchOffer}
