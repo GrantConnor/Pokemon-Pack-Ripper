@@ -13,12 +13,12 @@ const POINTS_REGEN_INTERVAL = 21600000; // 6 hours in milliseconds (6 * 60 * 60 
 
 // Achievement milestones (per set)
 const ACHIEVEMENTS = {
-  TEN_CARDS: { threshold: 10, reward: 100, name: '10 Unique Cards' },
-  THIRTY_CARDS: { threshold: 30, reward: 250, name: '30 Unique Cards' },
-  FIFTY_CARDS: { threshold: 50, reward: 500, name: '50 Unique Cards' },
-  SEVENTY_FIVE_CARDS: { threshold: 75, reward: 1000, name: '75 Unique Cards' },
-  HUNDRED_CARDS: { threshold: 100, reward: 1500, name: '100 Unique Cards' },
-  COMPLETE_SET: { threshold: 'complete', reward: 3000, name: 'Complete Set' }
+  TEN_CARDS: { threshold: 10, reward: 50, name: '10 Unique Cards' },
+  THIRTY_CARDS: { threshold: 30, reward: 125, name: '30 Unique Cards' },
+  FIFTY_CARDS: { threshold: 50, reward: 250, name: '50 Unique Cards' },
+  SEVENTY_FIVE_CARDS: { threshold: 75, reward: 500, name: '75 Unique Cards' },
+  HUNDRED_CARDS: { threshold: 100, reward: 750, name: '100 Unique Cards' },
+  COMPLETE_SET: { threshold: 'complete', reward: 1500, name: 'Complete Set' }
 };
 
 let client;
@@ -287,13 +287,19 @@ function openPack(cards) {
     if (card) pulledCards.push(card);
   }
 
-  // 4. Pull 2 reverse holo slots (ONLY reverse holos - no bonus rares)
-  // In real packs, getting multiple ultra-rares in one pack is EXTREMELY rare
+  // 4. Pull 2 reverse holo slots (ONLY commons/uncommons - NEVER rares)
+  // This ensures only ONE rare per pack total
   for (let i = 0; i < 2; i++) {
-    // Reverse holo (can be common, uncommon, or rare)
-    const reverseCard = getUniqueCard(nonEnergyCards);
+    // Reverse holo can only be common or uncommon (NOT rare)
+    const reversePool = [...commons, ...uncommons];
+    const reverseCard = getUniqueCard(reversePool);
     if (reverseCard) {
       pulledCards.push({ ...reverseCard, isReverseHolo: true });
+    } else {
+      // Fallback to any non-rare card
+      const fallbackPool = nonEnergyCards.filter(c => !c.rarity?.includes('Rare'));
+      const card = getUniqueCard(fallbackPool.length > 0 ? fallbackPool : nonEnergyCards);
+      if (card) pulledCards.push({ ...card, isReverseHolo: true });
     }
   }
 
