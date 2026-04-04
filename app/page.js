@@ -212,7 +212,21 @@ export default function App() {
         return typeA.localeCompare(typeB);
       });
     } else if (sortBy === 'rarity') {
-      const rarityOrder = { 'Common': 1, 'Uncommon': 2, 'Rare': 3, 'Rare Holo': 4, 'Rare Ultra': 5 };
+      // Rarity order from LEAST rare to MOST rare
+      const rarityOrder = { 
+        'Common': 1, 
+        'Uncommon': 2, 
+        'Rare': 3, 
+        'Rare Holo': 4,
+        'Double Rare': 5,
+        'Illustration Rare': 6,
+        'Ultra Rare': 7,
+        'Rare Ultra': 7,
+        'Special Illustration Rare': 8,
+        'Hyper Rare': 9,
+        'Rare Secret': 9,
+        'Secret Rare': 9
+      };
       grouped.sort((a, b) => {
         const orderA = rarityOrder[a.rarity] || 999;
         const orderB = rarityOrder[b.rarity] || 999;

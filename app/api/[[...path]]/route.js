@@ -197,32 +197,32 @@ function openPack(cards) {
     return card;
   };
 
-  // Helper to select rare-or-better based on REALISTIC TCG odds
-  // These are VERY conservative to match actual booster box statistics
+  // Helper to select rare-or-better based on ULTRA CONSERVATIVE TCG odds
+  // These are EXTREMELY rare to make chase cards truly special
   const selectRareOrBetter = () => {
     const roll = Math.random() * 100;
     
-    // Hyper Rare (Gold): ~1% (1 per 100 packs, roughly 3 per case)
-    if (roll < 1 && hyperRares.length > 0) {
+    // Hyper Rare (Gold): ~0.5% (1 per 200 packs, EXTREMELY RARE)
+    if (roll < 0.5 && hyperRares.length > 0) {
       return getUniqueCard(hyperRares);
     }
-    // Special Illustration Rare: ~2% (2 per 100 packs)
-    else if (roll < 3 && specialIllustrationRares.length > 0) {
+    // Special Illustration Rare: ~1% (1 per 100 packs)
+    else if (roll < 1.5 && specialIllustrationRares.length > 0) {
       return getUniqueCard(specialIllustrationRares);
     }
-    // Ultra Rare (Full Art): ~4% (4 per 100 packs)
-    else if (roll < 7 && ultraRares.length > 0) {
+    // Ultra Rare (Full Art): ~2% (2 per 100 packs)
+    else if (roll < 3.5 && ultraRares.length > 0) {
       return getUniqueCard(ultraRares);
     }
-    // Illustration Rare: ~5% (5 per 100 packs)
-    else if (roll < 12 && illustrationRares.length > 0) {
+    // Illustration Rare: ~3% (3 per 100 packs)
+    else if (roll < 6.5 && illustrationRares.length > 0) {
       return getUniqueCard(illustrationRares);
     }
-    // Double Rare (ex cards): ~10% (10 per 100 packs)
-    else if (roll < 22 && doubleRares.length > 0) {
+    // Double Rare (ex cards): ~8% (8 per 100 packs)
+    else if (roll < 14.5 && doubleRares.length > 0) {
       return getUniqueCard(doubleRares);
     }
-    // Regular Rare/Rare Holo: ~78% (most packs get regular rare/holo)
+    // Regular Rare/Rare Holo: ~85.5% (most packs get regular rare/holo)
     else if (rares.length > 0) {
       return getUniqueCard(rares);
     }
