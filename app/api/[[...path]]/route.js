@@ -394,7 +394,7 @@ export async function GET(request) {
       const friendIds = user.friends || [];
       const friends = await database.collection('users')
         .find({ id: { $in: friendIds } })
-        .project({ id: 1, username: 1 })
+        .project({ id: 1, username: 1, tradesCompleted: 1 })
         .toArray();
 
       // Get pending request details
@@ -527,6 +527,7 @@ export async function POST(request) {
         friendRequests: [],
         sentFriendRequests: [],
         tradeRequests: [],
+        tradesCompleted: 0,
         points: username === 'Spheal' ? 999999 : STARTING_POINTS,
         lastPointsRefresh: new Date().toISOString(),
         createdAt: new Date().toISOString()
@@ -993,6 +994,17 @@ export async function POST(request) {
       await database.collection('users').updateOne(
         { id: userId },
         { $pull: { tradeRequests: { id: tradeId } } }
+      );
+
+      // Step 6: Increment trade counter for both users
+      await database.collection('users').updateOne(
+        { id: trade.from },
+        { $inc: { tradesCompleted: 1 } }
+      );
+
+      await database.collection('users').updateOne(
+        { id: userId },
+        { $inc: { tradesCompleted: 1 } }
       );
 
       return NextResponse.json({ 

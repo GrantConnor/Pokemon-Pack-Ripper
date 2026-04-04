@@ -55,6 +55,8 @@ export default function App() {
   const [allUsers, setAllUsers] = useState([]);
   const [tradeSearchWant, setTradeSearchWant] = useState('');
   const [tradeSearchOffer, setTradeSearchOffer] = useState('');
+  const [viewingFriend, setViewingFriend] = useState(null);
+  const [viewingFriendCollection, setViewingFriendCollection] = useState([]);
 
   useEffect(() => {
     // Check if user is logged in
@@ -474,6 +476,20 @@ export default function App() {
       loadFriends();
     } catch (err) {
       console.error('Error declining trade:', err);
+    }
+  };
+
+  const handleViewFriendProfile = async (friend) => {
+    setViewingFriend(friend);
+    
+    // Load friend's collection
+    try {
+      const response = await fetch(`/api/collection?userId=${friend.id}`);
+      const data = await response.json();
+      setViewingFriendCollection(data.collection || []);
+    } catch (err) {
+      console.error('Error loading friend collection:', err);
+      setViewingFriendCollection([]);
     }
   };
 
@@ -1308,11 +1324,24 @@ export default function App() {
                     ) : (
                       <div className="space-y-2">
                         {friends.map((friend) => (
-                          <div key={friend.id} className="flex items-center justify-between p-2 bg-slate-700/50 rounded">
-                            <span className="text-white">{friend.username}</span>
+                          <div 
+                            key={friend.id} 
+                            className="flex items-center justify-between p-2 bg-slate-700/50 rounded hover:bg-slate-600/50 transition-colors cursor-pointer"
+                            onClick={() => handleViewFriendProfile(friend)}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Users className="h-4 w-4 text-cyan-400" />
+                              <div>
+                                <p className="text-white font-medium">{friend.username}</p>
+                                <p className="text-xs text-cyan-400">{friend.tradesCompleted || 0} trades completed</p>
+                              </div>
+                            </div>
                             <Button
                               size="sm"
-                              onClick={() => handleOpenTradeModal(friend)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenTradeModal(friend);
+                              }}
                               className="bg-purple-500 text-white hover:bg-purple-400"
                             >
                               Trade
@@ -1679,6 +1708,79 @@ export default function App() {
               
               {/* Search bar for your collection */}
               <div className="relative">
+
+
+      {/* Friend Profile Modal */}
+      <Dialog open={!!viewingFriend} onOpenChange={() => setViewingFriend(null)}>
+        <DialogContent className="max-w-5xl max-h-[90vh] border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-cyan-400 flex items-center gap-2">
+              <Users className="h-6 w-6" />
+              {viewingFriend?.username}'s Profile
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Stats */}
+            <div className="grid grid-cols-2 gap-4">
+              <Card className="border-2 border-cyan-500/30 bg-slate-800/50">
+                <CardContent className="pt-6 text-center">
+                  <p className="text-4xl font-bold text-cyan-400">{viewingFriendCollection.length}</p>
+                  <p className="text-sm text-cyan-100/70">Cards Owned</p>
+                </CardContent>
+              </Card>
+              <Card className="border-2 border-purple-500/30 bg-slate-800/50">
+                <CardContent className="pt-6 text-center">
+                  <p className="text-4xl font-bold text-purple-400">{viewingFriend?.tradesCompleted || 0}</p>
+                  <p className="text-sm text-purple-100/70">Trades Completed</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Collection */}
+            <div>
+              <h3 className="text-lg font-semibold text-cyan-400 mb-2">Collection</h3>
+              <ScrollArea className="h-96 border-2 border-cyan-500/30 rounded p-4 bg-slate-800/30">
+                {viewingFriendCollection.length === 0 ? (
+                  <p className="text-center text-cyan-100/50 py-8">No cards yet</p>
+                ) : (
+                  <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                    {viewingFriendCollection.map((card, index) => (
+                      <Card key={index} className="border-2 border-cyan-500/30 overflow-hidden">
+                        <img src={card.images?.small} alt={card.name} className="w-full" />
+                        <div className="p-1 bg-slate-900/50">
+                          <p className="text-xs text-white text-center truncate">{card.name}</p>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-between items-center pt-4 border-t border-cyan-500/30">
+              <Button 
+                onClick={() => setViewingFriend(null)}
+                variant="outline"
+              >
+                Close
+              </Button>
+              <Button 
+                onClick={() => {
+                  handleOpenTradeModal(viewingFriend);
+                  setViewingFriend(null);
+                }}
+                className="bg-purple-500 text-white hover:bg-purple-400"
+              >
+                <Send className="h-4 w-4 mr-2" />
+                Send Trade Request
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-purple-400" />
                 <Input
                   placeholder="Search your cards..."
