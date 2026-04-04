@@ -197,38 +197,51 @@ function openPack(cards) {
     return card;
   };
 
-  // Helper to select rare-or-better based on ULTRA CONSERVATIVE TCG odds
-  // These are EXTREMELY rare to make chase cards truly special
+  // Helper to select rare-or-better with NEW SYSTEM:
+  // Step 1: Always get a regular rare
+  // Step 2: 10% chance (1 in 10 packs) to upgrade to special table
+  // Step 3: If upgrade triggers, roll on special rare table
   const selectRareOrBetter = () => {
-    const roll = Math.random() * 100;
+    // Step 1: Get a regular rare by default
+    let selectedCard = rares.length > 0 ? getUniqueCard(rares) : getUniqueCard(nonEnergyCards);
     
-    // Hyper Rare (Gold): ~0.5% (1 per 200 packs, EXTREMELY RARE)
-    if (roll < 0.5 && hyperRares.length > 0) {
-      return getUniqueCard(hyperRares);
-    }
-    // Special Illustration Rare: ~1% (1 per 100 packs)
-    else if (roll < 1.5 && specialIllustrationRares.length > 0) {
-      return getUniqueCard(specialIllustrationRares);
-    }
-    // Ultra Rare (Full Art): ~2% (2 per 100 packs)
-    else if (roll < 3.5 && ultraRares.length > 0) {
-      return getUniqueCard(ultraRares);
-    }
-    // Illustration Rare: ~3% (3 per 100 packs)
-    else if (roll < 6.5 && illustrationRares.length > 0) {
-      return getUniqueCard(illustrationRares);
-    }
-    // Double Rare (ex cards): ~8% (8 per 100 packs)
-    else if (roll < 14.5 && doubleRares.length > 0) {
-      return getUniqueCard(doubleRares);
-    }
-    // Regular Rare/Rare Holo: ~85.5% (most packs get regular rare/holo)
-    else if (rares.length > 0) {
-      return getUniqueCard(rares);
+    // Step 2: 10% chance to upgrade to something better
+    const upgradeRoll = Math.random() * 100;
+    
+    if (upgradeRoll < 10) {
+      // Step 3: You got the upgrade! Now roll on the special table
+      const specialRoll = Math.random() * 100;
+      
+      // Special table percentages (out of the 10% that get upgrades):
+      // Hyper Rare: 5% of upgrades (0.5% overall)
+      if (specialRoll < 5 && hyperRares.length > 0) {
+        const card = getUniqueCard(hyperRares);
+        if (card) return card;
+      }
+      // Special Illustration Rare: 10% of upgrades (1% overall)
+      else if (specialRoll < 15 && specialIllustrationRares.length > 0) {
+        const card = getUniqueCard(specialIllustrationRares);
+        if (card) return card;
+      }
+      // Ultra Rare: 20% of upgrades (2% overall)
+      else if (specialRoll < 35 && ultraRares.length > 0) {
+        const card = getUniqueCard(ultraRares);
+        if (card) return card;
+      }
+      // Illustration Rare: 30% of upgrades (3% overall)
+      else if (specialRoll < 65 && illustrationRares.length > 0) {
+        const card = getUniqueCard(illustrationRares);
+        if (card) return card;
+      }
+      // Double Rare: 35% of upgrades (3.5% overall)
+      else if (specialRoll < 100 && doubleRares.length > 0) {
+        const card = getUniqueCard(doubleRares);
+        if (card) return card;
+      }
     }
     
-    // Fallback if no rares available
-    return getUniqueCard(nonEnergyCards);
+    // If no upgrade triggered or no special cards available, return the regular rare
+    return selectedCard;
   };
 
   // 1. Pull 4 commons (40%)
