@@ -39,6 +39,7 @@
         "@radix-ui/react-toggle-group": "^1.1.10",
         "@radix-ui/react-tooltip": "^1.2.7",
         "@tanstack/react-table": "^8.21.3",
+        "autoprefixer": "^10.4.19",
         "axios": "^1.10.0",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
@@ -50,6 +51,7 @@
         "mongodb": "^6.6.0",
         "next": "14.2.3",
         "next-themes": "^0.4.6",
+        "postcss": "^8",
         "react": "^18",
         "react-day-picker": "^9.7.0",
         "react-dom": "^18",
@@ -58,16 +60,14 @@
         "recharts": "^2.15.3",
         "sonner": "^2.0.5",
         "tailwind-merge": "^3.3.1",
+        "tailwindcss": "^3.4.1",
         "tailwindcss-animate": "^1.0.7",
         "uuid": "^9.0.1",
         "vaul": "^1.1.2",
         "zod": "^3.25.67"
     },
     "devDependencies": {
-        "autoprefixer": "^10.4.19",
-        "globals": "^16.2.0",
-        "postcss": "^8",
-        "tailwindcss": "^3.4.1"
+        "globals": "^16.2.0"
     },
     "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }
