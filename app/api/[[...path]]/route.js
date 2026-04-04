@@ -1,0 +1,652 @@
+import { NextResponse } from 'next/server';
+import { MongoClient } from 'mongodb';
+import { v4 as uuidv4 } from 'uuid';
+import axios from 'axios';
+
+const POKEMON_TCG_API = 'https://api.pokemontcg.io/v2';
+const STARTING_POINTS = 1000;
+const PACK_COST = 100;
+const BULK_PACK_COUNT = 10;
+const BULK_PACK_COST = 1000;
+const POINTS_REGEN_RATE = 100; // Points per regeneration
+const POINTS_REGEN_INTERVAL = 21600000; // 6 hours in milliseconds (6 * 60 * 60 * 1000)
+
+// Achievement milestones (per set)
+const ACHIEVEMENTS = {
+  TEN_CARDS: { threshold: 10, reward: 100, name: '10 Unique Cards' },
+  THIRTY_CARDS: { threshold: 30, reward: 250, name: '30 Unique Cards' },
+  FIFTY_CARDS: { threshold: 50, reward: 500, name: '50 Unique Cards' },
+  SEVENTY_FIVE_CARDS: { threshold: 75, reward: 1000, name: '75 Unique Cards' },
+  HUNDRED_CARDS: { threshold: 100, reward: 1500, name: '100 Unique Cards' },
+  COMPLETE_SET: { threshold: 'complete', reward: 3000, name: 'Complete Set' }
+};
+
+let client;
+let db;
+
+async function connectDB() {
+  if (db) return db;
+  
+  client = new MongoClient(process.env.MONGO_URL);
+  await client.connect();
+  db = client.db(process.env.DB_NAME);
+  return db;
+}
+
+// Helper function to hash password (simple for MVP)
+function hashPassword(password) {
+  return Buffer.from(password).toString('base64');
+}
+
+function verifyPassword(password, hashedPassword) {
+  return hashPassword(password) === hashedPassword;
+}
+
+// Calculate regenerated points based on time elapsed
+function calculateRegeneratedPoints(user) {
+  if (user.username === 'Spheal') {
+    return 999999; // Unlimited points for owner
+  }
+  
+  const now = new Date().getTime();
+  const lastRefresh = new Date(user.lastPointsRefresh || user.createdAt).getTime();
+  const timeElapsed = now - lastRefresh;``
+  const hoursElapsed = timeElapsed / POINTS_REGEN_INTERVAL;
+  const pointsToAdd = Math.floor(hoursElapsed * POINTS_REGEN_RATE);
+  
+  return Math.min(user.points + pointsToAdd, 10000); // Cap at 10000 points
+}
+
+// Calculate time until next point regeneration
+function calculateNextPointsTime(user) {
+  if (user.username === 'Spheal') {
+    return 0; // No waiting for owner
+  }
+  
+  const now = new Date().getTime();
+  const lastRefresh = new Date(user.lastPointsRefresh || user.createdAt).getTime();
+  const timeElapsed = now - lastRefresh;
+  const timeSinceLastPoint = timeElapsed % POINTS_REGEN_INTERVAL;
+  const timeUntilNext = POINTS_REGEN_INTERVAL - timeSinceLastPoint;
+  
+  return Math.ceil(timeUntilNext / 1000); // Return seconds until next point
+}
+
+// Check and award achievements for a specific set (single-fire guaranteed)
+async function checkAchievements(user, database, setId, setName, totalCardsInSet) {
+  // Get unique cards for this specific set
+  const cardsFromSet = user.collection.filter(card => card.set?.id === setId);
+  const uniqueCards = new Set(cardsFromSet.map(card => card.id));
+  const uniqueCount = uniqueCards.size;
+  
+  // Initialize setAchievements as object if it doesn't exist
+  const earnedAchievements = user.setAchievements || {};
+  const setAchievements = earnedAchievements[setId] || [];
+  const newAchievements = [];
+  let bonusPoints = 0;
+  
+  // Track which achievement keys to add
+  const achievementKeysToAdd = [];
+  
+  // Check each achievement milestone for this set
+  Object.entries(ACHIEVEMENTS).forEach(([key, achievement]) => {
+    const achievementId = `${setId}_${key}`;
+    
+    // CRITICAL: Check if already earned to prevent double-firing
+    if (setAchievements.includes(key)) {
+      return; // Skip if already earned
+    }
+    
+    if (achievement.threshold === 'complete') {
+      // Complete set achievement
+      if (uniqueCount >= totalCardsInSet) {
+        newAchievements.push({
+          id: achievementId,
+          key: key,
+          setId: setId,
+          setName: setName,
+          name: achievement.name,
+          reward: achievement.reward,
+          threshold: totalCardsInSet,
+          uniqueCount: uniqueCount,
+          totalCards: totalCardsInSet
+        });
+        bonusPoints += achievement.reward;
+        achievementKeysToAdd.push(key);
+      }
+    } else {
+      // Milestone achievements (10, 30, 50, 75, 100 cards)
+      if (uniqueCount >= achievement.threshold) {
+        newAchievements.push({
+          id: achievementId,
+          key: key,
+          setId: setId,
+          setName: setName,
+          name: achievement.name,
+          reward: achievement.reward,
+          threshold: achievement.threshold,
+          uniqueCount: uniqueCount,
+          totalCards: totalCardsInSet
+        });
+        bonusPoints += achievement.reward;
+        achievementKeysToAdd.push(key);
+      }
+    }
+  });
+  
+  // Update user ONLY if new achievements earned
+  if (newAchievements.length > 0) {
+    // Use $addToSet to prevent duplicate achievement keys (idempotent operation)
+    const updateResult = await database.collection('users').updateOne(
+      { id: user.id },
+      { 
+        $addToSet: {
+          [`setAchievements.${setId}`]: { $each: achievementKeysToAdd }
+        },
+        $inc: { points: bonusPoints }
+      }
+    );
+    
+    // Log if update didn't modify anything (shouldn't happen with our checks)
+    if (updateResult.modifiedCount === 0) {
+      console.log(`Warning: Achievement update for ${setId} didn't modify document. May indicate race condition.`);
+    }
+  }
+  
+  return { newAchievements, bonusPoints, uniqueCount, totalCards: totalCardsInSet };
+}
+
+// TCG-accurate pack opening logic (10 cards total: 4 commons, 3 uncommons, 3 foil slots)
+// NO DUPLICATES within a single pack
+function openPack(cards) {
+  // Filter out Energy cards
+  const nonEnergyCards = cards.filter(c => c.supertype !== 'Energy');
+  
+  if (nonEnergyCards.length < 10) {
+    // If set doesn't have enough cards, just return random 10
+    const pulledCards = [];
+    for (let i = 0; i < 10; i++) {
+      const randomIndex = Math.floor(Math.random() * nonEnergyCards.length);
+      pulledCards.push(nonEnergyCards[randomIndex]);
+    }
+    return pulledCards;
+  }
+  
+  // Categorize cards by rarity for TCG-accurate distribution
+  const commons = nonEnergyCards.filter(c => c.rarity === 'Common');
+  const uncommons = nonEnergyCards.filter(c => c.rarity === 'Uncommon');
+  
+  // Rare and special cards (for guaranteed rare slot and foil slots)
+  const rares = nonEnergyCards.filter(c => c.rarity === 'Rare' || c.rarity === 'Rare Holo');
+  const doubleRares = nonEnergyCards.filter(c => c.rarity && (c.rarity.includes('Double Rare') || c.rarity.toLowerCase().includes(' ex')));
+  const illustrationRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Illustration Rare') && !c.rarity.includes('Special'));
+  const ultraRares = nonEnergyCards.filter(c => c.rarity && (c.rarity.includes('Ultra Rare') || c.rarity.includes('Rare Ultra')));
+  const specialIllustrationRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Special Illustration Rare'));
+  const hyperRares = nonEnergyCards.filter(c => c.rarity && (c.rarity.includes('Hyper Rare') || c.rarity.includes('Rare Secret') || c.rarity.includes('Secret Rare')));
+
+  const pulledCards = [];
+  const pulledCardIds = new Set(); // Track pulled card IDs to prevent duplicates
+
+  // Helper function to get a unique card
+  const getUniqueCard = (pool) => {
+    const availableCards = pool.filter(card => !pulledCardIds.has(card.id));
+    if (availableCards.length === 0) return null;
+    const randomIndex = Math.floor(Math.random() * availableCards.length);
+    const card = availableCards[randomIndex];
+    pulledCardIds.add(card.id);
+    return card;
+  };
+
+  // Helper to select rare-or-better based on TCG odds
+  const selectRareOrBetter = () => {
+    const roll = Math.random() * 100;
+    
+    // Hyper Rare (Gold): ~1.8-2%
+    if (roll < 2 && hyperRares.length > 0) {
+      return getUniqueCard(hyperRares);
+    }
+    // Special Illustration Rare: ~3%
+    else if (roll < 5 && specialIllustrationRares.length > 0) {
+      return getUniqueCard(specialIllustrationRares);
+    }
+    // Ultra Rare (Full Art): ~6-7%
+    else if (roll < 12 && ultraRares.length > 0) {
+      return getUniqueCard(ultraRares);
+    }
+    // Illustration Rare: ~7-8%
+    else if (roll < 20 && illustrationRares.length > 0) {
+      return getUniqueCard(illustrationRares);
+    }
+    // Double Rare (ex cards): ~13-15%
+    else if (roll < 35 && doubleRares.length > 0) {
+      return getUniqueCard(doubleRares);
+    }
+    // Regular Rare/Rare Holo: remaining %
+    else if (rares.length > 0) {
+      return getUniqueCard(rares);
+    }
+    
+    // Fallback if no rares available
+    return getUniqueCard(nonEnergyCards);
+  };
+
+  // 1. Pull 4 commons (40%)
+  for (let i = 0; i < 4; i++) {
+    if (commons.length > 0) {
+      const card = getUniqueCard(commons);
+      if (card) {
+        pulledCards.push(card);
+      } else {
+        // Fallback to any card if all commons are used
+        const card = getUniqueCard(nonEnergyCards);
+        if (card) pulledCards.push(card);
+      }
+    } else {
+      // Fallback to any card
+      const card = getUniqueCard(nonEnergyCards);
+      if (card) pulledCards.push(card);
+    }
+  }
+
+  // 2. Pull 3 uncommons (30%)
+  for (let i = 0; i < 3; i++) {
+    if (uncommons.length > 0) {
+      const card = getUniqueCard(uncommons);
+      if (card) {
+        pulledCards.push(card);
+      } else {
+        const card = getUniqueCard(nonEnergyCards);
+        if (card) pulledCards.push(card);
+      }
+    } else {
+      const card = getUniqueCard(nonEnergyCards);
+      if (card) pulledCards.push(card);
+    }
+  }
+
+  // 3. Pull 1 guaranteed rare-or-better (with TCG odds)
+  const guaranteedRare = selectRareOrBetter();
+  if (guaranteedRare) {
+    pulledCards.push(guaranteedRare);
+  } else {
+    const card = getUniqueCard(nonEnergyCards);
+    if (card) pulledCards.push(card);
+  }
+
+  // 4. Pull 2 additional foil/special slots (30% of pack = 3 total foil slots including the rare)
+  // These can be reverse holos or additional rare-or-better cards
+  for (let i = 0; i < 2; i++) {
+    // 20% chance for another rare-or-better, 80% chance for reverse holo
+    if (Math.random() < 0.2) {
+      const specialCard = selectRareOrBetter();
+      if (specialCard) {
+        pulledCards.push(specialCard);
+        continue;
+      }
+    }
+    
+    // Reverse holo (can be common, uncommon, or rare)
+    const reverseCard = getUniqueCard(nonEnergyCards);
+    if (reverseCard) {
+      pulledCards.push({ ...reverseCard, isReverseHolo: true });
+    }
+  }
+
+  // Ensure we always return exactly 10 cards
+  while (pulledCards.length < 10) {
+    const card = getUniqueCard(nonEnergyCards);
+    if (card) {
+      pulledCards.push(card);
+    } else {
+      // If we truly run out of unique cards (very rare), just add a random one
+      const randomIndex = Math.floor(Math.random() * nonEnergyCards.length);
+      pulledCards.push(nonEnergyCards[randomIndex]);
+      break;
+    }
+  }
+
+  return pulledCards.slice(0, 10); // Ensure exactly 10 cards
+}
+
+export async function GET(request) {
+  const { pathname, searchParams } = new URL(request.url);
+
+  try {
+    // Get all sets
+    if (pathname.includes('/api/sets')) {
+      const response = await axios.get(`${POKEMON_TCG_API}/sets`);
+      // Filter out unwanted sets
+      const filteredSets = response.data.data.filter(set => {
+        const name = set.name.toLowerCase();
+        const total = set.total || 0;
+        
+        // Remove McDonald's sets
+        if (name.includes('mcdonald')) return false;
+        
+        // Remove Black Star Promos
+        if (name.includes('promo') || name.includes('black star')) return false;
+        
+        // Remove Trainer Kits
+        if (name.includes('trainer kit')) return false;
+        
+        // Remove Hidden Fates Shiny Vault (we'll merge it with Hidden Fates)
+        if (name.includes('shiny vault')) return false;
+        
+        // Remove sets with less than 50 cards
+        if (total < 50) return false;
+        
+        return true;
+      });
+      
+      return NextResponse.json({ sets: filteredSets });
+    }
+
+    // Get cards from a specific set
+    if (pathname.includes('/api/cards')) {
+      const setId = searchParams.get('setId');
+      if (!setId) {
+        return NextResponse.json({ error: 'Set ID required' }, { status: 400 });
+      }
+      
+      let allCards = [];
+      
+      // If Hidden Fates, merge with Shiny Vault
+      if (setId === 'sm115') {
+        // Fetch Hidden Fates cards
+        const hiddenFatesResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:sm115&pageSize=250`);
+        allCards = [...hiddenFatesResponse.data.data];
+        
+        // Fetch Shiny Vault cards
+        const shinyVaultResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:sma&pageSize=250`);
+        allCards = [...allCards, ...shinyVaultResponse.data.data];
+      } else {
+        const response = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:${setId}&pageSize=250`);
+        allCards = response.data.data;
+      }
+      
+      return NextResponse.json({ cards: allCards });
+    }
+
+    // Get user collection
+    if (pathname.includes('/api/collection')) {
+      const userId = searchParams.get('userId');
+      if (!userId) {
+        return NextResponse.json({ error: 'User ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const user = await database.collection('users').findOne({ id: userId });
+      
+      if (!user) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      return NextResponse.json({ collection: user.collection || [] });
+    }
+
+    // Check session and update points
+    if (pathname.includes('/api/session')) {
+      const userId = searchParams.get('userId');
+      if (!userId) {
+        return NextResponse.json({ authenticated: false });
+      }
+
+      const database = await connectDB();
+      let user = await database.collection('users').findOne({ id: userId });
+      
+      if (!user) {
+        return NextResponse.json({ authenticated: false });
+      }
+
+      // Calculate and update regenerated points
+      const newPoints = calculateRegeneratedPoints(user);
+      const nextPointsIn = calculateNextPointsTime(user);
+      
+      if (newPoints !== user.points) {
+        await database.collection('users').updateOne(
+          { id: userId },
+          { 
+            $set: { 
+              points: newPoints,
+              lastPointsRefresh: new Date().toISOString()
+            } 
+          }
+        );
+        user.points = newPoints;
+      }
+
+      return NextResponse.json({ 
+        authenticated: true, 
+        user: { 
+          id: user.id, 
+          username: user.username,
+          points: user.points,
+          nextPointsIn: nextPointsIn,
+          setAchievements: user.setAchievements || {}
+        } 
+      });
+    }
+
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  } catch (error) {
+    console.error('GET Error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function POST(request) {
+  const { pathname } = new URL(request.url);
+
+  try {
+    const body = await request.json();
+
+    // Sign up
+    if (pathname.includes('/api/auth/signup')) {
+      const { username, password } = body;
+      
+      if (!username || !password) {
+        return NextResponse.json({ error: 'Username and password required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      
+      // Check if user exists (case-insensitive)
+      const existingUser = await database.collection('users').findOne({ 
+        username: { $regex: new RegExp(`^${username}$`, 'i') } 
+      });
+      
+      if (existingUser) {
+        return NextResponse.json({ error: 'Username already exists' }, { status: 409 });
+      }
+
+      // Create new user
+      const newUser = {
+        id: uuidv4(),
+        username,
+        password: hashPassword(password),
+        collection: [],
+        setAchievements: {},
+        points: username === 'Spheal' ? 999999 : STARTING_POINTS,
+        lastPointsRefresh: new Date().toISOString(),
+        createdAt: new Date().toISOString()
+      };
+
+      await database.collection('users').insertOne(newUser);
+
+      return NextResponse.json({ 
+        success: true, 
+        user: { 
+          id: newUser.id, 
+          username: newUser.username,
+          points: newUser.points,
+          nextPointsIn: calculateNextPointsTime(newUser),
+          setAchievements: newUser.setAchievements || {}
+        } 
+      });
+    }
+
+    // Sign in
+    if (pathname.includes('/api/auth/signin')) {
+      const { username, password } = body;
+      
+      if (!username || !password) {
+        return NextResponse.json({ error: 'Username and password required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      // Find user case-insensitively
+      let user = await database.collection('users').findOne({ 
+        username: { $regex: new RegExp(`^${username}$`, 'i') } 
+      });
+      
+      if (!user || !verifyPassword(password, user.password)) {
+        return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+      }
+
+      // Calculate and update regenerated points
+      const newPoints = calculateRegeneratedPoints(user);
+      const nextPointsIn = calculateNextPointsTime(user);
+      
+      if (newPoints !== user.points) {
+        await database.collection('users').updateOne(
+          { id: user.id },
+          { 
+            $set: { 
+              points: newPoints,
+              lastPointsRefresh: new Date().toISOString()
+            } 
+          }
+        );
+        user.points = newPoints;
+      }
+
+      return NextResponse.json({ 
+        success: true, 
+        user: { 
+          id: user.id, 
+          username: user.username,
+          points: user.points,
+          nextPointsIn: nextPointsIn,
+          setAchievements: user.setAchievements || {}
+        } 
+      });
+    }
+
+    // Open pack (single or bulk)
+    if (pathname.includes('/api/packs/open')) {
+      const { userId, setId, bulk } = body;
+      
+      if (!userId || !setId) {
+        return NextResponse.json({ error: 'User ID and Set ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      let user = await database.collection('users').findOne({ id: userId });
+
+      if (!user) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      const packCount = bulk ? BULK_PACK_COUNT : 1;
+      const totalCost = bulk ? BULK_PACK_COST : PACK_COST;
+
+      // Check if user has enough points (except Spheal)
+      if (user.username !== 'Spheal' && user.points < totalCost) {
+        return NextResponse.json({ 
+          error: 'Insufficient points', 
+          pointsNeeded: totalCost - user.points 
+        }, { status: 402 });
+      }
+
+      // Fetch all cards from the set (with Hidden Fates merge)
+      let allCards = [];
+      
+      if (setId === 'sm115') {
+        // Merge Hidden Fates + Shiny Vault
+        const hiddenFatesResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:sm115&pageSize=250`);
+        allCards = [...hiddenFatesResponse.data.data];
+        
+        const shinyVaultResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:sma&pageSize=250`);
+        allCards = [...allCards, ...shinyVaultResponse.data.data];
+      } else {
+        const response = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:${setId}&pageSize=250`);
+        allCards = response.data.data;
+      }
+
+      if (allCards.length === 0) {
+        return NextResponse.json({ error: 'No cards found for this set' }, { status: 404 });
+      }
+
+      // Open packs
+      let allPulledCards = [];
+      for (let i = 0; i < packCount; i++) {
+        const pulledCards = openPack(allCards);
+        allPulledCards = [...allPulledCards, ...pulledCards];
+      }
+
+      // Deduct points and save to user's collection
+      const newPoints = user.username === 'Spheal' ? 999999 : user.points - totalCost;
+      
+      // Add pulledAt timestamp and packId to cards for both response and database
+      const cardsWithTimestamp = allPulledCards.map(card => ({
+        ...card,
+        pulledAt: new Date().toISOString(),
+        packId: uuidv4()
+      }));
+      
+      await database.collection('users').updateOne(
+        { id: userId },
+        { 
+          $push: { 
+            collection: { 
+              $each: cardsWithTimestamp
+            } 
+          },
+          $set: { points: newPoints }
+        }
+      );
+
+      // Refresh user data and check achievements for this specific set
+      user = await database.collection('users').findOne({ id: userId });
+      
+      // Get set name from first card (they all have set info)
+      const setName = allPulledCards[0]?.set?.name || 'Unknown Set';
+      const totalCardsInSet = allCards.filter(c => c.supertype !== 'Energy').length;
+      
+      const achievementResult = await checkAchievements(user, database, setId, setName, totalCardsInSet);
+
+      // Refresh user one more time if achievements were earned
+      if (achievementResult.newAchievements.length > 0) {
+        user = await database.collection('users').findOne({ id: userId });
+      }
+
+      return NextResponse.json({ 
+        success: true, 
+        cards: cardsWithTimestamp,
+        pointsRemaining: user.points,
+        achievements: achievementResult.newAchievements.length > 0 ? achievementResult : null
+      });
+    }
+
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  } catch (error) {
+    console.error('POST Error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request) {
+  const { pathname } = new URL(request.url);
+
+  try {
+    // Sign out
+    if (pathname.includes('/api/auth/signout')) {
+      return NextResponse.json({ success: true });
+    }
+
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  } catch (error) {
+    console.error('DELETE Error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
