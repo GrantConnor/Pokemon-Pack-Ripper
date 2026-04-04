@@ -873,14 +873,22 @@ export async function POST(request) {
 
     // Trades: Send trade request
     if (pathname.includes('/api/trades/send')) {
-      const { userId, friendId, offeredCards } = body;
+      const { userId, friendId, offeredCards, requestedCards } = body;
       
-      if (!userId || !friendId || !offeredCards || !Array.isArray(offeredCards)) {
+      if (!userId || !friendId || !offeredCards || !requestedCards) {
         return NextResponse.json({ error: 'Invalid trade request' }, { status: 400 });
+      }
+
+      if (!Array.isArray(offeredCards) || !Array.isArray(requestedCards)) {
+        return NextResponse.json({ error: 'Cards must be arrays' }, { status: 400 });
       }
 
       if (offeredCards.length === 0 || offeredCards.length > 10) {
         return NextResponse.json({ error: 'Must offer 1-10 cards' }, { status: 400 });
+      }
+
+      if (requestedCards.length === 0 || requestedCards.length > 10) {
+        return NextResponse.json({ error: 'Must request 1-10 cards' }, { status: 400 });
       }
 
       const database = await connectDB();
@@ -903,7 +911,7 @@ export async function POST(request) {
         to: friendId,
         toUsername: friend.username,
         offeredCards: offeredCards,
-        requestedCards: [],
+        requestedCards: requestedCards,
         status: 'pending',
         createdAt: new Date().toISOString()
       };
@@ -921,14 +929,10 @@ export async function POST(request) {
 
     // Trades: Accept trade
     if (pathname.includes('/api/trades/accept')) {
-      const { userId, tradeId, requestedCards } = body;
+      const { userId, tradeId } = body;
       
-      if (!userId || !tradeId || !requestedCards || !Array.isArray(requestedCards)) {
+      if (!userId || !tradeId) {
         return NextResponse.json({ error: 'Invalid trade acceptance' }, { status: 400 });
-      }
-
-      if (requestedCards.length === 0 || requestedCards.length > 10) {
-        return NextResponse.json({ error: 'Must request 1-10 cards' }, { status: 400 });
       }
 
       const database = await connectDB();
@@ -949,22 +953,22 @@ export async function POST(request) {
         return NextResponse.json({ error: 'Sender not found' }, { status: 404 });
       }
 
-      // Execute the trade: swap cards
-      // Remove offered cards from sender, add to receiver
+      // Execute the trade: swap the exact cards specified in the trade request
+      // Remove offered cards from sender, add requested cards to sender
       await database.collection('users').updateOne(
         { id: trade.from },
         { 
           $pull: { collection: { $or: trade.offeredCards.map(card => ({ id: card.id, pulledAt: card.pulledAt })) } },
-          $push: { collection: { $each: requestedCards } }
+          $push: { collection: { $each: trade.requestedCards } }
         }
       );
 
-      // Remove requested cards from receiver, add offered cards
+      // Remove requested cards from receiver, add offered cards, remove trade request
       await database.collection('users').updateOne(
         { id: userId },
         { 
           $pull: { 
-            collection: { $or: requestedCards.map(card => ({ id: card.id, pulledAt: card.pulledAt })) },
+            collection: { $or: trade.requestedCards.map(card => ({ id: card.id, pulledAt: card.pulledAt })) },
             tradeRequests: { id: tradeId }
           },
           $push: { collection: { $each: trade.offeredCards } }

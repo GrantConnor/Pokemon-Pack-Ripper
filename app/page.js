@@ -342,9 +342,20 @@ export default function App() {
     }
   };
 
-  const handleOpenTradeModal = (friend) => {
+  const handleOpenTradeModal = async (friend) => {
     setTradeFriend(friend);
     setSelectedTradeCards([]);
+    setSelectedResponseCards([]);
+    
+    // Load friend's collection
+    try {
+      const response = await fetch(`/api/collection?userId=${friend.id}`);
+      const data = await response.json();
+      setTradeFriend({ ...friend, collection: data.collection || [] });
+    } catch (err) {
+      console.error('Error loading friend collection:', err);
+    }
+    
     setShowTradeModal(true);
   };
 
@@ -356,9 +367,22 @@ export default function App() {
     }
   };
 
+  const toggleRequestCard = (card) => {
+    if (selectedResponseCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt)) {
+      setSelectedResponseCards(selectedResponseCards.filter(c => !(c.id === card.id && c.pulledAt === card.pulledAt)));
+    } else if (selectedResponseCards.length < 10) {
+      setSelectedResponseCards([...selectedResponseCards, card]);
+    }
+  };
+
   const handleSendTrade = async () => {
     if (selectedTradeCards.length === 0) {
-      alert('Please select at least 1 card to trade');
+      alert('Please select at least 1 card to offer');
+      return;
+    }
+
+    if (selectedResponseCards.length === 0) {
+      alert('Please select at least 1 card you want from their collection');
       return;
     }
 
@@ -369,7 +393,8 @@ export default function App() {
         body: JSON.stringify({
           userId: user.id,
           friendId: tradeFriend.id,
-          offeredCards: selectedTradeCards
+          offeredCards: selectedTradeCards,
+          requestedCards: selectedResponseCards
         })
       });
 
@@ -378,6 +403,7 @@ export default function App() {
         alert(data.message);
         setShowTradeModal(false);
         setSelectedTradeCards([]);
+        setSelectedResponseCards([]);
         loadFriends();
         loadCollection();
       } else {
@@ -390,31 +416,16 @@ export default function App() {
 
   const handleViewTrade = (trade) => {
     setActiveTrade(trade);
-    setSelectedResponseCards([]);
-  };
-
-  const toggleResponseCard = (card) => {
-    if (selectedResponseCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt)) {
-      setSelectedResponseCards(selectedResponseCards.filter(c => !(c.id === card.id && c.pulledAt === card.pulledAt)));
-    } else if (selectedResponseCards.length < 10) {
-      setSelectedResponseCards([...selectedResponseCards, card]);
-    }
   };
 
   const handleAcceptTrade = async () => {
-    if (selectedResponseCards.length === 0) {
-      alert('Please select at least 1 card to trade back');
-      return;
-    }
-
     try {
       const response = await fetch('/api/trades/accept', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          tradeId: activeTrade.id,
-          requestedCards: selectedResponseCards
+          tradeId: activeTrade.id
         })
       });
 
@@ -422,7 +433,6 @@ export default function App() {
       if (response.ok) {
         alert(data.message);
         setActiveTrade(null);
-        setSelectedResponseCards([]);
         loadFriends();
         loadCollection();
       } else {
@@ -1580,48 +1590,98 @@ export default function App() {
 
       {/* Trade Modal - Send Trade */}
       <Dialog open={showTradeModal} onOpenChange={setShowTradeModal}>
-        <DialogContent className="max-w-4xl max-h-[90vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
+        <DialogContent className="max-w-7xl max-h-[90vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold text-purple-400">
               Trade with {tradeFriend?.username}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-cyan-100">Select up to 10 cards to offer ({selectedTradeCards.length}/10)</p>
-            <ScrollArea className="h-96">
-              <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
-                {groupedAndSortedCollection.map((card, index) => {
-                  const isSelected = selectedTradeCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
-                  return (
-                    <Card
-                      key={index}
-                      onClick={() => toggleTradeCard(card)}
-                      className={`cursor-pointer transition-all ${
-                        isSelected 
-                          ? 'border-4 border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.8)]' 
-                          : 'border-2 border-cyan-500/30 hover:border-cyan-500'
-                      }`}
-                    >
-                      <div className="relative">
-                        <img src={card.images?.small} alt={card.name} className="w-full" />
-                        {isSelected && (
-                          <div className="absolute top-1 right-1 bg-purple-500 rounded-full p-1">
-                            <Check className="h-4 w-4 text-white" />
+          <div className="grid grid-cols-2 gap-6">
+            {/* Left: What you WANT from their collection */}
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-cyan-400">
+                What you want ({selectedResponseCards.length}/10)
+              </h3>
+              <p className="text-xs text-cyan-100/70">Browse {tradeFriend?.username}'s collection</p>
+              <ScrollArea className="h-96 border-2 border-cyan-500/30 rounded p-2 bg-slate-800/30">
+                {tradeFriend?.collection && tradeFriend.collection.length > 0 ? (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {tradeFriend.collection.map((card, index) => {
+                      const isSelected = selectedResponseCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
+                      return (
+                        <Card
+                          key={index}
+                          onClick={() => toggleRequestCard(card)}
+                          className={`cursor-pointer transition-all ${
+                            isSelected 
+                              ? 'border-4 border-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.8)]' 
+                              : 'border-2 border-cyan-500/30 hover:border-cyan-500'
+                          }`}
+                        >
+                          <div className="relative">
+                            <img src={card.images?.small} alt={card.name} className="w-full" />
+                            {isSelected && (
+                              <div className="absolute top-1 right-1 bg-cyan-500 rounded-full p-1">
+                                <Check className="h-4 w-4 text-black" />
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    </Card>
-                  );
-                })}
-              </div>
-            </ScrollArea>
-            <div className="flex justify-end gap-2">
+                        </Card>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-center text-cyan-100/50 py-8">Loading collection...</p>
+                )}
+              </ScrollArea>
+            </div>
+
+            {/* Right: What you're OFFERING from your collection */}
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-purple-400">
+                What you're offering ({selectedTradeCards.length}/10)
+              </h3>
+              <p className="text-xs text-purple-100/70">Select from your collection</p>
+              <ScrollArea className="h-96 border-2 border-purple-500/30 rounded p-2 bg-slate-800/30">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {groupedAndSortedCollection.map((card, index) => {
+                    const isSelected = selectedTradeCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
+                    return (
+                      <Card
+                        key={index}
+                        onClick={() => toggleTradeCard(card)}
+                        className={`cursor-pointer transition-all ${
+                          isSelected 
+                            ? 'border-4 border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.8)]' 
+                            : 'border-2 border-purple-500/30 hover:border-purple-500'
+                        }`}
+                      >
+                        <div className="relative">
+                          <img src={card.images?.small} alt={card.name} className="w-full" />
+                          {isSelected && (
+                            <div className="absolute top-1 right-1 bg-purple-500 rounded-full p-1">
+                              <Check className="h-4 w-4 text-white" />
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            </div>
+          </div>
+          <div className="flex justify-between items-center pt-4 border-t border-purple-500/30">
+            <p className="text-sm text-cyan-100/70">
+              Trading {selectedTradeCards.length} cards for {selectedResponseCards.length} cards
+            </p>
+            <div className="flex gap-2">
               <Button onClick={() => setShowTradeModal(false)} variant="outline">
                 Cancel
               </Button>
               <Button 
                 onClick={handleSendTrade}
-                disabled={selectedTradeCards.length === 0}
+                disabled={selectedTradeCards.length === 0 || selectedResponseCards.length === 0}
                 className="bg-purple-500 text-white hover:bg-purple-400"
               >
                 Send Trade Offer
@@ -1636,73 +1696,62 @@ export default function App() {
         <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold text-purple-400">
-              Trade from {activeTrade?.fromUsername}
+              Trade Request from {activeTrade?.fromUsername}
             </DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-4">
-            {/* Their Offer */}
+          <div className="grid grid-cols-2 gap-6">
+            {/* Left: What they're offering you */}
             <div className="space-y-2">
-              <h3 className="text-lg font-semibold text-cyan-400">They're offering:</h3>
-              <ScrollArea className="h-80 border border-purple-500/30 rounded p-2">
-                <div className="grid grid-cols-2 gap-2">
+              <h3 className="text-lg font-semibold text-green-400">
+                They're giving you: ({activeTrade?.offeredCards?.length || 0} cards)
+              </h3>
+              <ScrollArea className="h-96 border-2 border-green-500/30 rounded p-2 bg-slate-800/30">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                   {activeTrade?.offeredCards.map((card, index) => (
-                    <Card key={index} className="border-2 border-purple-500/30">
+                    <Card key={index} className="border-2 border-green-500/30">
                       <img src={card.images?.small} alt={card.name} className="w-full" />
-                      <p className="text-xs text-center text-white p-1">{card.name}</p>
+                      <p className="text-xs text-center text-white p-1 bg-slate-900/50">{card.name}</p>
                     </Card>
                   ))}
                 </div>
               </ScrollArea>
             </div>
 
-            {/* Your Response */}
+            {/* Right: What they want from you */}
             <div className="space-y-2">
-              <h3 className="text-lg font-semibold text-cyan-400">
-                Select your cards ({selectedResponseCards.length}/10)
+              <h3 className="text-lg font-semibold text-red-400">
+                They want from you: ({activeTrade?.requestedCards?.length || 0} cards)
               </h3>
-              <ScrollArea className="h-80 border border-cyan-500/30 rounded p-2">
-                <div className="grid grid-cols-2 gap-2">
-                  {groupedAndSortedCollection.map((card, index) => {
-                    const isSelected = selectedResponseCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
-                    return (
-                      <Card
-                        key={index}
-                        onClick={() => toggleResponseCard(card)}
-                        className={`cursor-pointer transition-all ${
-                          isSelected 
-                            ? 'border-4 border-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.8)]' 
-                            : 'border-2 border-cyan-500/30 hover:border-cyan-500'
-                        }`}
-                      >
-                        <div className="relative">
-                          <img src={card.images?.small} alt={card.name} className="w-full" />
-                          {isSelected && (
-                            <div className="absolute top-1 right-1 bg-cyan-500 rounded-full p-1">
-                              <Check className="h-4 w-4 text-black" />
-                            </div>
-                          )}
-                        </div>
-                      </Card>
-                    );
-                  })}
+              <ScrollArea className="h-96 border-2 border-red-500/30 rounded p-2 bg-slate-800/30">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {activeTrade?.requestedCards.map((card, index) => (
+                    <Card key={index} className="border-2 border-red-500/30">
+                      <img src={card.images?.small} alt={card.name} className="w-full" />
+                      <p className="text-xs text-center text-white p-1 bg-slate-900/50">{card.name}</p>
+                    </Card>
+                  ))}
                 </div>
               </ScrollArea>
             </div>
           </div>
-          <div className="flex justify-end gap-2 mt-4">
-            <Button 
-              onClick={() => activeTrade && handleDeclineTrade(activeTrade.id)}
-              className="bg-red-500 text-white hover:bg-red-400"
-            >
-              Decline Trade
-            </Button>
-            <Button 
-              onClick={handleAcceptTrade}
-              disabled={selectedResponseCards.length === 0}
-              className="bg-green-500 text-white hover:bg-green-400"
-            >
-              Accept Trade
-            </Button>
+          <div className="flex justify-between items-center pt-4 border-t border-purple-500/30">
+            <p className="text-sm text-cyan-100/70">
+              Trade: {activeTrade?.requestedCards?.length || 0} of your cards for {activeTrade?.offeredCards?.length || 0} of their cards
+            </p>
+            <div className="flex gap-2">
+              <Button 
+                onClick={() => activeTrade && handleDeclineTrade(activeTrade.id)}
+                className="bg-red-500 text-white hover:bg-red-400"
+              >
+                Decline Trade
+              </Button>
+              <Button 
+                onClick={handleAcceptTrade}
+                className="bg-green-500 text-white hover:bg-green-400"
+              >
+                Accept Trade
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
