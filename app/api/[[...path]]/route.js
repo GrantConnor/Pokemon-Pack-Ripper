@@ -887,8 +887,14 @@ export async function POST(request) {
         return NextResponse.json({ error: 'Must offer 1-10 cards' }, { status: 400 });
       }
 
-      if (requestedCards.length === 0 || requestedCards.length > 10) {
-        return NextResponse.json({ error: 'Must request 1-10 cards' }, { status: 400 });
+      // Allow 0 requested cards (free gift) but max 10
+      if (requestedCards.length > 10) {
+        return NextResponse.json({ error: 'Cannot request more than 10 cards' }, { status: 400 });
+      }
+
+      // Prevent taking cards for free - if requesting cards, must offer cards
+      if (requestedCards.length > 0 && offeredCards.length === 0) {
+        return NextResponse.json({ error: 'Cannot take cards without offering anything' }, { status: 400 });
       }
 
       const database = await connectDB();
@@ -953,26 +959,40 @@ export async function POST(request) {
         return NextResponse.json({ error: 'Sender not found' }, { status: 404 });
       }
 
-      // Execute the trade: swap the exact cards specified in the trade request
-      // Remove offered cards from sender, add requested cards to sender
+      // Execute the trade in separate operations to avoid MongoDB conflicts
+      
+      // Step 1: Remove offered cards from sender
       await database.collection('users').updateOne(
         { id: trade.from },
-        { 
-          $pull: { collection: { $or: trade.offeredCards.map(card => ({ id: card.id, pulledAt: card.pulledAt })) } },
-          $push: { collection: { $each: trade.requestedCards } }
-        }
+        { $pull: { collection: { $or: trade.offeredCards.map(card => ({ id: card.id, pulledAt: card.pulledAt })) } } }
       );
 
-      // Remove requested cards from receiver, add offered cards, remove trade request
+      // Step 2: Add requested cards to sender (if any)
+      if (trade.requestedCards.length > 0) {
+        await database.collection('users').updateOne(
+          { id: trade.from },
+          { $push: { collection: { $each: trade.requestedCards } } }
+        );
+      }
+
+      // Step 3: Remove requested cards from receiver (if any)
+      if (trade.requestedCards.length > 0) {
+        await database.collection('users').updateOne(
+          { id: userId },
+          { $pull: { collection: { $or: trade.requestedCards.map(card => ({ id: card.id, pulledAt: card.pulledAt })) } } }
+        );
+      }
+
+      // Step 4: Add offered cards to receiver
       await database.collection('users').updateOne(
         { id: userId },
-        { 
-          $pull: { 
-            collection: { $or: trade.requestedCards.map(card => ({ id: card.id, pulledAt: card.pulledAt })) },
-            tradeRequests: { id: tradeId }
-          },
-          $push: { collection: { $each: trade.offeredCards } }
-        }
+        { $push: { collection: { $each: trade.offeredCards } } }
+      );
+
+      // Step 5: Remove the trade request
+      await database.collection('users').updateOne(
+        { id: userId },
+        { $pull: { tradeRequests: { id: tradeId } } }
       );
 
       return NextResponse.json({ 

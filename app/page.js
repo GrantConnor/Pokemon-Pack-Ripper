@@ -53,6 +53,8 @@ export default function App() {
   const [activeTrade, setActiveTrade] = useState(null);
   const [selectedResponseCards, setSelectedResponseCards] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
+  const [tradeSearchWant, setTradeSearchWant] = useState('');
+  const [tradeSearchOffer, setTradeSearchOffer] = useState('');
 
   useEffect(() => {
     // Check if user is logged in
@@ -381,9 +383,11 @@ export default function App() {
       return;
     }
 
+    // Allow free gifts (0 requested cards), but show confirmation
     if (selectedResponseCards.length === 0) {
-      alert('Please select at least 1 card you want from their collection');
-      return;
+      if (!window.confirm(`You're giving ${selectedTradeCards.length} card(s) for FREE. Continue?`)) {
+        return;
+      }
     }
 
     try {
@@ -404,6 +408,8 @@ export default function App() {
         setShowTradeModal(false);
         setSelectedTradeCards([]);
         setSelectedResponseCards([]);
+        setTradeSearchWant('');
+        setTradeSearchOffer('');
         loadFriends();
         loadCollection();
       } else {
@@ -1602,33 +1608,47 @@ export default function App() {
               <h3 className="text-lg font-semibold text-cyan-400">
                 What you want ({selectedResponseCards.length}/10)
               </h3>
-              <p className="text-xs text-cyan-100/70">Browse {tradeFriend?.username}'s collection</p>
+              <p className="text-xs text-cyan-100/70">Browse {tradeFriend?.username}'s collection (optional - leave empty for free gift)</p>
+              
+              {/* Search bar for their collection */}
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-cyan-400" />
+                <Input
+                  placeholder="Search their cards..."
+                  value={tradeSearchWant}
+                  onChange={(e) => setTradeSearchWant(e.target.value)}
+                  className="pl-8 border-2 border-cyan-500/30 bg-slate-700/50 text-white text-sm"
+                />
+              </div>
+
               <ScrollArea className="h-96 border-2 border-cyan-500/30 rounded p-2 bg-slate-800/30">
                 {tradeFriend?.collection && tradeFriend.collection.length > 0 ? (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {tradeFriend.collection.map((card, index) => {
-                      const isSelected = selectedResponseCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
-                      return (
-                        <Card
-                          key={index}
-                          onClick={() => toggleRequestCard(card)}
-                          className={`cursor-pointer transition-all ${
-                            isSelected 
-                              ? 'border-4 border-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.8)]' 
-                              : 'border-2 border-cyan-500/30 hover:border-cyan-500'
-                          }`}
-                        >
-                          <div className="relative">
-                            <img src={card.images?.small} alt={card.name} className="w-full" />
-                            {isSelected && (
-                              <div className="absolute top-1 right-1 bg-cyan-500 rounded-full p-1">
-                                <Check className="h-4 w-4 text-black" />
-                              </div>
-                            )}
-                          </div>
-                        </Card>
-                      );
-                    })}
+                    {tradeFriend.collection
+                      .filter(card => !tradeSearchWant || card.name.toLowerCase().includes(tradeSearchWant.toLowerCase()))
+                      .map((card, index) => {
+                        const isSelected = selectedResponseCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
+                        return (
+                          <Card
+                            key={index}
+                            onClick={() => toggleRequestCard(card)}
+                            className={`cursor-pointer transition-all ${
+                              isSelected 
+                                ? 'border-4 border-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.8)]' 
+                                : 'border-2 border-cyan-500/30 hover:border-cyan-500'
+                            }`}
+                          >
+                            <div className="relative">
+                              <img src={card.images?.small} alt={card.name} className="w-full" />
+                              {isSelected && (
+                                <div className="absolute top-1 right-1 bg-cyan-500 rounded-full p-1">
+                                  <Check className="h-4 w-4 text-black" />
+                                </div>
+                              )}
+                            </div>
+                          </Card>
+                        );
+                      })}
                   </div>
                 ) : (
                   <p className="text-center text-cyan-100/50 py-8">Loading collection...</p>
@@ -1641,39 +1661,57 @@ export default function App() {
               <h3 className="text-lg font-semibold text-purple-400">
                 What you're offering ({selectedTradeCards.length}/10)
               </h3>
-              <p className="text-xs text-purple-100/70">Select from your collection</p>
+              <p className="text-xs text-purple-100/70">Select from your collection (required)</p>
+              
+              {/* Search bar for your collection */}
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-purple-400" />
+                <Input
+                  placeholder="Search your cards..."
+                  value={tradeSearchOffer}
+                  onChange={(e) => setTradeSearchOffer(e.target.value)}
+                  className="pl-8 border-2 border-purple-500/30 bg-slate-700/50 text-white text-sm"
+                />
+              </div>
+
               <ScrollArea className="h-96 border-2 border-purple-500/30 rounded p-2 bg-slate-800/30">
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {groupedAndSortedCollection.map((card, index) => {
-                    const isSelected = selectedTradeCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
-                    return (
-                      <Card
-                        key={index}
-                        onClick={() => toggleTradeCard(card)}
-                        className={`cursor-pointer transition-all ${
-                          isSelected 
-                            ? 'border-4 border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.8)]' 
-                            : 'border-2 border-purple-500/30 hover:border-purple-500'
-                        }`}
-                      >
-                        <div className="relative">
-                          <img src={card.images?.small} alt={card.name} className="w-full" />
-                          {isSelected && (
-                            <div className="absolute top-1 right-1 bg-purple-500 rounded-full p-1">
-                              <Check className="h-4 w-4 text-white" />
-                            </div>
-                          )}
-                        </div>
-                      </Card>
-                    );
-                  })}
+                  {groupedAndSortedCollection
+                    .filter(card => !tradeSearchOffer || card.name.toLowerCase().includes(tradeSearchOffer.toLowerCase()))
+                    .map((card, index) => {
+                      const isSelected = selectedTradeCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
+                      return (
+                        <Card
+                          key={index}
+                          onClick={() => toggleTradeCard(card)}
+                          className={`cursor-pointer transition-all ${
+                            isSelected 
+                              ? 'border-4 border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.8)]' 
+                              : 'border-2 border-purple-500/30 hover:border-purple-500'
+                          }`}
+                        >
+                          <div className="relative">
+                            <img src={card.images?.small} alt={card.name} className="w-full" />
+                            {isSelected && (
+                              <div className="absolute top-1 right-1 bg-purple-500 rounded-full p-1">
+                                <Check className="h-4 w-4 text-white" />
+                              </div>
+                            )}
+                          </div>
+                        </Card>
+                      );
+                    })}
                 </div>
               </ScrollArea>
             </div>
           </div>
           <div className="flex justify-between items-center pt-4 border-t border-purple-500/30">
             <p className="text-sm text-cyan-100/70">
-              Trading {selectedTradeCards.length} cards for {selectedResponseCards.length} cards
+              {selectedResponseCards.length === 0 ? (
+                <span className="text-yellow-400">FREE GIFT: Giving {selectedTradeCards.length} card(s) for nothing</span>
+              ) : (
+                `Trading ${selectedTradeCards.length} cards for ${selectedResponseCards.length} cards`
+              )}
             </p>
             <div className="flex gap-2">
               <Button onClick={() => setShowTradeModal(false)} variant="outline">
@@ -1681,7 +1719,7 @@ export default function App() {
               </Button>
               <Button 
                 onClick={handleSendTrade}
-                disabled={selectedTradeCards.length === 0 || selectedResponseCards.length === 0}
+                disabled={selectedTradeCards.length === 0}
                 className="bg-purple-500 text-white hover:bg-purple-400"
               >
                 Send Trade Offer
@@ -1736,7 +1774,11 @@ export default function App() {
           </div>
           <div className="flex justify-between items-center pt-4 border-t border-purple-500/30">
             <p className="text-sm text-cyan-100/70">
-              Trade: {activeTrade?.requestedCards?.length || 0} of your cards for {activeTrade?.offeredCards?.length || 0} of their cards
+              {activeTrade?.requestedCards?.length === 0 ? (
+                <span className="text-yellow-400 font-semibold">🎁 FREE GIFT: They're giving you {activeTrade?.offeredCards?.length || 0} card(s)!</span>
+              ) : (
+                `Trade: ${activeTrade?.requestedCards?.length || 0} of your cards for ${activeTrade?.offeredCards?.length || 0} of their cards`
+              )}
             </p>
             <div className="flex gap-2">
               <Button 
