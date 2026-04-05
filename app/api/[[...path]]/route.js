@@ -19,24 +19,37 @@ const MAX_SPAWN_INTERVAL = 20 * 60 * 1000; // 20 minutes
 const MAX_CATCH_ATTEMPTS = 3;
 
 // XP and Leveling constants
-const XP_FROM_PACK_OPEN = 50; // XP all Pokemon get when opening a pack
-const XP_FROM_CATCH = 100; // XP all Pokemon get when catching a Pokemon
-const XP_POINT_COST = 10; // Points cost per 100 XP
+const XP_FROM_PACK_OPEN = 2; // XP all Pokemon get when opening a pack
+const XP_FROM_CATCH = 10; // XP all Pokemon get when catching a Pokemon
+const XP_PER_PURCHASE = 50; // XP gained per purchase
+const POINTS_PER_XP_PURCHASE = 50; // Points cost per XP purchase
+const MAX_LEVEL = 100;
 
-// XP calculation (Pokemon games use: xp = level^3 for medium-fast growth)
-function getXPForLevel(level) {
-  return Math.floor(Math.pow(level, 3));
+// XP calculation with linear scaling: Level 1→2 needs 10 XP, Level 99→100 needs 1800 XP
+function getXPToNextLevel(currentLevel) {
+  if (currentLevel >= MAX_LEVEL) return 0;
+  return Math.floor(10 + (currentLevel - 1) * 18);
 }
 
-function getXPToNextLevel(currentLevel) {
-  return getXPForLevel(currentLevel + 1) - getXPForLevel(currentLevel);
+function getTotalXPForLevel(level) {
+  let totalXP = 0;
+  for (let i = 1; i < level; i++) {
+    totalXP += getXPToNextLevel(i);
+  }
+  return totalXP;
 }
 
 function calculateLevelFromXP(xp) {
   let level = 1;
-  while (getXPForLevel(level + 1) <= xp && level < 100) {
+  let cumulativeXP = 0;
+  
+  while (level < MAX_LEVEL) {
+    const xpNeeded = getXPToNextLevel(level);
+    if (cumulativeXP + xpNeeded > xp) break;
+    cumulativeXP += xpNeeded;
     level++;
   }
+  
   return level;
 }
 
