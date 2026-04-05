@@ -1566,13 +1566,15 @@ export default function PokemonWilds() {
                 </CardContent>
               </Card>
 
-              {/* Trade Requests */}
-              {tradeRequests && tradeRequests.length > 0 && (
-                <Card className="border-2 border-purple-500/30 bg-slate-800/50">
-                  <CardHeader>
-                    <CardTitle className="text-purple-400">Incoming Pokemon Trade Requests ({tradeRequests.length})</CardTitle>
-                  </CardHeader>
-                  <CardContent>
+              {/* Incoming Pokemon Trade Requests - Always visible */}
+              <Card className="border-2 border-purple-500/30 bg-slate-800/50">
+                <CardHeader>
+                  <CardTitle className="text-purple-400">Incoming Pokemon Trade Requests ({tradeRequests?.length || 0})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {!tradeRequests || tradeRequests.length === 0 ? (
+                    <p className="text-gray-400 text-center py-4">No trade requests</p>
+                  ) : (
                     <div className="space-y-2">
                       {tradeRequests.map((trade) => (
                         <div key={trade.id} className="p-3 bg-slate-700/50 rounded">
@@ -1644,9 +1646,9 @@ export default function PokemonWilds() {
                         </div>
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+                  )}
+                </CardContent>
+              </Card>
             </div>
           </ScrollArea>
         </DialogContent>
@@ -1658,7 +1660,7 @@ export default function PokemonWilds() {
         setMySelectedPokemon(null);
         setPartnerSelectedPokemon(null);
       }}>
-        <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-purple-500/50 bg-gradient-to-b from-green-900 via-emerald-800 to-green-900 backdrop-blur-xl relative overflow-hidden">
+        <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-purple-500/50 bg-gradient-to-b from-green-900 via-emerald-800 to-green-900 backdrop-blur-xl relative overflow-hidden fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
           {/* Pokemon Wilds background pattern */}
           <div className="absolute inset-0 opacity-10">
             <div className="absolute top-10 left-10 text-4xl">🌿</div>
