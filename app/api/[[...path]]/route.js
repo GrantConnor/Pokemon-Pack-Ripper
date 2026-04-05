@@ -615,12 +615,108 @@ function calculateStats(baseStats, ivs, level) {
   };
 }
 
+// Apply XP to all owned Pokemon and handle level-ups
+async function applyXPToAllPokemon(userId, xpAmount, database) {
+  const allPokemon = await database.collection('caught_pokemon').find({ userId }).toArray();
+  
+  for (const pokemon of allPokemon) {
+    const currentXP = (pokemon.currentXP || 0) + xpAmount;
+    const currentLevel = pokemon.level || 1;
+    
+    // Calculate new level based on total XP
+    let newLevel = currentLevel;
+    let remainingXP = currentXP;
+    
+    // Check if we can level up
+    while (newLevel < MAX_LEVEL) {
+      const xpNeeded = getXPToNextLevel(newLevel);
+      if (remainingXP >= xpNeeded) {
+        remainingXP -= xpNeeded;
+        newLevel++;
+      } else {
+        break;
+      }
+    }
+    
+    // If at max level, set XP to 0
+    if (newLevel >= MAX_LEVEL) {
+      remainingXP = 0;
+    }
+    
+    // Update Pokemon
+    const updateData = {
+      currentXP: remainingXP,
+      level: newLevel
+    };
+    
+    // Recalculate stats if level changed
+    if (newLevel !== currentLevel) {
+      updateData.stats = calculateStats(pokemon.baseStats, pokemon.ivs, newLevel);
+    }
+    
+    await database.collection('caught_pokemon').updateOne(
+      { _id: pokemon._id },
+      { $set: updateData }
+    );
+  }
+}
+
+// Fetch evolution chain data from PokeAPI
+async function fetchEvolutionChain(pokemonId) {
+  try {
+    const speciesResponse = await axios.get(`${POKEAPI_BASE}/pokemon-species/${pokemonId}`);
+    const evolutionChainUrl = speciesResponse.data.evolution_chain.url;
+    
+    const chainResponse = await axios.get(evolutionChainUrl);
+    const chain = chainResponse.data.chain;
+    
+    // Parse the evolution chain to find the current Pokemon and its evolution
+    function findEvolution(node, currentId) {
+      if (node.species.url.includes(`/${currentId}/`)) {
+        // Found current Pokemon, check if it can evolve
+        if (node.evolves_to && node.evolves_to.length > 0) {
+          const nextEvolution = node.evolves_to[0];
+          const evolutionDetails = nextEvolution.evolution_details[0];
+          
+          // Extract Pokemon ID from URL
+          const urlParts = nextEvolution.species.url.split('/');
+          const nextId = parseInt(urlParts[urlParts.length - 2]);
+          
+          return {
+            canEvolve: true,
+            evolvesTo: nextId,
+            minLevel: evolutionDetails.min_level || null,
+            trigger: evolutionDetails.trigger.name
+          };
+        }
+        return { canEvolve: false };
+      }
+      
+      // Recursively search in evolutions
+      for (const evolution of node.evolves_to || []) {
+        const result = findEvolution(evolution, currentId);
+        if (result) return result;
+      }
+      
+      return null;
+    }
+    
+    return findEvolution(chain, pokemonId) || { canEvolve: false };
+  } catch (error) {
+    console.error(`Error fetching evolution chain for ${pokemonId}:`, error.message);
+    return { canEvolve: false };
+  }
+}
+
 export async function GET(request) {
   const { pathname, searchParams } = new URL(request.url);
+  
+  console.log(`GET request to: ${pathname}`);
 
   try {
     // Get all sets
     if (pathname.includes('/api/sets')) {
+      console.log('Sets endpoint hit');
       const response = await axios.get(`${POKEMON_TCG_API}/sets`);
       // Filter out unwanted sets
       const filteredSets = response.data.data.filter(set => {
@@ -841,8 +937,14 @@ export async function GET(request) {
             level
           );
           
-          return { ...pokemon, level, stats };
+          return { ...pokemon, level, stats, currentXP: pokemon.currentXP || 0 };
         }
+        
+        // Add currentXP if missing
+        if (pokemon.currentXP === undefined) {
+          return { ...pokemon, currentXP: 0 };
+        }
+        
         return pokemon;
       });
 
@@ -1052,6 +1154,9 @@ export async function POST(request) {
           $set: { points: newPoints }
         }
       );
+
+      // Grant XP to all owned Pokemon
+      await applyXPToAllPokemon(userId, XP_FROM_PACK_OPEN, database);
 
       // Refresh user data and check achievements for this specific set
       user = await database.collection('users').findOne({ id: userId });
@@ -1614,7 +1719,8 @@ export async function POST(request) {
           ...spawn.pokemon,
           userId: userId,
           caughtAt: new Date().toISOString(),
-          spawnId: spawn.spawnedAt
+          spawnId: spawn.spawnedAt,
+          currentXP: 0 // Initialize XP
         };
 
         console.log(`🎯 Pokemon Caught: ${caughtPokemon.displayName}`);
@@ -1623,6 +1729,9 @@ export async function POST(request) {
 
         // Save to user's caught Pokemon
         await database.collection('caught_pokemon').insertOne(caughtPokemon);
+
+        // Grant XP to all owned Pokemon (including the newly caught one)
+        await applyXPToAllPokemon(userId, XP_FROM_CATCH, database);
 
         // Mark spawn as caught and set next spawn time
         const nextInterval = MIN_SPAWN_INTERVAL + Math.random() * (MAX_SPAWN_INTERVAL - MIN_SPAWN_INTERVAL);
@@ -1839,6 +1948,181 @@ export async function POST(request) {
       return NextResponse.json({ 
         success: true,
         message: 'Moveset updated'
+      });
+    }
+
+    // Buy XP for a specific Pokemon
+    if (pathname.includes('/api/wilds/buy-xp')) {
+      const { userId, pokemonId } = body;
+      
+      if (!userId || !pokemonId) {
+        return NextResponse.json({ error: 'User ID and Pokemon ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      
+      // Get user to check points
+      const user = await database.collection('users').findOne({ id: userId });
+      if (!user) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      // Check if user has enough points (Spheal always has enough)
+      if (user.username !== 'Spheal' && user.points < POINTS_PER_XP_PURCHASE) {
+        return NextResponse.json({ 
+          error: 'Insufficient points',
+          pointsNeeded: POINTS_PER_XP_PURCHASE - user.points
+        }, { status: 400 });
+      }
+
+      // Get the Pokemon
+      const pokemon = await database.collection('caught_pokemon').findOne({
+        _id: new ObjectId(pokemonId),
+        userId: userId
+      });
+
+      if (!pokemon) {
+        return NextResponse.json({ error: 'Pokemon not found' }, { status: 404 });
+      }
+
+      // Check if already max level
+      if (pokemon.level >= MAX_LEVEL) {
+        return NextResponse.json({ 
+          error: 'Pokemon is already at max level'
+        }, { status: 400 });
+      }
+
+      // Deduct points
+      const newPoints = user.username === 'Spheal' ? 999999 : user.points - POINTS_PER_XP_PURCHASE;
+      await database.collection('users').updateOne(
+        { id: userId },
+        { $set: { points: newPoints } }
+      );
+
+      // Add XP to the Pokemon
+      const currentXP = (pokemon.currentXP || 0) + XP_PER_PURCHASE;
+      const currentLevel = pokemon.level || 1;
+      
+      let newLevel = currentLevel;
+      let remainingXP = currentXP;
+      
+      // Check if we can level up
+      while (newLevel < MAX_LEVEL) {
+        const xpNeeded = getXPToNextLevel(newLevel);
+        if (remainingXP >= xpNeeded) {
+          remainingXP -= xpNeeded;
+          newLevel++;
+        } else {
+          break;
+        }
+      }
+      
+      // If at max level, set XP to 0
+      if (newLevel >= MAX_LEVEL) {
+        remainingXP = 0;
+      }
+      
+      const updateData = {
+        currentXP: remainingXP,
+        level: newLevel
+      };
+      
+      // Recalculate stats if level changed
+      if (newLevel !== currentLevel) {
+        updateData.stats = calculateStats(pokemon.baseStats, pokemon.ivs, newLevel);
+      }
+      
+      await database.collection('caught_pokemon').updateOne(
+        { _id: new ObjectId(pokemonId) },
+        { $set: updateData }
+      );
+
+      return NextResponse.json({
+        success: true,
+        newLevel: newLevel,
+        currentXP: remainingXP,
+        leveledUp: newLevel !== currentLevel,
+        pointsRemaining: newPoints
+      });
+    }
+
+    // Evolve a Pokemon
+    if (pathname.includes('/api/wilds/evolve')) {
+      const { userId, pokemonId } = body;
+      
+      if (!userId || !pokemonId) {
+        return NextResponse.json({ error: 'User ID and Pokemon ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      
+      // Get the Pokemon
+      const pokemon = await database.collection('caught_pokemon').findOne({
+        _id: new ObjectId(pokemonId),
+        userId: userId
+      });
+
+      if (!pokemon) {
+        return NextResponse.json({ error: 'Pokemon not found' }, { status: 404 });
+      }
+
+      // Fetch evolution data
+      const evolutionData = await fetchEvolutionChain(pokemon.id);
+      
+      if (!evolutionData.canEvolve) {
+        return NextResponse.json({ 
+          error: 'This Pokemon cannot evolve'
+        }, { status: 400 });
+      }
+
+      // Check if level requirement is met
+      if (evolutionData.minLevel && pokemon.level < evolutionData.minLevel) {
+        return NextResponse.json({
+          error: `Pokemon must be level ${evolutionData.minLevel} to evolve`,
+          requiredLevel: evolutionData.minLevel
+        }, { status: 400 });
+      }
+
+      // Check if it's a level-up evolution
+      if (evolutionData.trigger !== 'level-up') {
+        return NextResponse.json({
+          error: 'This Pokemon requires a special evolution method',
+          trigger: evolutionData.trigger
+        }, { status: 400 });
+      }
+
+      // Fetch the evolved Pokemon data
+      const evolvedData = await fetchPokemonData(evolutionData.evolvesTo, pokemon.isShiny);
+      
+      // Prepare update: preserve level, XP, IVs, nickname, isShiny, caughtAt
+      // Update: id, name, displayName, sprite, baseStats, types, allMoves, allMovesData
+      const updateData = {
+        id: evolvedData.id,
+        name: evolvedData.name,
+        displayName: evolvedData.displayName,
+        sprite: evolvedData.sprite,
+        types: evolvedData.types,
+        baseStats: evolvedData.baseStats,
+        allMoves: evolvedData.allMoves,
+        allMovesData: evolvedData.allMovesData,
+        captureRate: evolvedData.captureRate,
+        isLegendary: evolvedData.isLegendary,
+        isMythical: evolvedData.isMythical,
+        // Recalculate stats with new base stats but same level and IVs
+        stats: calculateStats(evolvedData.baseStats, pokemon.ivs, pokemon.level),
+        // Update moveset to first 4 moves of evolved form (user can customize later)
+        moveset: evolvedData.moveset
+      };
+
+      await database.collection('caught_pokemon').updateOne(
+        { _id: new ObjectId(pokemonId) },
+        { $set: updateData }
+      );
+
+      return NextResponse.json({
+        success: true,
+        evolvedTo: evolvedData.displayName,
+        message: `${pokemon.nickname || pokemon.displayName} evolved into ${evolvedData.displayName}!`
       });
     }
 

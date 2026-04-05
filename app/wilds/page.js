@@ -37,6 +37,10 @@ export default function PokemonWilds() {
   const [selectedPokemonForTrade, setSelectedPokemonForTrade] = useState([]);
   const [viewingFriendPokemon, setViewingFriendPokemon] = useState(null);
   const [friendPokemonList, setFriendPokemonList] = useState([]);
+  
+  // Leveling and Evolution states
+  const [buyingXP, setBuyingXP] = useState(false);
+  const [evolving, setEvolving] = useState(false);
 
   useEffect(() => {
     // Check if user is logged in
@@ -385,6 +389,101 @@ export default function PokemonWilds() {
     }
   };
 
+  // Helper function to calculate XP needed for next level
+  const getXPToNextLevel = (currentLevel) => {
+    if (currentLevel >= 100) return 0;
+    return Math.floor(10 + (currentLevel - 1) * 18);
+  };
+
+  const handleBuyXP = async () => {
+    if (!selectedPokemon || buyingXP) return;
+    
+    if (selectedPokemon.level >= 100) {
+      alert('Pokemon is already at max level!');
+      return;
+    }
+    
+    if (user.username !== 'Spheal' && user.points < 50) {
+      alert('Not enough points! Need 50 points.');
+      return;
+    }
+
+    setBuyingXP(true);
+    try {
+      const response = await fetch('/api/wilds/buy-xp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId: user.id,
+          pokemonId: selectedPokemon._id
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        // Update local user points
+        setUser({ ...user, points: data.pointsRemaining });
+        
+        // Update selected Pokemon
+        const updatedPokemon = { 
+          ...selectedPokemon, 
+          level: data.newLevel, 
+          currentXP: data.currentXP 
+        };
+        setSelectedPokemon(updatedPokemon);
+        
+        // Reload Pokemon list
+        await loadMyPokemon();
+        
+        if (data.leveledUp) {
+          alert(`🎉 Leveled up to ${data.newLevel}!`);
+        } else {
+          alert('XP purchased successfully!');
+        }
+      } else {
+        alert(data.error || 'Error purchasing XP');
+      }
+    } catch (err) {
+      alert('Error purchasing XP');
+    } finally {
+      setBuyingXP(false);
+    }
+  };
+
+  const handleEvolve = async () => {
+    if (!selectedPokemon || evolving) return;
+
+    const confirmEvolve = confirm(`Evolve ${selectedPokemon.nickname || selectedPokemon.displayName}?`);
+    if (!confirmEvolve) return;
+
+    setEvolving(true);
+    try {
+      const response = await fetch('/api/wilds/evolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId: user.id,
+          pokemonId: selectedPokemon._id
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert(data.message);
+        
+        // Close dialog and reload
+        setSelectedPokemon(null);
+        await loadMyPokemon();
+      } else {
+        alert(data.error || 'Cannot evolve this Pokemon');
+      }
+    } catch (err) {
+      alert('Error evolving Pokemon');
+    } finally {
+      setEvolving(false);
+    }
+  };
+
   const formatTime = (ms) => {
     if (!ms) return '...';
     const totalSeconds = Math.floor((ms - Date.now()) / 1000);
@@ -477,6 +576,7 @@ export default function PokemonWilds() {
               <div className="text-right">
                 <p className="text-sm text-gray-400">Trainer</p>
                 <p className="text-xl font-bold text-white">{user.username}</p>
+                <p className="text-sm text-yellow-400 font-bold">⭐ {user.points} Points</p>
               </div>
             </div>
           </div>
@@ -814,6 +914,43 @@ export default function PokemonWilds() {
                         <span className="text-gray-400">Level:</span>
                         <span className="text-yellow-400 font-bold text-lg">{selectedPokemon.level || 50}</span>
                       </div>
+                      
+                      {/* XP Progress Bar */}
+                      {selectedPokemon.level < 100 && (
+                        <div className="bg-slate-800 p-3 rounded space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-cyan-400 font-bold">XP Progress</span>
+                            <span className="text-white">
+                              {selectedPokemon.currentXP || 0} / {getXPToNextLevel(selectedPokemon.level || 1)}
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-700 rounded-full h-3 overflow-hidden">
+                            <div 
+                              className="bg-gradient-to-r from-cyan-500 to-blue-500 h-full transition-all duration-300"
+                              style={{ 
+                                width: `${Math.min(100, ((selectedPokemon.currentXP || 0) / getXPToNextLevel(selectedPokemon.level || 1)) * 100)}%` 
+                              }}
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={handleBuyXP}
+                              disabled={buyingXP || selectedPokemon.level >= 100 || (user.username !== 'Spheal' && user.points < 50)}
+                              className="flex-1 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                              size="sm"
+                            >
+                              {buyingXP ? 'Buying...' : 'Buy 50 XP (50 Points)'}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {selectedPokemon.level >= 100 && (
+                        <div className="bg-gradient-to-r from-yellow-900/50 to-yellow-800/50 p-3 rounded text-center">
+                          <span className="text-yellow-400 font-bold text-lg">🏆 MAX LEVEL 🏆</span>
+                        </div>
+                      )}
+                      
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div className="bg-slate-800 p-2 rounded">
                           <span className="text-gray-400">HP:</span>
@@ -941,6 +1078,20 @@ export default function PokemonWilds() {
                     })}
                   </div>
                 </div>
+
+                {/* Evolution Button */}
+                <Button
+                  onClick={handleEvolve}
+                  disabled={evolving || selectedPokemon.level < 16}
+                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed font-bold text-lg py-6"
+                >
+                  {evolving ? 'Evolving...' : '✨ Evolve Pokemon ✨'}
+                </Button>
+                {selectedPokemon.level < 16 && (
+                  <p className="text-gray-400 text-xs text-center -mt-2">
+                    Most Pokemon evolve at level 16 or higher
+                  </p>
+                )}
 
                 <p className="text-gray-400 text-sm">
                   Caught: {new Date(selectedPokemon.caughtAt).toLocaleDateString()}
