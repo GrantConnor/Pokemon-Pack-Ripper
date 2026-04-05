@@ -287,6 +287,26 @@ export default function PokemonWilds() {
     }
   };
 
+  const handleAdminSpawnShiny = async () => {
+    if (!user || user.username !== 'Spheal') return;
+    
+    try {
+      const response = await fetch('/api/wilds/admin-spawn-shiny', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminId: user.id })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        loadCurrentSpawn();
+        alert(data.message);
+      }
+    } catch (err) {
+      alert('Error spawning shiny Pokemon');
+    }
+  };
+
   const handleUpdateNickname = async () => {
     if (!selectedPokemon) return;
 
@@ -413,12 +433,20 @@ export default function PokemonWilds() {
             </div>
             <div className="flex gap-4 items-center">
               {user.username === 'Spheal' && (
-                <Button 
-                  onClick={handleAdminSpawn}
-                  className="bg-red-600 hover:bg-red-500 border-2 border-red-400 font-bold"
-                >
-                  ⚡ Spawn Pokemon Now
-                </Button>
+                <>
+                  <Button 
+                    onClick={handleAdminSpawn}
+                    className="bg-red-600 hover:bg-red-500 border-2 border-red-400 font-bold"
+                  >
+                    ⚡ Spawn Pokemon
+                  </Button>
+                  <Button 
+                    onClick={handleAdminSpawnShiny}
+                    className="bg-yellow-600 hover:bg-yellow-500 border-2 border-yellow-400 font-bold"
+                  >
+                    ✨ Spawn Shiny
+                  </Button>
+                </>
               )}
               <Button 
                 onClick={() => setShowFriendsPanel(true)}
@@ -649,7 +677,8 @@ export default function PokemonWilds() {
                         filter: pokemon.isShiny ? 'brightness(1.2) drop-shadow(0 0 10px rgba(234, 179, 8, 0.6))' : 'none'
                       }}
                     />
-                    <h3 className="text-center font-bold text-white">
+                    <h3 className="text-center font-bold text-white flex items-center justify-center gap-1">
+                      {pokemon.isShiny && <span className="text-yellow-400 text-sm">✨</span>}
                       {pokemon.nickname || pokemon.displayName}
                     </h3>
                     <p className="text-center text-gray-400 text-sm">

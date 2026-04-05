@@ -1673,6 +1673,61 @@ export async function POST(request) {
       });
     }
 
+    // Admin: Force spawn a SHINY Pokemon (Spheal only)
+    if (pathname.includes('/api/wilds/admin-spawn-shiny')) {
+      const { adminId } = body;
+      
+      if (!adminId) {
+        return NextResponse.json({ error: 'Admin ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const admin = await database.collection('users').findOne({ id: adminId });
+      
+      if (!admin || admin.username !== 'Spheal') {
+        return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
+      }
+
+      // Force create new SHINY spawn
+      const randomId = Math.floor(Math.random() * MAX_POKEMON_ID) + 1;
+      const pokemonData = await fetchPokemonData(randomId);
+      
+      // FORCE shiny
+      pokemonData.isShiny = true;
+      
+      // Get shiny sprite
+      const pokemonResponse = await axios.get(`${POKEAPI_BASE}/pokemon/${randomId}`);
+      const pokemon = pokemonResponse.data;
+      pokemonData.sprite = pokemon.sprites.other['official-artwork'].front_shiny || 
+                          pokemon.sprites.front_shiny || 
+                          pokemon.sprites.other['official-artwork'].front_default;
+      
+      // Add level and stats
+      pokemonData.level = Math.floor(Math.random() * 46) + 5;
+      pokemonData.stats = calculateStats(pokemonData.baseStats, pokemonData.ivs, pokemonData.level);
+      
+      const newSpawn = {
+        id: 'current',
+        pokemon: pokemonData,
+        spawnedAt: Date.now(),
+        nextSpawnTime: null,
+        caughtBy: null,
+        catchAttempts: {}
+      };
+      
+      await database.collection('global_spawn').updateOne(
+        { id: 'current' },
+        { $set: newSpawn },
+        { upsert: true }
+      );
+
+      return NextResponse.json({ 
+        success: true, 
+        spawn: newSpawn,
+        message: `Spawned SHINY ${pokemonData.displayName}! ✨`
+      });
+    }
+
     // Update Pokemon nickname
     if (pathname.includes('/api/wilds/update-nickname')) {
       const { userId, pokemonId, nickname } = body;
