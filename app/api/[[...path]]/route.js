@@ -377,11 +377,15 @@ async function fetchPokemonData(pokemonId) {
     // Get sprite (shiny or normal)
     let sprite;
     if (isShiny) {
-      sprite = pokemon.sprites.other['official-artwork'].front_shiny || 
+      // Try multiple shiny sprite sources
+      sprite = pokemon.sprites.other?.['official-artwork']?.front_shiny || 
+               pokemon.sprites.other?.home?.front_shiny ||
                pokemon.sprites.front_shiny || 
-               pokemon.sprites.other['official-artwork'].front_default;
+               pokemon.sprites.other?.['official-artwork']?.front_default ||
+               pokemon.sprites.front_default;
     } else {
-      sprite = pokemon.sprites.other['official-artwork'].front_default || pokemon.sprites.front_default;
+      sprite = pokemon.sprites.other?.['official-artwork']?.front_default || 
+               pokemon.sprites.front_default;
     }
     
     // Get all learnable moves with their data
@@ -1695,12 +1699,14 @@ export async function POST(request) {
       // FORCE shiny
       pokemonData.isShiny = true;
       
-      // Get shiny sprite
+      // Get shiny sprite - try multiple sources
       const pokemonResponse = await axios.get(`${POKEAPI_BASE}/pokemon/${randomId}`);
       const pokemon = pokemonResponse.data;
-      pokemonData.sprite = pokemon.sprites.other['official-artwork'].front_shiny || 
+      pokemonData.sprite = pokemon.sprites.other?.['official-artwork']?.front_shiny || 
+                          pokemon.sprites.other?.home?.front_shiny ||
                           pokemon.sprites.front_shiny || 
-                          pokemon.sprites.other['official-artwork'].front_default;
+                          pokemon.sprites.other?.['official-artwork']?.front_default ||
+                          pokemon.sprites.front_default;
       
       // Add level and stats
       pokemonData.level = Math.floor(Math.random() * 46) + 5;
