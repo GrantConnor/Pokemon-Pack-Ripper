@@ -1,5 +1,5 @@
 const nextConfig = {
-  output: 'standalone',
+  // Removed 'standalone' output for Netlify deployment
   images: {
     unoptimized: true,
   },
