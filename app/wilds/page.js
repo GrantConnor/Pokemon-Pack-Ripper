@@ -450,13 +450,21 @@ export default function PokemonWilds() {
           {spawn && spawn.pokemon ? (
             <div className="text-center">
               {/* Pokemon Display */}
-              <div className="mb-8 animate-bounce-slow">
+              <div className="mb-8 animate-bounce-slow relative">
+                {spawn.pokemon.isShiny && (
+                  <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                    <div className="text-4xl animate-pulse">✨</div>
+                    <div className="text-yellow-400 font-bold text-sm">SHINY!</div>
+                  </div>
+                )}
                 <img
                   src={spawn.pokemon.sprite}
                   alt={spawn.pokemon.displayName}
                   className="w-64 h-64 mx-auto drop-shadow-2xl filter brightness-110"
                   style={{
-                    filter: 'drop-shadow(0 0 30px rgba(59, 130, 246, 0.7))'
+                    filter: spawn.pokemon.isShiny 
+                      ? 'drop-shadow(0 0 40px rgba(234, 179, 8, 0.9)) brightness(1.2)' 
+                      : 'drop-shadow(0 0 30px rgba(59, 130, 246, 0.7))'
                   }}
                 />
               </div>
@@ -465,6 +473,7 @@ export default function PokemonWilds() {
               <Card className="bg-slate-900/90 border-cyan-500/50 border-2 max-w-md mx-auto">
                 <CardHeader>
                   <CardTitle className="text-3xl text-cyan-400 flex items-center justify-center gap-2">
+                    {spawn.pokemon.isShiny && <span className="text-yellow-400">✨</span>}
                     {spawn.pokemon.displayName}
                     <span className="text-gray-400 text-lg">#{spawn.pokemon.id}</span>
                     {spawn.pokemon.gender && spawn.pokemon.gender !== 'genderless' && (
@@ -475,6 +484,11 @@ export default function PokemonWilds() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {spawn.pokemon.isShiny && (
+                    <Badge className="bg-gradient-to-r from-yellow-500 via-pink-500 to-purple-500 text-white font-bold w-full justify-center py-2">
+                      ✨ SHINY POKEMON! ✨
+                    </Badge>
+                  )}
                   <div className="flex gap-2 justify-center">
                     {spawn.pokemon.types.map(type => (
                       <Badge 
@@ -616,17 +630,27 @@ export default function PokemonWilds() {
               myPokemon.map((pokemon, idx) => (
                 <Card 
                   key={idx}
-                  className="bg-slate-800/90 border-purple-500/30 cursor-pointer hover:border-purple-500 transition-all"
+                  className={`bg-slate-800/90 border-purple-500/30 cursor-pointer hover:border-purple-500 transition-all ${
+                    pokemon.isShiny ? 'ring-2 ring-yellow-400' : ''
+                  }`}
                   onClick={() => setSelectedPokemon(pokemon)}
                 >
-                  <CardContent className="p-4">
+                  <CardContent className="p-4 relative">
+                    {pokemon.isShiny && (
+                      <div className="absolute top-1 right-1">
+                        <span className="text-yellow-400 text-xl">✨</span>
+                      </div>
+                    )}
                     <img
                       src={pokemon.sprite}
                       alt={pokemon.displayName}
                       className="w-24 h-24 mx-auto mb-2"
+                      style={{
+                        filter: pokemon.isShiny ? 'brightness(1.2) drop-shadow(0 0 10px rgba(234, 179, 8, 0.6))' : 'none'
+                      }}
                     />
                     <h3 className="text-center font-bold text-white">
-                      {pokemon.displayName}
+                      {pokemon.nickname || pokemon.displayName}
                     </h3>
                     <p className="text-center text-gray-400 text-sm">
                       #{pokemon.id}
@@ -659,6 +683,7 @@ export default function PokemonWilds() {
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
             <DialogHeader>
               <DialogTitle className="text-3xl font-bold text-cyan-400 flex items-center gap-3">
+                {selectedPokemon.isShiny && <span className="text-yellow-400 text-2xl">✨</span>}
                 <span>
                   {selectedPokemon.nickname || selectedPokemon.displayName} 
                   {selectedPokemon.nickname && (
@@ -676,10 +701,18 @@ export default function PokemonWilds() {
 
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-4">
+                {selectedPokemon.isShiny && (
+                  <Badge className="bg-gradient-to-r from-yellow-500 via-pink-500 to-purple-500 text-white font-bold w-full justify-center py-2">
+                    ✨ SHINY ✨
+                  </Badge>
+                )}
                 <img
                   src={selectedPokemon.sprite}
                   alt={selectedPokemon.displayName}
                   className="w-full"
+                  style={{
+                    filter: selectedPokemon.isShiny ? 'brightness(1.2) drop-shadow(0 0 20px rgba(234, 179, 8, 0.8))' : 'none'
+                  }}
                 />
                 <div className="flex gap-2 justify-center">
                   {selectedPokemon.types.map(type => (
@@ -835,12 +868,55 @@ export default function PokemonWilds() {
                     </Button>
                   </div>
                   
-                  <div className="space-y-1">
-                    {selectedPokemon.moveset.map((move, idx) => (
-                      <div key={idx} className="bg-slate-800 p-2 rounded text-white capitalize">
-                        {move.replace('-', ' ')}
-                      </div>
-                    ))}
+                  <div className="space-y-2">
+                    {selectedPokemon.moveset.map((moveName, idx) => {
+                      const moveData = selectedPokemon.allMovesData?.find(m => m.name === moveName);
+                      return (
+                        <div key={idx} className="bg-slate-800 p-3 rounded">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <h4 className="text-white font-bold capitalize">{moveName.replace('-', ' ')}</h4>
+                              {moveData && (
+                                <div className="text-xs mt-1 space-y-1">
+                                  <div className="flex gap-2 flex-wrap">
+                                    <Badge className={`${getTypeColor(moveData.type)} text-white capitalize px-2 py-0.5`}>
+                                      {moveData.type}
+                                    </Badge>
+                                    <Badge className="bg-gray-700 text-white px-2 py-0.5">
+                                      {moveData.damageClass}
+                                    </Badge>
+                                    {moveData.power && (
+                                      <span className="text-red-400 font-bold">PWR: {moveData.power}</span>
+                                    )}
+                                    {moveData.accuracy && (
+                                      <span className="text-blue-400 font-bold">ACC: {moveData.accuracy}%</span>
+                                    )}
+                                    {moveData.pp && (
+                                      <span className="text-cyan-400 font-bold">PP: {moveData.pp}</span>
+                                    )}
+                                  </div>
+                                  {moveData.ailment && moveData.ailment !== 'none' && (
+                                    <div className="text-yellow-400">
+                                      Status: {moveData.ailment} ({moveData.ailmentChance}% chance)
+                                    </div>
+                                  )}
+                                  {moveData.statChanges && moveData.statChanges.length > 0 && (
+                                    <div className="text-green-400">
+                                      {moveData.statChanges.map((sc, i) => (
+                                        <span key={i}>
+                                          {sc.change > 0 ? '+' : ''}{sc.change} {sc.stat}
+                                          {i < moveData.statChanges.length - 1 ? ', ' : ''}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 

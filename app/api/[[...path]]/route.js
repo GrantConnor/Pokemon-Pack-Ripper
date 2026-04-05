@@ -368,18 +368,55 @@ async function fetchPokemonData(pokemonId) {
     const speciesResponse = await axios.get(`${POKEAPI_BASE}/pokemon-species/${pokemonId}`);
     const species = speciesResponse.data;
     
+    // Determine if shiny (1/4000 chance)
+    const isShiny = Math.random() < (1 / 4000);
+    
     // Extract data
     const types = pokemon.types.map(t => t.type.name);
-    const sprite = pokemon.sprites.other['official-artwork'].front_default || pokemon.sprites.front_default;
     
-    // Get all learnable moves (filter for latest version group)
-    const allMoves = pokemon.moves
+    // Get sprite (shiny or normal)
+    let sprite;
+    if (isShiny) {
+      sprite = pokemon.sprites.other['official-artwork'].front_shiny || 
+               pokemon.sprites.front_shiny || 
+               pokemon.sprites.other['official-artwork'].front_default;
+    } else {
+      sprite = pokemon.sprites.other['official-artwork'].front_default || pokemon.sprites.front_default;
+    }
+    
+    // Get all learnable moves with their data
+    const movePromises = pokemon.moves
       .filter(m => {
-        // Get the most recent learn method
         const details = m.version_group_details;
         return details.some(d => d.move_learn_method.name === 'level-up' || d.move_learn_method.name === 'machine');
       })
-      .map(m => m.move.name);
+      .slice(0, 50) // Limit to prevent too many API calls
+      .map(async m => {
+        try {
+          const moveData = await axios.get(m.move.url);
+          return {
+            name: m.move.name,
+            power: moveData.data.power,
+            accuracy: moveData.data.accuracy,
+            pp: moveData.data.pp,
+            type: moveData.data.type.name,
+            damageClass: moveData.data.damage_class.name,
+            effectChance: moveData.data.effect_chance,
+            effectEntries: moveData.data.effect_entries.find(e => e.language.name === 'en')?.short_effect || '',
+            ailment: moveData.data.meta?.ailment?.name || null,
+            ailmentChance: moveData.data.meta?.ailment_chance || 0,
+            statChanges: moveData.data.stat_changes.map(sc => ({
+              stat: sc.stat.name,
+              change: sc.change
+            }))
+          };
+        } catch (err) {
+          return { name: m.move.name, power: null, accuracy: null, type: 'normal', damageClass: 'status' };
+        }
+      });
+    
+    const allMovesData = await Promise.all(movePromises);
+    const allMoveNames = allMovesData.map(m => m.name);
     
     // Generate random IVs (0-31 for each stat)
     const ivs = {
@@ -392,11 +429,10 @@ async function fetchPokemonData(pokemonId) {
     };
     
     // Select 4 random moves for starting moveset
-    const shuffledMoves = allMoves.sort(() => 0.5 - Math.random());
-    const moveset = shuffledMoves.slice(0, Math.min(4, allMoves.length));
+    const shuffledMoves = allMovesData.sort(() => 0.5 - Math.random());
+    const moveset = shuffledMoves.slice(0, Math.min(4, allMovesData.length)).map(m => m.name);
     
     // Generate gender based on gender_rate
-    // gender_rate: -1 = genderless, 0 = always male, 8 = always female, 1-7 = ratio
     let gender = null;
     if (species.gender_rate === -1) {
       gender = 'genderless';
@@ -405,7 +441,6 @@ async function fetchPokemonData(pokemonId) {
     } else if (species.gender_rate === 8) {
       gender = 'female';
     } else {
-      // Random based on ratio (gender_rate is eighths, so 4 = 50/50)
       const femaleChance = species.gender_rate / 8;
       gender = Math.random() < femaleChance ? 'female' : 'male';
     }
@@ -416,14 +451,16 @@ async function fetchPokemonData(pokemonId) {
       displayName: species.names.find(n => n.language.name === 'en')?.name || pokemon.name,
       types: types,
       sprite: sprite,
+      isShiny: isShiny,
       captureRate: species.capture_rate,
       isLegendary: species.is_legendary,
       isMythical: species.is_mythical,
       gender: gender,
       ivs: ivs,
       moveset: moveset,
-      allMoves: allMoves,
-      nickname: null, // Will be set by user
+      allMoves: allMoveNames,
+      allMovesData: allMovesData, // Full move data with damage/effects
+      nickname: null,
       baseStats: {
         hp: pokemon.stats[0].base_stat,
         attack: pokemon.stats[1].base_stat,
