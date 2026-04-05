@@ -1681,7 +1681,11 @@ export default function App() {
                           <div key={trade.id} className="p-2 bg-slate-700/50 rounded">
                             <div className="flex items-center justify-between mb-1">
                               <span className="text-white font-semibold">{trade.fromUsername}</span>
-                              <Badge className="bg-purple-500">{trade.offeredCards.length} cards</Badge>
+                              <Badge className="bg-purple-500">
+                                {trade.type === 'pokemon-trade' 
+                                  ? `${trade.offeredPokemon?.length || 0} Pokemon` 
+                                  : `${trade.offeredCards?.length || 0} cards`}
+                              </Badge>
                             </div>
                             <Button
                               size="sm"
