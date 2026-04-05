@@ -116,7 +116,16 @@ export default function PokemonWilds() {
     try {
       const response = await fetch(`/api/wilds/my-pokemon?userId=${user.id}`);
       const data = await response.json();
-      setMyPokemon(data.pokemon || []);
+      const pokemonList = data.pokemon || [];
+      
+      console.log(`📋 Loaded ${pokemonList.length} Pokemon`);
+      pokemonList.forEach(p => {
+        if (p.isShiny) {
+          console.log(`  ✨ SHINY: ${p.displayName} - isShiny: ${p.isShiny}, sprite: ${p.sprite}`);
+        }
+      });
+      
+      setMyPokemon(pokemonList);
     } catch (err) {
       console.error('Error loading Pokemon:', err);
     }

@@ -374,21 +374,29 @@ async function fetchPokemonData(pokemonId) {
     // Extract data
     const types = pokemon.types.map(t => t.type.name);
     
-    // Get sprite (shiny or normal)
+    // Get sprite - CRITICAL: Use correct shiny path
     let sprite;
     if (isShiny) {
-      // For shiny: Use high quality official artwork if available, fallback to regular sprite
-      sprite = pokemon.sprites.other?.['official-artwork']?.front_shiny || 
-               pokemon.sprites.front_shiny || 
-               pokemon.sprites.other?.home?.front_shiny ||
-               // Fallback to normal if shiny not available
-               pokemon.sprites.other?.['official-artwork']?.front_default ||
-               pokemon.sprites.front_default;
+      // For shiny: MUST use official-artwork shiny path
+      sprite = pokemon.sprites.other?.['official-artwork']?.front_shiny;
       
-      console.log(`Shiny Pokemon #${pokemonId} (${pokemon.name}): ${sprite}`);
+      // If official artwork shiny doesn't exist, use regular shiny sprite
+      if (!sprite) {
+        sprite = pokemon.sprites.front_shiny || 
+                 pokemon.sprites.other?.home?.front_shiny ||
+                 pokemon.sprites.front_default;
+      }
+      
+      console.log(`✨ SHINY SPAWN: ${pokemon.name} #${pokemonId} - Sprite: ${sprite}`);
     } else {
+      // Normal sprite
       sprite = pokemon.sprites.other?.['official-artwork']?.front_default || 
                pokemon.sprites.front_default;
+    }
+    
+    // VERIFY sprite URL
+    if (isShiny && sprite && !sprite.includes('/shiny/')) {
+      console.warn(`⚠️ WARNING: Shiny Pokemon ${pokemon.name} has non-shiny sprite URL: ${sprite}`);
     }
     
     // Get all learnable moves with their data
@@ -1586,6 +1594,10 @@ export async function POST(request) {
           spawnId: spawn.spawnedAt
         };
 
+        console.log(`🎯 Pokemon Caught: ${caughtPokemon.displayName}`);
+        console.log(`   isShiny: ${caughtPokemon.isShiny}`);
+        console.log(`   Sprite: ${caughtPokemon.sprite}`);
+
         // Save to user's caught Pokemon
         await database.collection('caught_pokemon').insertOne(caughtPokemon);
 
@@ -1699,21 +1711,33 @@ export async function POST(request) {
       const randomId = Math.floor(Math.random() * MAX_POKEMON_ID) + 1;
       const pokemonData = await fetchPokemonData(randomId);
       
-      // FORCE shiny
+      // FORCE shiny to TRUE
       pokemonData.isShiny = true;
       
-      // Get shiny sprite - fetch fresh to ensure correct shiny URL
+      // FORCE shiny sprite - fetch fresh to ensure correct URL
       const pokemonResponse = await axios.get(`${POKEAPI_BASE}/pokemon/${randomId}`);
       const pokemon = pokemonResponse.data;
       
-      // Use high quality official artwork shiny if available
-      pokemonData.sprite = pokemon.sprites.other?.['official-artwork']?.front_shiny || 
-                          pokemon.sprites.front_shiny || 
-                          pokemon.sprites.other?.home?.front_shiny ||
-                          pokemon.sprites.other?.['official-artwork']?.front_default ||
-                          pokemon.sprites.front_default;
+      // CRITICAL: Use official-artwork shiny path
+      let shinySprite = pokemon.sprites.other?.['official-artwork']?.front_shiny;
       
-      console.log(`Admin Shiny Spawn #${randomId}: ${pokemonData.displayName} - Sprite: ${pokemonData.sprite}`);
+      // Fallback if official artwork doesn't have shiny
+      if (!shinySprite) {
+        shinySprite = pokemon.sprites.front_shiny || 
+                     pokemon.sprites.other?.home?.front_shiny ||
+                     pokemon.sprites.front_default;
+      }
+      
+      pokemonData.sprite = shinySprite;
+      
+      console.log(`✨✨ ADMIN SHINY SPAWN #${randomId}: ${pokemonData.displayName}`);
+      console.log(`   Sprite URL: ${shinySprite}`);
+      console.log(`   Is Shiny URL: ${shinySprite.includes('/shiny/')}`);
+      
+      // VERIFY it's actually a shiny sprite
+      if (!shinySprite.includes('/shiny/')) {
+        console.error(`❌ ERROR: Admin spawn shiny sprite is NOT shiny: ${shinySprite}`);
+      }
       
       // Add level and stats
       pokemonData.level = Math.floor(Math.random() * 46) + 5;
