@@ -408,6 +408,7 @@ function openPack(cards, setId = null) {
   if (setId && VINTAGE_SETS.includes(setId)) {
     // Vintage set: 15% chance for Rare, 85% chance for Uncommon
     const rareRoll = Math.random() * 100;
+    console.log(`[VINTAGE SET: ${setId}] Rare roll: ${rareRoll.toFixed(2)}% ${rareRoll <= 15 ? '✨ RARE!' : '⚪ Uncommon'}`);
     
     if (rareRoll <= 15) {
       // Lucky! You get a rare
