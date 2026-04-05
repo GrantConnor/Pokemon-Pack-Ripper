@@ -143,12 +143,18 @@ async function connectDB() {
   return db;
 }
 
+// Helper function to normalize usernames consistently
+function normalizeUsername(username) {
+  return String(username || '').trim().toLowerCase();
+}
+
 // Helper function to hash password (simple for MVP)
 function hashPassword(password) {
-  return Buffer.from(password).toString('base64');
+  return Buffer.from(String(password)).toString('base64');
 }
 
 function verifyPassword(password, hashedPassword) {
+  if (typeof hashedPassword !== 'string') return false;
   return hashPassword(password) === hashedPassword;
 }
 
@@ -1063,102 +1069,168 @@ export async function POST(request) {
     const body = await request.json();
 
     // Sign up
-    if (pathname.includes('/api/auth/signup')) {
-      const { username, password } = body;
-      
-      if (!username || !password) {
-        return NextResponse.json({ error: 'Username and password required' }, { status: 400 });
-      }
+if (pathname.includes('/api/auth/signup')) {
+  const { username, password } = body;
 
-      const database = await connectDB();
-      
-      // Check if user exists (case-insensitive)
-      const existingUser = await database.collection('users').findOne({ 
-        username: { $regex: new RegExp(`^${username}$`, 'i') } 
-      });
-      
-      if (existingUser) {
-        return NextResponse.json({ error: 'Username already exists' }, { status: 409 });
-      }
+  if (!username || !password) {
+    return NextResponse.json({ error: 'Username and password required' }, { status: 400 });
+  }
 
-      // Create new user
-      const newUser = {
-        id: uuidv4(),
-        username,
-        password: hashPassword(password),
-        collection: [],
-        setAchievements: {},
-        friends: [],
-        friendRequests: [],
-        sentFriendRequests: [],
-        tradeRequests: [],
-        tradesCompleted: 0,
-        points: username === 'Spheal' ? 999999 : STARTING_POINTS,
-        lastPointsRefresh: new Date().toISOString(),
-        createdAt: new Date().toISOString()
-      };
+  const trimmedUsername = String(username).trim();
+  const normalizedUsername = normalizeUsername(trimmedUsername);
+  const trimmedPassword = String(password).trim();
 
-      await database.collection('users').insertOne(newUser);
+  if (!trimmedUsername || !trimmedPassword) {
+    return NextResponse.json({ error: 'Username and password required' }, { status: 400 });
+  }
 
-      return NextResponse.json({ 
-        success: true, 
-        user: { 
-          id: newUser.id, 
-          username: newUser.username,
-          points: newUser.points,
-          nextPointsIn: calculateNextPointsTime(newUser),
-          setAchievements: newUser.setAchievements || {}
-        } 
-      });
+  const database = await connectDB();
+
+  // Check if user exists using normalized username
+  const existingUser = await database.collection('users').findOne({
+    normalizedUsername
+  });
+
+  // Fallback for older records that may not have normalizedUsername yet
+  if (existingUser) {
+    return NextResponse.json({ error: 'Username already exists' }, { status: 409 });
+  }
+
+  const legacyUsers = await database.collection('users').find({
+    username: { $exists: true }
+  }).toArray();
+
+  const legacyMatch = legacyUsers.find(
+    (u) => normalizeUsername(u.username) === normalizedUsername
+  );
+
+  if (legacyMatch) {
+    return NextResponse.json({ error: 'Username already exists' }, { status: 409 });
+  }
+
+  // Create new user
+  const newUser = {
+    id: uuidv4(),
+    username: trimmedUsername,
+    normalizedUsername,
+    password: hashPassword(trimmedPassword),
+    collection: [],
+    setAchievements: {},
+    friends: [],
+    friendRequests: [],
+    sentFriendRequests: [],
+    tradeRequests: [],
+    tradesCompleted: 0,
+    points: trimmedUsername === 'Spheal' ? 999999 : STARTING_POINTS,
+    lastPointsRefresh: new Date().toISOString(),
+    createdAt: new Date().toISOString()
+  };
+
+  await database.collection('users').insertOne(newUser);
+
+  return NextResponse.json({
+    success: true,
+    user: {
+      id: newUser.id,
+      username: newUser.username,
+      points: newUser.points,
+      nextPointsIn: calculateNextPointsTime(newUser),
+      setAchievements: newUser.setAchievements || {}
     }
+  });
+}
 
     // Sign in
-    if (pathname.includes('/api/auth/signin')) {
-      const { username, password } = body;
-      
-      if (!username || !password) {
-        return NextResponse.json({ error: 'Username and password required' }, { status: 400 });
-      }
+if (pathname.includes('/api/auth/signin')) {
+  const { username, password } = body;
 
-      const database = await connectDB();
-      // Find user case-insensitively
-      let user = await database.collection('users').findOne({ 
-        username: { $regex: new RegExp(`^${username}$`, 'i') } 
-      });
-      
-      if (!user || !verifyPassword(password, user.password)) {
-        return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
-      }
+  if (!username || !password) {
+    return NextResponse.json({ error: 'Username and password required' }, { status: 400 });
+  }
 
-      // Calculate and update regenerated points
-      const newPoints = calculateRegeneratedPoints(user);
-      const nextPointsIn = calculateNextPointsTime(user);
-      
-      if (newPoints !== user.points) {
-        await database.collection('users').updateOne(
-          { id: user.id },
-          { 
-            $set: { 
-              points: newPoints,
-              lastPointsRefresh: new Date().toISOString()
-            } 
-          }
-        );
-        user.points = newPoints;
-      }
+  const trimmedUsername = String(username).trim();
+  const normalizedUsername = normalizeUsername(trimmedUsername);
+  const trimmedPassword = String(password).trim();
 
-      return NextResponse.json({ 
-        success: true, 
-        user: { 
-          id: user.id, 
-          username: user.username,
-          points: user.points,
-          nextPointsIn: nextPointsIn,
-          setAchievements: user.setAchievements || {},
-          tradesCompleted: user.tradesCompleted || 0
-        } 
-      });
+  if (!trimmedUsername || !trimmedPassword) {
+    return NextResponse.json({ error: 'Username and password required' }, { status: 400 });
+  }
+
+  const database = await connectDB();
+
+  // First try exact normalized lookup
+  let user = await database.collection('users').findOne({
+    normalizedUsername
+  });
+
+  // Fallback for older accounts that do not yet have normalizedUsername
+  if (!user) {
+    const legacyUsers = await database.collection('users').find({
+      username: { $exists: true }
+    }).toArray();
+
+    user = legacyUsers.find(
+      (u) => normalizeUsername(u.username) === normalizedUsername
+    ) || null;
+
+    // Backfill normalizedUsername for old records
+    if (user && !user.normalizedUsername) {
+      await database.collection('users').updateOne(
+        { _id: user._id },
+        { $set: { normalizedUsername: normalizeUsername(user.username) } }
+      );
+      user.normalizedUsername = normalizeUsername(user.username);
     }
+  }
+
+  if (!user) {
+    return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+  }
+
+  if (!verifyPassword(trimmedPassword, user.password)) {
+    return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+  }
+
+  const resolvedUserId = user.id || String(user._id);
+
+  // Backfill missing id for old accounts
+  if (!user.id) {
+    await database.collection('users').updateOne(
+      { _id: user._id },
+      { $set: { id: resolvedUserId } }
+    );
+    user.id = resolvedUserId;
+  }
+
+  // Calculate and update regenerated points
+  const newPoints = calculateRegeneratedPoints(user);
+  const nextPointsIn = calculateNextPointsTime(user);
+
+  if (newPoints !== user.points) {
+    await database.collection('users').updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          points: newPoints,
+          lastPointsRefresh: new Date().toISOString()
+        }
+      }
+    );
+    user.points = newPoints;
+  }
+
+  return NextResponse.json({
+    success: true,
+    user: {
+      id: resolvedUserId,
+      username: user.username,
+      points: user.points,
+      nextPointsIn: nextPointsIn,
+      setAchievements: user.setAchievements || {},
+      tradesCompleted: user.tradesCompleted || 0
+    }
+  });
+}
 
     // Open pack (single or bulk)
     if (pathname.includes('/api/packs/open')) {
