@@ -67,7 +67,17 @@ export default function PokemonWilds() {
             setUser(data.user);
             loadCurrentSpawn();
             loadMyPokemon();
-            loadFriends();
+            
+            // Load friends directly with the user data (don't wait for state update)
+            fetch(`/api/friends?userId=${data.user.id}`)
+              .then(res => res.json())
+              .then(friendsData => {
+                console.log('📥 Friends loaded on page load:', friendsData);
+                setFriends(friendsData.friends || []);
+                setBattleRequests(friendsData.battleRequests || []);
+                setTradeRequests(friendsData.tradeRequests || []);
+              })
+              .catch(err => console.error('Error loading friends:', err));
           } else {
             localStorage.removeItem('userId');
             window.location.href = '/';
@@ -177,8 +187,11 @@ export default function PokemonWilds() {
   const loadFriends = async () => {
     if (!user) return;
     try {
+      console.log('🔍 Loading friends for user:', user.id);
       const response = await fetch(`/api/friends?userId=${user.id}`);
       const data = await response.json();
+      console.log('📥 Friends API response:', data);
+      console.log('👥 Friends array:', data.friends);
       setFriends(data.friends || []);
       setBattleRequests(data.battleRequests || []);
       setTradeRequests(data.tradeRequests || []);
