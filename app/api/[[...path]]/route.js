@@ -467,9 +467,32 @@ async function updateGlobalSpawn(database) {
   
   // Check if we need a new spawn
   if (!globalSpawn || !globalSpawn.nextSpawnTime || now >= globalSpawn.nextSpawnTime) {
-    // Generate new spawn
-    const randomId = Math.floor(Math.random() * MAX_POKEMON_ID) + 1;
-    const pokemonData = await fetchPokemonData(randomId);
+    // Generate new spawn with rarity-based spawning
+    let randomId;
+    let pokemonData;
+    let attempts = 0;
+    const maxAttempts = 5;
+    
+    do {
+      randomId = Math.floor(Math.random() * MAX_POKEMON_ID) + 1;
+      pokemonData = await fetchPokemonData(randomId);
+      attempts++;
+      
+      // 10% chance to allow legendary/mythical, otherwise reroll
+      if (pokemonData.isLegendary || pokemonData.isMythical) {
+        const allowRare = Math.random() < 0.10; // 10% chance
+        if (!allowRare && attempts < maxAttempts) {
+          continue; // Reroll
+        }
+      }
+      break; // Accept this Pokemon
+    } while (attempts < maxAttempts);
+    
+    // Add random level (5-50)
+    pokemonData.level = Math.floor(Math.random() * 46) + 5;
+    
+    // Calculate actual stats using Pokemon formula
+    pokemonData.stats = calculateStats(pokemonData.baseStats, pokemonData.ivs, pokemonData.level);
     
     // Random interval for next spawn (5-20 minutes)
     const nextInterval = MIN_SPAWN_INTERVAL + Math.random() * (MAX_SPAWN_INTERVAL - MIN_SPAWN_INTERVAL);
@@ -493,6 +516,28 @@ async function updateGlobalSpawn(database) {
   }
   
   return globalSpawn;
+}
+
+// Calculate actual stats using Pokemon formula (simplified Level 50 standard)
+function calculateStats(baseStats, ivs, level) {
+  // HP Formula: floor(((2 * Base + IV) * Level) / 100) + Level + 10
+  const hp = Math.floor(((2 * baseStats.hp + ivs.hp) * level) / 100) + level + 10;
+  
+  // Other stats: floor(((2 * Base + IV) * Level) / 100) + 5
+  const attack = Math.floor(((2 * baseStats.attack + ivs.attack) * level) / 100) + 5;
+  const defense = Math.floor(((2 * baseStats.defense + ivs.defense) * level) / 100) + 5;
+  const spAttack = Math.floor(((2 * baseStats.spAttack + ivs.spAttack) * level) / 100) + 5;
+  const spDefense = Math.floor(((2 * baseStats.spDefense + ivs.spDefense) * level) / 100) + 5;
+  const speed = Math.floor(((2 * baseStats.speed + ivs.speed) * level) / 100) + 5;
+  
+  return {
+    hp,
+    attack,
+    defense,
+    spAttack,
+    spDefense,
+    speed
+  };
 }
 
 export async function GET(request) {
@@ -1019,6 +1064,46 @@ export async function POST(request) {
       });
     }
 
+    // Admin: Delete user completely (Spheal only)
+    if (pathname.includes('/api/admin/delete-user')) {
+      const { adminId, targetUsername } = body;
+      
+      if (!adminId || !targetUsername) {
+        return NextResponse.json({ error: 'Admin ID and target username required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      
+      // Verify admin is Spheal
+      const admin = await database.collection('users').findOne({ id: adminId });
+      if (!admin || admin.username !== 'Spheal') {
+        return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
+      }
+
+      // Prevent deleting Spheal
+      if (targetUsername.toLowerCase() === 'spheal') {
+        return NextResponse.json({ error: 'Cannot delete admin account' }, { status: 400 });
+      }
+
+      // Find target user
+      const targetUser = await database.collection('users').findOne({ 
+        username: { $regex: new RegExp(`^${targetUsername}$`, 'i') } 
+      });
+
+      if (!targetUser) {
+        return NextResponse.json({ error: `User '${targetUsername}' not found` }, { status: 404 });
+      }
+
+      // Delete user and all their data
+      await database.collection('users').deleteOne({ id: targetUser.id });
+      await database.collection('caught_pokemon').deleteMany({ userId: targetUser.id });
+
+      return NextResponse.json({ 
+        success: true, 
+        message: `Successfully deleted user '${targetUser.username}' and all associated data`
+      });
+    }
+
     // Friends: Send friend request
     if (pathname.includes('/api/friends/send-request')) {
       const { userId, targetUsername } = body;
@@ -1506,6 +1591,10 @@ export async function POST(request) {
       // Force create new spawn
       const randomId = Math.floor(Math.random() * MAX_POKEMON_ID) + 1;
       const pokemonData = await fetchPokemonData(randomId);
+      
+      // Add level and stats
+      pokemonData.level = Math.floor(Math.random() * 46) + 5;
+      pokemonData.stats = calculateStats(pokemonData.baseStats, pokemonData.ivs, pokemonData.level);
       
       const newSpawn = {
         id: 'current',

@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sparkles, ArrowLeft, Clock } from 'lucide-react';
 import Link from 'next/link';
 
@@ -23,6 +25,7 @@ export default function PokemonWilds() {
   const [editingMoveset, setEditingMoveset] = useState(false);
   const [selectedMoves, setSelectedMoves] = useState([]);
   const [availableMoves, setAvailableMoves] = useState([]);
+  const [showStats, setShowStats] = useState(false); // Toggle between IVs and Stats
 
   useEffect(() => {
     // Check if user is logged in
@@ -614,33 +617,80 @@ export default function PokemonWilds() {
 
               <div className="space-y-4">
                 <div>
-                  <h3 className="text-xl font-bold text-white mb-2">IVs (Individual Values)</h3>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div className="bg-slate-800 p-2 rounded">
-                      <span className="text-gray-400">HP:</span>
-                      <span className="text-white font-bold ml-2">{selectedPokemon.ivs.hp}/31</span>
-                    </div>
-                    <div className="bg-slate-800 p-2 rounded">
-                      <span className="text-gray-400">Attack:</span>
-                      <span className="text-white font-bold ml-2">{selectedPokemon.ivs.attack}/31</span>
-                    </div>
-                    <div className="bg-slate-800 p-2 rounded">
-                      <span className="text-gray-400">Defense:</span>
-                      <span className="text-white font-bold ml-2">{selectedPokemon.ivs.defense}/31</span>
-                    </div>
-                    <div className="bg-slate-800 p-2 rounded">
-                      <span className="text-gray-400">Sp.Atk:</span>
-                      <span className="text-white font-bold ml-2">{selectedPokemon.ivs.spAttack}/31</span>
-                    </div>
-                    <div className="bg-slate-800 p-2 rounded">
-                      <span className="text-gray-400">Sp.Def:</span>
-                      <span className="text-white font-bold ml-2">{selectedPokemon.ivs.spDefense}/31</span>
-                    </div>
-                    <div className="bg-slate-800 p-2 rounded">
-                      <span className="text-gray-400">Speed:</span>
-                      <span className="text-white font-bold ml-2">{selectedPokemon.ivs.speed}/31</span>
-                    </div>
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="text-xl font-bold text-white">{showStats ? 'Stats' : 'IVs'}</h3>
+                    <Button
+                      onClick={() => setShowStats(!showStats)}
+                      size="sm"
+                      className="bg-cyan-600 hover:bg-cyan-500"
+                    >
+                      Show {showStats ? 'IVs' : 'Stats'}
+                    </Button>
                   </div>
+                  
+                  {showStats ? (
+                    // Show actual stats
+                    <div className="space-y-2">
+                      <div className="bg-slate-800 p-2 rounded flex justify-between items-center">
+                        <span className="text-gray-400">Level:</span>
+                        <span className="text-yellow-400 font-bold text-lg">{selectedPokemon.level || 50}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="bg-slate-800 p-2 rounded">
+                          <span className="text-gray-400">HP:</span>
+                          <span className="text-white font-bold ml-2">{selectedPokemon.stats?.hp || 0}</span>
+                        </div>
+                        <div className="bg-slate-800 p-2 rounded">
+                          <span className="text-gray-400">Attack:</span>
+                          <span className="text-white font-bold ml-2">{selectedPokemon.stats?.attack || 0}</span>
+                        </div>
+                        <div className="bg-slate-800 p-2 rounded">
+                          <span className="text-gray-400">Defense:</span>
+                          <span className="text-white font-bold ml-2">{selectedPokemon.stats?.defense || 0}</span>
+                        </div>
+                        <div className="bg-slate-800 p-2 rounded">
+                          <span className="text-gray-400">Sp.Atk:</span>
+                          <span className="text-white font-bold ml-2">{selectedPokemon.stats?.spAttack || 0}</span>
+                        </div>
+                        <div className="bg-slate-800 p-2 rounded">
+                          <span className="text-gray-400">Sp.Def:</span>
+                          <span className="text-white font-bold ml-2">{selectedPokemon.stats?.spDefense || 0}</span>
+                        </div>
+                        <div className="bg-slate-800 p-2 rounded">
+                          <span className="text-gray-400">Speed:</span>
+                          <span className="text-white font-bold ml-2">{selectedPokemon.stats?.speed || 0}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    // Show IVs
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="bg-slate-800 p-2 rounded">
+                        <span className="text-gray-400">HP:</span>
+                        <span className="text-white font-bold ml-2">{selectedPokemon.ivs.hp}/31</span>
+                      </div>
+                      <div className="bg-slate-800 p-2 rounded">
+                        <span className="text-gray-400">Attack:</span>
+                        <span className="text-white font-bold ml-2">{selectedPokemon.ivs.attack}/31</span>
+                      </div>
+                      <div className="bg-slate-800 p-2 rounded">
+                        <span className="text-gray-400">Defense:</span>
+                        <span className="text-white font-bold ml-2">{selectedPokemon.ivs.defense}/31</span>
+                      </div>
+                      <div className="bg-slate-800 p-2 rounded">
+                        <span className="text-gray-400">Sp.Atk:</span>
+                        <span className="text-white font-bold ml-2">{selectedPokemon.ivs.spAttack}/31</span>
+                      </div>
+                      <div className="bg-slate-800 p-2 rounded">
+                        <span className="text-gray-400">Sp.Def:</span>
+                        <span className="text-white font-bold ml-2">{selectedPokemon.ivs.spDefense}/31</span>
+                      </div>
+                      <div className="bg-slate-800 p-2 rounded">
+                        <span className="text-gray-400">Speed:</span>
+                        <span className="text-white font-bold ml-2">{selectedPokemon.ivs.speed}/31</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Moveset Section */}

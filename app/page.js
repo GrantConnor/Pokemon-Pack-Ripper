@@ -710,6 +710,7 @@ export default function App() {
   const [adminPointAmount, setAdminPointAmount] = useState('');
   const [adminMessage, setAdminMessage] = useState('');
   const [adminRemoveUser, setAdminRemoveUser] = useState('');
+  const [adminDeleteUser, setAdminDeleteUser] = useState('');
 
   const handleSendPoints = async (e) => {
     e.preventDefault();
@@ -782,6 +783,56 @@ export default function App() {
       setAdminMessage('❌ An error occurred. Please try again.');
     }
   };
+
+  const handleDeleteUser = async (e) => {
+    e.preventDefault();
+    setAdminMessage('');
+    
+    if (!adminDeleteUser) {
+      setAdminMessage('Please enter a username');
+      return;
+    }
+
+    if (adminDeleteUser.toLowerCase() === 'spheal') {
+      setAdminMessage('❌ Cannot delete admin account');
+      return;
+    }
+
+    // Confirmation
+    if (!window.confirm(`⚠️ PERMANENT DELETE: Are you sure you want to COMPLETELY DELETE user "${adminDeleteUser}" and ALL their data? This CANNOT be undone!`)) {
+      return;
+    }
+
+    // Double confirmation
+    if (!window.confirm(`FINAL CONFIRMATION: Delete "${adminDeleteUser}" forever?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/admin/delete-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          adminId: user.id, 
+          targetUsername: adminDeleteUser
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setAdminMessage(`✅ User "${adminDeleteUser}" permanently deleted`);
+        setAdminDeleteUser('');
+        // Refresh user list
+        loadAllUsers();
+      } else {
+        setAdminMessage(`❌ Error: ${data.error}`);
+      }
+    } catch (err) {
+      setAdminMessage('❌ An error occurred. Please try again.');
+    }
+  };
+
 
   const handleOpenPack = async (set, bulk = false) => {
     setSelectedSet(set);
@@ -1088,6 +1139,29 @@ export default function App() {
                   Remove Collection
                 </Button>
               </form>
+            </div>
+
+            {/* Delete User Command */}
+            <div className="border-t border-red-500/30 pt-4">
+              <h4 className="text-sm font-semibold text-red-200 mb-2">⚠️ DELETE User Permanently</h4>
+              <form onSubmit={handleDeleteUser} className="flex flex-col md:flex-row gap-3">
+                <div className="flex-1">
+                  <Input
+                    placeholder="Username to DELETE"
+                    value={adminDeleteUser}
+                    onChange={(e) => setAdminDeleteUser(e.target.value)}
+                    className="border-2 border-red-600/50 bg-slate-800/50 text-white placeholder:text-slate-400 font-medium focus:border-red-600"
+                    required
+                  />
+                </div>
+                <Button 
+                  type="submit"
+                  className="bg-red-700 text-white hover:bg-red-600 border-2 border-red-600 font-bold shadow-[0_0_20px_rgba(220,38,38,0.5)] hover:shadow-[0_0_30px_rgba(220,38,38,0.8)] transition-all"
+                >
+                  ⚠️ DELETE User
+                </Button>
+              </form>
+              <p className="text-xs text-red-300 mt-1">Warning: This permanently deletes the user and ALL their data!</p>
             </div>
 
             {adminMessage && (
