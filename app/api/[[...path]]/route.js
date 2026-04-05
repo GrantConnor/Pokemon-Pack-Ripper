@@ -1420,6 +1420,49 @@ export async function POST(request) {
       return NextResponse.json({ success: true });
     }
 
+    // Pokemon Trade: Send Pokemon trade request
+    if (pathname.includes('/api/friends/trade')) {
+      const { fromId, toId, offeredPokemon, requestedPokemon, type } = body;
+      
+      if (!fromId || !toId || !offeredPokemon || !requestedPokemon) {
+        return NextResponse.json({ error: 'Invalid trade request' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const fromUser = await database.collection('users').findOne({ id: fromId });
+      const toUser = await database.collection('users').findOne({ id: toId });
+
+      if (!fromUser || !toUser) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      // Create trade request
+      const tradeRequest = {
+        id: uuidv4(),
+        fromId,
+        fromUsername: fromUser.username,
+        toId,
+        toUsername: toUser.username,
+        offeredPokemon,
+        requestedPokemon,
+        type: type || 'pokemon-trade',
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+
+      // Add to recipient's trade requests
+      await database.collection('users').updateOne(
+        { id: toId },
+        { $push: { tradeRequests: tradeRequest } }
+      );
+
+      return NextResponse.json({ 
+        success: true, 
+        message: `Trade request sent to ${toUser.username}`,
+        trade: tradeRequest
+      });
+    }
+
     // Trades: Send trade request
     if (pathname.includes('/api/trades/send')) {
       const { userId, friendId, offeredCards, requestedCards } = body;

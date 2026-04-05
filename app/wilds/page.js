@@ -1789,7 +1789,7 @@ export default function PokemonWilds() {
               disabled={!mySelectedPokemon || !partnerSelectedPokemon}
               className="flex-1 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 font-bold text-lg py-6"
             >
-              {mySelectedPokemon && partnerSelectedPokemon ? '✨ Send Trade Request ✨' : 'Select Both Pokemon'}
+              {mySelectedPokemon && partnerSelectedPokemon ? 'Send Trade Request' : 'Select Both Pokemon'}
             </Button>
           </div>
         </DialogContent>
