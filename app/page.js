@@ -606,7 +606,7 @@ export default function App() {
       const pointValue = breakdownValues[breakdownQuantityCard.rarity] || 10;
       const totalPoints = pointValue * breakdownQuantity;
 
-      const response = await fetch('/api/cards/breakdown-single', {
+      const response = await fetch('/api/cards/breakdown-quantity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

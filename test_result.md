@@ -606,8 +606,9 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Achievement Single-Fire Fix - Atomic Updates"
-  stuck_tasks: []
+    - "POST /api/cards/breakdown-quantity - Breakdown specific quantity of single card type"
+  stuck_tasks:
+    - "POST /api/cards/breakdown-quantity - Breakdown specific quantity of single card type"
   test_all: false
   test_priority: "high_first"
 
@@ -734,6 +735,30 @@ test_plan:
         agent: "testing"
         comment: "✅ PASSED: NEW Badge Logic working correctly. System properly distinguishes between new cards (first time owned) and duplicate cards (already owned). Tested: First pack had 10 new cards, second pack had 8 truly new cards and 2 duplicates. Logic correctly identifies which cards are new vs already in collection for proper badge marking."
 
+  - task: "POST /api/cards/breakdown-quantity - Breakdown specific quantity of single card type"
+    implemented: true
+    working: false
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "❌ CRITICAL ISSUE: POST /api/cards/breakdown-quantity endpoint not working due to deployment/routing issue. Endpoint returns 'Invalid breakdown request' error (400 status) which comes from batch breakdown endpoint, indicating routing logic is not working correctly. Code implementation appears correct in source, but changes are not being reflected in production environment. Frontend calls this endpoint but it's not functioning."
+
+  - task: "POST /api/cards/breakdown - Batch breakdown multiple cards"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED: Batch breakdown endpoint working perfectly. Successfully tested: 1) Breaks down multiple cards correctly (tested with 2 cards), 2) Awards correct points based on card rarity (20 points for 2 Common cards = 10 points each), 3) Removes cards from user collection properly, 4) Updates user points correctly (750 → 770), 5) Validates input correctly (rejects empty cards array with 400 status), 6) Handles invalid user ID correctly (returns 404 status). All functionality working as expected."
+
 agent_communication:
   - agent: "testing"
     message: "Starting comprehensive backend API testing for Pokemon Pack Ripper. All endpoints are implemented and ready for testing. Will test in logical order: sets -> auth -> session -> cards -> pack opening -> collection."
@@ -763,3 +788,5 @@ agent_communication:
     message: "🚨 CRITICAL ISSUE FOUND: 4 CRITICAL FIXES TESTING COMPLETE - 3/4 fixes working, 1 BROKEN. ✅ WORKING: 1) TCG Rarity Tuning - All packs contain exactly 10 cards with proper distribution (48% Common, 32% Uncommon), no duplicates within packs, 2) Timer Format - HH:MM:SS format working correctly (06:00:00), 3) NEW Badge Logic - Correctly distinguishes new vs duplicate cards. ❌ CRITICAL FAILURE: Achievement Single-Fire Fix is BROKEN - achievements fire multiple times (TEN_CARDS awarded in both pack 1 and pack 2). ROOT CAUSE: Atomic database update failing on line 148 of route.js - setAchievements not being saved to database, causing single-fire prevention to fail. IMMEDIATE ACTION REQUIRED: Fix atomic update condition in checkAchievements function."
   - agent: "testing"
     message: "🎉 ACHIEVEMENT SINGLE-FIRE FIX TESTING COMPLETE - ALL TESTS PASSED! Comprehensive re-testing of the MongoDB $addToSet atomic update fix completed successfully with 100% pass rate (4/4 tests passed). ✅ TEST 1 (Primary Single-Fire): Achievements fire exactly once per set across multiple pack openings - TEN_CARDS, THIRTY_CARDS, FIFTY_CARDS all appear exactly once in database array with no duplicates. ✅ TEST 2 (Database Persistence): Achievements properly saved and persist across pack openings - verified both TEN_CARDS and THIRTY_CARDS present with no duplicates after 35 pack openings. ✅ TEST 3 (Multiple Achievement Triggers): Single pack opening correctly triggers only appropriate achievements based on unique card count, no over-awarding. ✅ TEST 4 (Race Condition): Rapid bulk pack opening (100 packs) shows no race conditions - each achievement key appears exactly once, points awarded correctly. CRITICAL FIX CONFIRMED: $addToSet operator successfully prevents duplicate achievement entries even under high concurrency. Achievement single-fire system is production-ready and the previous critical issue has been completely resolved!"
+  - agent: "testing"
+    message: "🔧 CARD BREAKDOWN FUNCTIONALITY TESTING COMPLETE: Tested both breakdown endpoints with mixed results (1/2 endpoints working). ✅ WORKING: POST /api/cards/breakdown (batch breakdown) - Successfully breaks down multiple cards, awards correct points (20 points for 2 Common cards), removes cards from collection, updates user points correctly (750→770), validates input properly (rejects empty arrays, invalid users). ❌ CRITICAL ISSUE: POST /api/cards/breakdown-quantity endpoint not working due to deployment/routing issue - returns 'Invalid breakdown request' error from batch endpoint instead of processing quantity breakdown. Code implementation appears correct but changes not reflected in production. Frontend calls this endpoint but it's non-functional."
