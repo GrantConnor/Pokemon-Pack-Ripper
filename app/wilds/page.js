@@ -501,8 +501,8 @@ export default function PokemonWilds() {
               <Card className="bg-slate-900/90 border-cyan-500/50 border-2 max-w-md mx-auto">
                 <CardHeader>
                   <CardTitle className="text-3xl text-cyan-400 flex items-center justify-center gap-2">
-                    {spawn.pokemon.isShiny && <span className="text-yellow-400">✨</span>}
                     {spawn.pokemon.displayName}
+                    {spawn.pokemon.isShiny && <span className="text-yellow-400">✨</span>}
                     <span className="text-gray-400 text-lg">#{spawn.pokemon.id}</span>
                     {spawn.pokemon.gender && spawn.pokemon.gender !== 'genderless' && (
                       <span className="text-2xl">
@@ -512,11 +512,6 @@ export default function PokemonWilds() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {spawn.pokemon.isShiny && (
-                    <Badge className="bg-gradient-to-r from-yellow-500 via-pink-500 to-purple-500 text-white font-bold w-full justify-center py-2">
-                      ✨ SHINY POKEMON! ✨
-                    </Badge>
-                  )}
                   <div className="flex gap-2 justify-center">
                     {spawn.pokemon.types.map(type => (
                       <Badge 
@@ -664,11 +659,6 @@ export default function PokemonWilds() {
                   onClick={() => setSelectedPokemon(pokemon)}
                 >
                   <CardContent className="p-4 relative">
-                    {pokemon.isShiny && (
-                      <div className="absolute top-1 right-1">
-                        <span className="text-yellow-400 text-xl">✨</span>
-                      </div>
-                    )}
                     <img
                       src={pokemon.sprite}
                       alt={pokemon.displayName}
@@ -711,10 +701,10 @@ export default function PokemonWilds() {
         }}>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
             <DialogHeader>
-              <DialogTitle className="text-3xl font-bold text-cyan-400 flex items-center gap-3">
-                {selectedPokemon.isShiny && <span className="text-yellow-400 text-2xl">✨</span>}
-                <span>
-                  {selectedPokemon.nickname || selectedPokemon.displayName} 
+              <DialogTitle className="text-3xl font-bold text-cyan-400 flex items-center gap-2">
+                <span className="flex items-center gap-1">
+                  {selectedPokemon.nickname || selectedPokemon.displayName}
+                  {selectedPokemon.isShiny && <span className="text-yellow-400 text-2xl">✨</span>}
                   {selectedPokemon.nickname && (
                     <span className="text-gray-400 text-lg ml-2">({selectedPokemon.displayName})</span>
                   )}
@@ -730,11 +720,6 @@ export default function PokemonWilds() {
 
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-4">
-                {selectedPokemon.isShiny && (
-                  <Badge className="bg-gradient-to-r from-yellow-500 via-pink-500 to-purple-500 text-white font-bold w-full justify-center py-2">
-                    ✨ SHINY ✨
-                  </Badge>
-                )}
                 <img
                   src={selectedPokemon.sprite}
                   alt={selectedPokemon.displayName}

@@ -377,12 +377,15 @@ async function fetchPokemonData(pokemonId) {
     // Get sprite (shiny or normal)
     let sprite;
     if (isShiny) {
-      // For shiny, use regular sprite sources (official-artwork rarely has shiny)
-      sprite = pokemon.sprites.front_shiny || 
+      // For shiny: Use high quality official artwork if available, fallback to regular sprite
+      sprite = pokemon.sprites.other?.['official-artwork']?.front_shiny || 
+               pokemon.sprites.front_shiny || 
                pokemon.sprites.other?.home?.front_shiny ||
-               pokemon.sprites.other?.['official-artwork']?.front_shiny || 
+               // Fallback to normal if shiny not available
+               pokemon.sprites.other?.['official-artwork']?.front_default ||
                pokemon.sprites.front_default;
-      console.log(`Shiny Pokemon ${pokemon.name} - Using sprite: ${sprite}`);
+      
+      console.log(`Shiny Pokemon #${pokemonId} (${pokemon.name}): ${sprite}`);
     } else {
       sprite = pokemon.sprites.other?.['official-artwork']?.front_default || 
                pokemon.sprites.front_default;
@@ -1699,15 +1702,18 @@ export async function POST(request) {
       // FORCE shiny
       pokemonData.isShiny = true;
       
-      // Get shiny sprite - use regular sprite sources (more reliable for shiny)
+      // Get shiny sprite - fetch fresh to ensure correct shiny URL
       const pokemonResponse = await axios.get(`${POKEAPI_BASE}/pokemon/${randomId}`);
       const pokemon = pokemonResponse.data;
-      pokemonData.sprite = pokemon.sprites.front_shiny || 
+      
+      // Use high quality official artwork shiny if available
+      pokemonData.sprite = pokemon.sprites.other?.['official-artwork']?.front_shiny || 
+                          pokemon.sprites.front_shiny || 
                           pokemon.sprites.other?.home?.front_shiny ||
-                          pokemon.sprites.other?.['official-artwork']?.front_shiny || 
+                          pokemon.sprites.other?.['official-artwork']?.front_default ||
                           pokemon.sprites.front_default;
       
-      console.log(`Admin Shiny Spawn: ${pokemonData.displayName} - Sprite: ${pokemonData.sprite}`);
+      console.log(`Admin Shiny Spawn #${randomId}: ${pokemonData.displayName} - Sprite: ${pokemonData.sprite}`);
       
       // Add level and stats
       pokemonData.level = Math.floor(Math.random() * 46) + 5;
