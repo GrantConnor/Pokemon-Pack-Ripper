@@ -1570,23 +1570,77 @@ export default function PokemonWilds() {
               {tradeRequests && tradeRequests.length > 0 && (
                 <Card className="border-2 border-purple-500/30 bg-slate-800/50">
                   <CardHeader>
-                    <CardTitle className="text-purple-400">Pokemon Trade Requests ({tradeRequests.length})</CardTitle>
+                    <CardTitle className="text-purple-400">Incoming Pokemon Trade Requests ({tradeRequests.length})</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
                       {tradeRequests.map((trade) => (
                         <div key={trade.id} className="p-3 bg-slate-700/50 rounded">
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-white font-bold">{trade.fromUsername}</span>
+                            <div>
+                              <p className="text-white font-bold">{trade.fromUsername}</p>
+                              <p className="text-xs text-gray-400">wants to trade Pokemon!</p>
+                            </div>
                             <Badge className="bg-purple-500">{trade.offeredPokemon?.length || 0} Pokemon</Badge>
                           </div>
-                          <Button
-                            size="sm"
-                            onClick={() => {/* Handle view trade */}}
-                            className="w-full bg-purple-600 hover:bg-purple-500"
-                          >
-                            View Trade
-                          </Button>
+                          
+                          {/* Show trade details */}
+                          {trade.offeredPokemon && trade.offeredPokemon.length > 0 && (
+                            <div className="flex items-center gap-4 my-2 p-2 bg-slate-800/50 rounded">
+                              <div className="flex-1">
+                                <p className="text-xs text-gray-400 mb-1">They offer:</p>
+                                <div className="flex items-center gap-2">
+                                  <img 
+                                    src={trade.offeredPokemon[0].pokemonData?.sprite} 
+                                    alt={trade.offeredPokemon[0].pokemonData?.displayName}
+                                    className="w-12 h-12"
+                                  />
+                                  <div>
+                                    <p className="text-white text-sm font-bold">{trade.offeredPokemon[0].pokemonData?.displayName}</p>
+                                    <p className="text-gray-400 text-xs">Level {trade.offeredPokemon[0].pokemonData?.level}</p>
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <span className="text-purple-400">⇄</span>
+                              
+                              <div className="flex-1">
+                                <p className="text-xs text-gray-400 mb-1">For your:</p>
+                                {trade.requestedPokemon && trade.requestedPokemon.length > 0 ? (
+                                  <div className="flex items-center gap-2">
+                                    <img 
+                                      src={trade.requestedPokemon[0].pokemonData?.sprite} 
+                                      alt={trade.requestedPokemon[0].pokemonData?.displayName}
+                                      className="w-12 h-12"
+                                    />
+                                    <div>
+                                      <p className="text-white text-sm font-bold">{trade.requestedPokemon[0].pokemonData?.displayName}</p>
+                                      <p className="text-gray-400 text-xs">Level {trade.requestedPokemon[0].pokemonData?.level}</p>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="text-gray-500 text-sm">Not specified</p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          
+                          <div className="flex gap-2 mt-2">
+                            <Button
+                              size="sm"
+                              onClick={() => {/* Handle accept trade */}}
+                              className="flex-1 bg-green-600 hover:bg-green-500"
+                            >
+                              Accept Trade
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => {/* Handle decline trade */}}
+                              className="flex-1 bg-gray-600 hover:bg-gray-500"
+                            >
+                              Decline
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1604,36 +1658,44 @@ export default function PokemonWilds() {
         setMySelectedPokemon(null);
         setPartnerSelectedPokemon(null);
       }}>
-        <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
-          <DialogHeader>
+        <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-purple-500/50 bg-gradient-to-b from-green-900 via-emerald-800 to-green-900 backdrop-blur-xl relative overflow-hidden">
+          {/* Pokemon Wilds background pattern */}
+          <div className="absolute inset-0 opacity-10">
+            <div className="absolute top-10 left-10 text-4xl">🌿</div>
+            <div className="absolute top-40 right-20 text-4xl">🍃</div>
+            <div className="absolute bottom-20 left-40 text-4xl">🌲</div>
+            <div className="absolute bottom-40 right-10 text-4xl">🌳</div>
+          </div>
+
+          <DialogHeader className="relative z-10">
             <DialogTitle className="text-2xl font-bold text-purple-400">
               Trade Pokemon with {tradePartner?.username}
             </DialogTitle>
           </DialogHeader>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 relative z-10">
             {/* Your Pokemon */}
             <div className="space-y-2">
               <h3 className="text-lg font-bold text-cyan-400">Your Pokemon (Select 1)</h3>
-              <ScrollArea className="h-[500px] border-2 border-cyan-500/30 rounded p-4 bg-slate-800/30">
-                <div className="grid grid-cols-2 gap-3">
+              <ScrollArea className="h-[400px] border-2 border-cyan-500/30 rounded p-3 bg-slate-900/70">
+                <div className="grid grid-cols-3 gap-2">
                   {myPokemon.map((pokemon) => (
                     <Card
                       key={pokemon._id}
                       onClick={() => setMySelectedPokemon(pokemon)}
                       className={`cursor-pointer transition-all ${
                         mySelectedPokemon?._id === pokemon._id
-                          ? 'border-4 border-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.8)]'
+                          ? 'border-3 border-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.8)]'
                           : 'border-2 border-slate-600 hover:border-cyan-500'
-                      }`}
+                      } bg-slate-800/90`}
                     >
-                      <CardContent className="p-3">
+                      <CardContent className="p-2">
                         {pokemon.isShiny && (
-                          <Badge className="mb-1 bg-yellow-500 text-xs">✨ SHINY</Badge>
+                          <Badge className="mb-1 bg-yellow-500 text-xs">✨</Badge>
                         )}
-                        <img src={pokemon.sprite} alt={pokemon.displayName} className="w-full mb-1" />
-                        <p className="text-white font-bold text-sm">{pokemon.nickname || pokemon.displayName}</p>
-                        <p className="text-gray-400 text-xs">Level {pokemon.level}</p>
+                        <img src={pokemon.sprite} alt={pokemon.displayName} className="w-16 h-16 mx-auto mb-1" />
+                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}</p>
+                        <p className="text-gray-400 text-xs text-center">Lv {pokemon.level}</p>
                       </CardContent>
                     </Card>
                   ))}
@@ -1644,25 +1706,25 @@ export default function PokemonWilds() {
             {/* Partner's Pokemon */}
             <div className="space-y-2">
               <h3 className="text-lg font-bold text-purple-400">{tradePartner?.username}'s Pokemon (Select 1)</h3>
-              <ScrollArea className="h-[500px] border-2 border-purple-500/30 rounded p-4 bg-slate-800/30">
-                <div className="grid grid-cols-2 gap-3">
+              <ScrollArea className="h-[400px] border-2 border-purple-500/30 rounded p-3 bg-slate-900/70">
+                <div className="grid grid-cols-3 gap-2">
                   {friendPokemonList.map((pokemon) => (
                     <Card
                       key={pokemon._id}
                       onClick={() => setPartnerSelectedPokemon(pokemon)}
                       className={`cursor-pointer transition-all ${
                         partnerSelectedPokemon?._id === pokemon._id
-                          ? 'border-4 border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.8)]'
+                          ? 'border-3 border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.8)]'
                           : 'border-2 border-slate-600 hover:border-purple-500'
-                      }`}
+                      } bg-slate-800/90`}
                     >
-                      <CardContent className="p-3">
+                      <CardContent className="p-2">
                         {pokemon.isShiny && (
-                          <Badge className="mb-1 bg-yellow-500 text-xs">✨ SHINY</Badge>
+                          <Badge className="mb-1 bg-yellow-500 text-xs">✨</Badge>
                         )}
-                        <img src={pokemon.sprite} alt={pokemon.displayName} className="w-full mb-1" />
-                        <p className="text-white font-bold text-sm">{pokemon.nickname || pokemon.displayName}</p>
-                        <p className="text-gray-400 text-xs">Level {pokemon.level}</p>
+                        <img src={pokemon.sprite} alt={pokemon.displayName} className="w-16 h-16 mx-auto mb-1" />
+                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}</p>
+                        <p className="text-gray-400 text-xs text-center">Lv {pokemon.level}</p>
                       </CardContent>
                     </Card>
                   ))}
@@ -1672,44 +1734,44 @@ export default function PokemonWilds() {
           </div>
 
           {/* Trade Summary */}
-          <div className="mt-4 p-4 bg-slate-800/50 rounded border-2 border-purple-500/30">
+          <div className="mt-3 p-3 bg-slate-900/70 rounded border-2 border-purple-500/30 relative z-10">
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 <p className="text-gray-400 text-sm mb-2">You offer:</p>
                 {mySelectedPokemon ? (
                   <div className="flex items-center gap-2">
-                    <img src={mySelectedPokemon.sprite} alt={mySelectedPokemon.displayName} className="w-16 h-16" />
+                    <img src={mySelectedPokemon.sprite} alt={mySelectedPokemon.displayName} className="w-12 h-12" />
                     <div>
-                      <p className="text-white font-bold">{mySelectedPokemon.nickname || mySelectedPokemon.displayName}</p>
-                      <p className="text-gray-400 text-sm">Level {mySelectedPokemon.level}</p>
+                      <p className="text-white font-bold text-sm">{mySelectedPokemon.nickname || mySelectedPokemon.displayName}</p>
+                      <p className="text-gray-400 text-xs">Level {mySelectedPokemon.level}</p>
                     </div>
                   </div>
                 ) : (
-                  <p className="text-gray-500">No Pokemon selected</p>
+                  <p className="text-gray-500 text-sm">No Pokemon selected</p>
                 )}
               </div>
               
-              <div className="text-4xl text-purple-400 mx-4">⇄</div>
+              <div className="text-3xl text-purple-400 mx-4">⇄</div>
               
               <div className="flex-1">
                 <p className="text-gray-400 text-sm mb-2">You receive:</p>
                 {partnerSelectedPokemon ? (
                   <div className="flex items-center gap-2">
-                    <img src={partnerSelectedPokemon.sprite} alt={partnerSelectedPokemon.displayName} className="w-16 h-16" />
+                    <img src={partnerSelectedPokemon.sprite} alt={partnerSelectedPokemon.displayName} className="w-12 h-12" />
                     <div>
-                      <p className="text-white font-bold">{partnerSelectedPokemon.nickname || partnerSelectedPokemon.displayName}</p>
-                      <p className="text-gray-400 text-sm">Level {partnerSelectedPokemon.level}</p>
+                      <p className="text-white font-bold text-sm">{partnerSelectedPokemon.nickname || partnerSelectedPokemon.displayName}</p>
+                      <p className="text-gray-400 text-xs">Level {partnerSelectedPokemon.level}</p>
                     </div>
                   </div>
                 ) : (
-                  <p className="text-gray-500">No Pokemon selected</p>
+                  <p className="text-gray-500 text-sm">No Pokemon selected</p>
                 )}
               </div>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-2 mt-4">
+          <div className="flex gap-2 mt-3 relative z-10">
             <Button
               onClick={() => {
                 setShowTradeDialog(false);
@@ -1723,9 +1785,9 @@ export default function PokemonWilds() {
             <Button
               onClick={handleSendPokemonTrade}
               disabled={!mySelectedPokemon || !partnerSelectedPokemon}
-              className="flex-1 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600"
+              className="flex-1 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 font-bold text-lg py-6"
             >
-              Send Trade Request
+              {mySelectedPokemon && partnerSelectedPokemon ? '✨ Send Trade Request ✨' : 'Select Both Pokemon'}
             </Button>
           </div>
         </DialogContent>
