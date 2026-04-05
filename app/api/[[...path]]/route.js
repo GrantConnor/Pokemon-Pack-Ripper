@@ -795,7 +795,7 @@ export async function GET(request) {
         if (name.includes('shiny vault')) return false;
         
         // Remove Crown Zenith Galarian Gallery (we'll merge it with Crown Zenith)
-        if (set.id === 'swsh12pt5' || name.includes('galarian gallery')) return false;
+        if (set.id === 'swsh12pt5gg' || name.includes('galarian gallery')) return false;
         
         // Remove sets with less than 50 cards
         if (total < 50) return false;
@@ -1162,12 +1162,12 @@ export async function POST(request) {
         
         const shinyVaultResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:sma&pageSize=250`);
         allCards = [...allCards, ...shinyVaultResponse.data.data];
-      } else if (setId === 'swsh12' || setId === 'swsh12pt5') {
-        // Merge both Crown Zenith sets (Crown Zenith + Crown Zenith Galarian Gallery)
-        const crownZenithResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:swsh12&pageSize=250`);
+      } else if (setId === 'swsh12pt5') {
+        // Merge Crown Zenith + Crown Zenith Galarian Gallery
+        const crownZenithResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:swsh12pt5&pageSize=250`);
         allCards = [...crownZenithResponse.data.data];
         
-        const gaларianGalleryResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:swsh12pt5&pageSize=250`);
+        const gaларianGalleryResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:swsh12pt5gg&pageSize=250`);
         allCards = [...allCards, ...gaларianGalleryResponse.data.data];
       } else {
         const response = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:${setId}&pageSize=250`);
