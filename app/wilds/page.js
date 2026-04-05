@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Sparkles, ArrowLeft, Clock } from 'lucide-react';
+import { Sparkles, ArrowLeft, Clock, Users } from 'lucide-react';
 import Link from 'next/link';
 
 export default function PokemonWilds() {
@@ -26,6 +26,17 @@ export default function PokemonWilds() {
   const [selectedMoves, setSelectedMoves] = useState([]);
   const [availableMoves, setAvailableMoves] = useState([]);
   const [showStats, setShowStats] = useState(false); // Toggle between IVs and Stats
+  const [showMovesetDialog, setShowMovesetDialog] = useState(false);
+  const [movesetPokemon, setMovesetPokemon] = useState(null);
+  
+  // Friends and Trading states
+  const [friends, setFriends] = useState([]);
+  const [friendSearchTerm, setFriendSearchTerm] = useState('');
+  const [showFriendsPanel, setShowFriendsPanel] = useState(false);
+  const [activeTrade, setActiveTrade] = useState(null);
+  const [selectedPokemonForTrade, setSelectedPokemonForTrade] = useState([]);
+  const [viewingFriendPokemon, setViewingFriendPokemon] = useState(null);
+  const [friendPokemonList, setFriendPokemonList] = useState([]);
 
   useEffect(() => {
     // Check if user is logged in
@@ -38,6 +49,7 @@ export default function PokemonWilds() {
             setUser(data.user);
             loadCurrentSpawn();
             loadMyPokemon();
+            loadFriends();
           } else {
             localStorage.removeItem('userId');
             window.location.href = '/';
@@ -107,6 +119,105 @@ export default function PokemonWilds() {
       setMyPokemon(data.pokemon || []);
     } catch (err) {
       console.error('Error loading Pokemon:', err);
+    }
+  };
+
+  const loadFriends = async () => {
+    if (!user) return;
+    try {
+      const response = await fetch(`/api/friends?userId=${user.id}`);
+      const data = await response.json();
+      setFriends(data.friends || []);
+    } catch (err) {
+      console.error('Error loading friends:', err);
+    }
+  };
+
+  const handleAddFriend = async () => {
+    if (!friendSearchTerm.trim()) return;
+    
+    try {
+      const response = await fetch('/api/friends/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          friendUsername: friendSearchTerm.trim()
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        alert(data.message);
+        setFriendSearchTerm('');
+        loadFriends();
+      } else {
+        alert(data.error);
+      }
+    } catch (err) {
+      alert('Error adding friend');
+    }
+  };
+
+  const handleViewFriendPokemon = async (friend) => {
+    try {
+      const response = await fetch(`/api/wilds/my-pokemon?userId=${friend.id}`);
+      const data = await response.json();
+      setFriendPokemonList(data.pokemon || []);
+      setViewingFriendPokemon(friend);
+    } catch (err) {
+      alert('Error loading friend Pokemon');
+    }
+  };
+
+  const handleInitiateTrade = (friend) => {
+    setActiveTrade({
+      friend: friend,
+      myPokemon: [],
+      theirPokemon: [],
+      status: 'pending'
+    });
+    setSelectedPokemonForTrade([]);
+  };
+
+  const togglePokemonForTrade = (pokemon) => {
+    if (selectedPokemonForTrade.find(p => p._id === pokemon._id)) {
+      setSelectedPokemonForTrade(selectedPokemonForTrade.filter(p => p._id !== pokemon._id));
+    } else {
+      setSelectedPokemonForTrade([...selectedPokemonForTrade, pokemon]);
+    }
+  };
+
+  const handleSendTrade = async () => {
+    if (selectedPokemonForTrade.length === 0) {
+      alert('Please select at least one Pokemon to trade');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/friends/trade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromId: user.id,
+          toId: activeTrade.friend.id,
+          offeredPokemon: selectedPokemonForTrade.map(p => ({ pokemonId: p._id.toString(), pokemonData: p })),
+          requestedPokemon: [],
+          type: 'pokemon-gift'
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        alert('Pokemon gift sent!');
+        setActiveTrade(null);
+        setSelectedPokemonForTrade([]);
+        loadMyPokemon();
+      } else {
+        alert(data.error);
+      }
+    } catch (err) {
+      alert('Error sending trade');
     }
   };
 
@@ -202,7 +313,8 @@ export default function PokemonWilds() {
   };
 
   const handleUpdateMoveset = async () => {
-    if (!selectedPokemon || selectedMoves.length !== 4) {
+    const pokemonToUpdate = movesetPokemon || selectedPokemon;
+    if (!pokemonToUpdate || selectedMoves.length !== 4) {
       alert('Please select exactly 4 moves');
       return;
     }
@@ -213,16 +325,21 @@ export default function PokemonWilds() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           userId: user.id,
-          pokemonId: selectedPokemon._id,
+          pokemonId: pokemonToUpdate._id,
           moveset: selectedMoves
         })
       });
 
       const data = await response.json();
       if (data.success) {
-        setSelectedPokemon({ ...selectedPokemon, moveset: selectedMoves });
-        setEditingMoveset(false);
+        if (selectedPokemon) {
+          setSelectedPokemon({ ...selectedPokemon, moveset: selectedMoves });
+        }
+        if (movesetPokemon) {
+          setMovesetPokemon({ ...movesetPokemon, moveset: selectedMoves });
+        }
         loadMyPokemon();
+        alert('Moveset updated successfully!');
       } else {
         alert(data.error || 'Error updating moveset');
       }
@@ -303,6 +420,13 @@ export default function PokemonWilds() {
                   ⚡ Spawn Pokemon Now
                 </Button>
               )}
+              <Button 
+                onClick={() => setShowFriendsPanel(true)}
+                className="bg-blue-600 hover:bg-blue-500"
+              >
+                <Users className="mr-2 h-4 w-4" />
+                Friends ({friends.length})
+              </Button>
               <Button 
                 onClick={() => {
                   setShowMyPokemon(true);
@@ -697,92 +821,27 @@ export default function PokemonWilds() {
                 <div>
                   <div className="flex justify-between items-center mb-2">
                     <h3 className="text-xl font-bold text-white">Moveset</h3>
-                    {!editingMoveset && (
-                      <Button
-                        onClick={() => {
-                          setEditingMoveset(true);
-                          setSelectedMoves([...selectedPokemon.moveset]);
-                          setAvailableMoves(selectedPokemon.allMoves || []);
-                        }}
-                        className="bg-cyan-600 hover:bg-cyan-500"
-                        size="sm"
-                      >
-                        Edit Moves
-                      </Button>
-                    )}
+                    <Button
+                      onClick={() => {
+                        setMovesetPokemon(selectedPokemon);
+                        setSelectedMoves([...selectedPokemon.moveset]);
+                        setAvailableMoves(selectedPokemon.allMoves || []);
+                        setShowMovesetDialog(true);
+                      }}
+                      className="bg-cyan-600 hover:bg-cyan-500"
+                      size="sm"
+                    >
+                      Edit Moves
+                    </Button>
                   </div>
                   
-                  {editingMoveset ? (
-                    <div className="space-y-3">
-                      <div className="bg-slate-800 p-3 rounded">
-                        <p className="text-sm text-gray-400 mb-2">
-                          Selected: {selectedMoves.length}/4 moves
-                        </p>
-                        <div className="space-y-1">
-                          {selectedMoves.map((move, idx) => (
-                            <div key={idx} className="bg-cyan-700 p-2 rounded text-white capitalize flex justify-between items-center">
-                              <span>{move.replace('-', ' ')}</span>
-                              <Button
-                                onClick={() => setSelectedMoves(selectedMoves.filter((_, i) => i !== idx))}
-                                size="sm"
-                                className="bg-red-600 hover:bg-red-500 h-6 px-2"
-                              >
-                                Remove
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
+                  <div className="space-y-1">
+                    {selectedPokemon.moveset.map((move, idx) => (
+                      <div key={idx} className="bg-slate-800 p-2 rounded text-white capitalize">
+                        {move.replace('-', ' ')}
                       </div>
-
-                      <ScrollArea className="h-40 bg-slate-800 p-2 rounded">
-                        <div className="space-y-1">
-                          {availableMoves.map((move, idx) => (
-                            <button
-                              key={idx}
-                              onClick={() => toggleMoveSelection(move)}
-                              disabled={selectedMoves.includes(move) || selectedMoves.length >= 4}
-                              className={`w-full text-left p-2 rounded capitalize transition-colors ${
-                                selectedMoves.includes(move)
-                                  ? 'bg-cyan-700 text-white cursor-not-allowed'
-                                  : selectedMoves.length >= 4
-                                  ? 'bg-slate-700 text-gray-500 cursor-not-allowed'
-                                  : 'bg-slate-700 text-white hover:bg-slate-600'
-                              }`}
-                            >
-                              {move.replace('-', ' ')}
-                            </button>
-                          ))}
-                        </div>
-                      </ScrollArea>
-
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={handleUpdateMoveset}
-                          disabled={selectedMoves.length !== 4}
-                          className="flex-1 bg-green-600 hover:bg-green-500"
-                        >
-                          Save Moveset
-                        </Button>
-                        <Button
-                          onClick={() => {
-                            setEditingMoveset(false);
-                            setSelectedMoves([]);
-                          }}
-                          className="flex-1 bg-gray-600 hover:bg-gray-500"
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      {selectedPokemon.moveset.map((move, idx) => (
-                        <div key={idx} className="bg-slate-800 p-2 rounded text-white capitalize">
-                          {move.replace('-', ' ')}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                    ))}
+                  </div>
                 </div>
 
                 <p className="text-gray-400 text-sm">
@@ -793,6 +852,101 @@ export default function PokemonWilds() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Moveset Editing Dialog */}
+      <Dialog open={showMovesetDialog} onOpenChange={() => {
+        setShowMovesetDialog(false);
+        setMovesetPokemon(null);
+        setSelectedMoves([]);
+      }}>
+        <DialogContent className="max-w-2xl border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-cyan-400">
+              Edit Moveset - {movesetPokemon?.displayName}
+            </DialogTitle>
+          </DialogHeader>
+
+          {movesetPokemon && (
+            <div className="space-y-4">
+              <div className="bg-slate-800 p-4 rounded-lg">
+                <p className="text-sm text-gray-400 mb-3">
+                  Selected: {selectedMoves.length}/4 moves
+                </p>
+                <div className="space-y-2">
+                  {selectedMoves.map((move, idx) => (
+                    <div key={idx} className="bg-cyan-700 p-3 rounded text-white capitalize flex justify-between items-center">
+                      <span className="font-medium">{move.replace('-', ' ')}</span>
+                      <Button
+                        onClick={() => setSelectedMoves(selectedMoves.filter((_, i) => i !== idx))}
+                        size="sm"
+                        className="bg-red-600 hover:bg-red-500 h-7 px-3"
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                  {selectedMoves.length === 0 && (
+                    <p className="text-gray-500 text-center py-4">No moves selected</p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-white font-bold mb-2">Available Moves ({availableMoves.length})</h3>
+                <ScrollArea className="h-64 bg-slate-800 p-3 rounded-lg">
+                  <div className="space-y-2">
+                    {availableMoves.map((move, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => toggleMoveSelection(move)}
+                        disabled={selectedMoves.includes(move) || (selectedMoves.length >= 4 && !selectedMoves.includes(move))}
+                        className={`w-full text-left p-3 rounded capitalize transition-colors font-medium ${
+                          selectedMoves.includes(move)
+                            ? 'bg-cyan-700 text-white cursor-not-allowed opacity-50'
+                            : selectedMoves.length >= 4
+                            ? 'bg-slate-700 text-gray-500 cursor-not-allowed'
+                            : 'bg-slate-700 text-white hover:bg-slate-600'
+                        }`}
+                      >
+                        {move.replace('-', ' ')}
+                      </button>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button
+                  onClick={() => {
+                    setShowMovesetDialog(false);
+                    setMovesetPokemon(null);
+                    setSelectedMoves([]);
+                  }}
+                  className="flex-1 bg-gray-600 hover:bg-gray-500"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={async () => {
+                    if (selectedMoves.length !== 4) {
+                      alert('Please select exactly 4 moves');
+                      return;
+                    }
+                    await handleUpdateMoveset();
+                    setShowMovesetDialog(false);
+                  }}
+                  disabled={selectedMoves.length !== 4}
+                  className="flex-1 bg-green-600 hover:bg-green-500 font-bold"
+                >
+                  Save Moveset ({selectedMoves.length}/4)
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Friends Panel Dialog */}
     </div>
   );
 }

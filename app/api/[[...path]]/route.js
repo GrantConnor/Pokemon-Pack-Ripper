@@ -753,7 +753,25 @@ export async function GET(request) {
         .sort({ caughtAt: -1 })
         .toArray();
 
-      return NextResponse.json({ pokemon: caughtPokemon });
+      // Fix Pokemon without level/stats (backwards compatibility)
+      const fixedPokemon = caughtPokemon.map(pokemon => {
+        if (!pokemon.level || !pokemon.stats) {
+          // Add default level if missing
+          const level = pokemon.level || 50;
+          
+          // Calculate stats if missing
+          const stats = pokemon.stats || calculateStats(
+            pokemon.baseStats || {hp: 100, attack: 100, defense: 100, spAttack: 100, spDefense: 100, speed: 100},
+            pokemon.ivs,
+            level
+          );
+          
+          return { ...pokemon, level, stats };
+        }
+        return pokemon;
+      });
+
+      return NextResponse.json({ pokemon: fixedPokemon });
     }
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });

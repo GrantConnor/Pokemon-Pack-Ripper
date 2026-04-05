@@ -798,16 +798,6 @@ export default function App() {
       return;
     }
 
-    // Confirmation
-    if (!window.confirm(`⚠️ PERMANENT DELETE: Are you sure you want to COMPLETELY DELETE user "${adminDeleteUser}" and ALL their data? This CANNOT be undone!`)) {
-      return;
-    }
-
-    // Double confirmation
-    if (!window.confirm(`FINAL CONFIRMATION: Delete "${adminDeleteUser}" forever?`)) {
-      return;
-    }
-
     try {
       const response = await fetch('/api/admin/delete-user', {
         method: 'POST',
