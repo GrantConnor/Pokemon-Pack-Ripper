@@ -39,6 +39,10 @@ export default function PokemonWilds() {
   const [friendPokemonList, setFriendPokemonList] = useState([]);
   const [battleRequests, setBattleRequests] = useState([]);
   const [tradeRequests, setTradeRequests] = useState([]);
+  const [showTradeDialog, setShowTradeDialog] = useState(false);
+  const [tradePartner, setTradePartner] = useState(null);
+  const [mySelectedPokemon, setMySelectedPokemon] = useState(null);
+  const [partnerSelectedPokemon, setPartnerSelectedPokemon] = useState(null);
   
   // Leveling and Evolution states
   const [buyingXP, setBuyingXP] = useState(false);
@@ -215,14 +219,14 @@ export default function PokemonWilds() {
 
       const data = await response.json();
       if (response.ok) {
-        alert(data.message);
+        console.log('Friend request sent:', data.message);
         setFriendSearchTerm('');
         loadFriends();
       } else {
-        alert(data.error);
+        console.error('Error adding friend:', data.error);
       }
     } catch (err) {
-      alert('Error adding friend');
+      console.error('Error adding friend:', err);
     }
   };
 
@@ -231,9 +235,46 @@ export default function PokemonWilds() {
       const response = await fetch(`/api/wilds/my-pokemon?userId=${friend.id}`);
       const data = await response.json();
       setFriendPokemonList(data.pokemon || []);
-      setViewingFriendPokemon(friend);
+      setTradePartner(friend);
+      setShowTradeDialog(true);
+      setMySelectedPokemon(null);
+      setPartnerSelectedPokemon(null);
     } catch (err) {
-      alert('Error loading friend Pokemon');
+      console.error('Error loading friend Pokemon:', err);
+    }
+  };
+
+  const handleSendPokemonTrade = async () => {
+    if (!mySelectedPokemon || !partnerSelectedPokemon) {
+      console.log('Please select one Pokemon from each side');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/friends/trade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromId: user.id,
+          toId: tradePartner.id,
+          offeredPokemon: [{ pokemonId: mySelectedPokemon._id.toString(), pokemonData: mySelectedPokemon }],
+          requestedPokemon: [{ pokemonId: partnerSelectedPokemon._id.toString(), pokemonData: partnerSelectedPokemon }],
+          type: 'pokemon-trade'
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        console.log('Trade request sent!');
+        setShowTradeDialog(false);
+        setMySelectedPokemon(null);
+        setPartnerSelectedPokemon(null);
+        loadFriends();
+      } else {
+        console.error(data.error);
+      }
+    } catch (err) {
+      console.error('Error sending trade:', err);
     }
   };
 
@@ -260,14 +301,13 @@ export default function PokemonWilds() {
 
       const data = await response.json();
       if (data.success) {
-        alert(`Battle request sent to ${friend.username}!`);
+        console.log(`Battle request sent to ${friend.username}!`);
         loadFriends(); // Reload to update UI
       } else {
-        alert(data.error || 'Error sending battle request');
+        console.error(data.error || 'Error sending battle request');
       }
     } catch (err) {
       console.error('Battle request error:', err);
-      alert('Error sending battle request');
     }
   };
 
@@ -1555,6 +1595,139 @@ export default function PokemonWilds() {
               )}
             </div>
           </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pokemon Trade Dialog */}
+      <Dialog open={showTradeDialog} onOpenChange={() => {
+        setShowTradeDialog(false);
+        setMySelectedPokemon(null);
+        setPartnerSelectedPokemon(null);
+      }}>
+        <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-purple-400">
+              Trade Pokemon with {tradePartner?.username}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="grid grid-cols-2 gap-4">
+            {/* Your Pokemon */}
+            <div className="space-y-2">
+              <h3 className="text-lg font-bold text-cyan-400">Your Pokemon (Select 1)</h3>
+              <ScrollArea className="h-[500px] border-2 border-cyan-500/30 rounded p-4 bg-slate-800/30">
+                <div className="grid grid-cols-2 gap-3">
+                  {myPokemon.map((pokemon) => (
+                    <Card
+                      key={pokemon._id}
+                      onClick={() => setMySelectedPokemon(pokemon)}
+                      className={`cursor-pointer transition-all ${
+                        mySelectedPokemon?._id === pokemon._id
+                          ? 'border-4 border-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.8)]'
+                          : 'border-2 border-slate-600 hover:border-cyan-500'
+                      }`}
+                    >
+                      <CardContent className="p-3">
+                        {pokemon.isShiny && (
+                          <Badge className="mb-1 bg-yellow-500 text-xs">✨ SHINY</Badge>
+                        )}
+                        <img src={pokemon.sprite} alt={pokemon.displayName} className="w-full mb-1" />
+                        <p className="text-white font-bold text-sm">{pokemon.nickname || pokemon.displayName}</p>
+                        <p className="text-gray-400 text-xs">Level {pokemon.level}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+
+            {/* Partner's Pokemon */}
+            <div className="space-y-2">
+              <h3 className="text-lg font-bold text-purple-400">{tradePartner?.username}'s Pokemon (Select 1)</h3>
+              <ScrollArea className="h-[500px] border-2 border-purple-500/30 rounded p-4 bg-slate-800/30">
+                <div className="grid grid-cols-2 gap-3">
+                  {friendPokemonList.map((pokemon) => (
+                    <Card
+                      key={pokemon._id}
+                      onClick={() => setPartnerSelectedPokemon(pokemon)}
+                      className={`cursor-pointer transition-all ${
+                        partnerSelectedPokemon?._id === pokemon._id
+                          ? 'border-4 border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.8)]'
+                          : 'border-2 border-slate-600 hover:border-purple-500'
+                      }`}
+                    >
+                      <CardContent className="p-3">
+                        {pokemon.isShiny && (
+                          <Badge className="mb-1 bg-yellow-500 text-xs">✨ SHINY</Badge>
+                        )}
+                        <img src={pokemon.sprite} alt={pokemon.displayName} className="w-full mb-1" />
+                        <p className="text-white font-bold text-sm">{pokemon.nickname || pokemon.displayName}</p>
+                        <p className="text-gray-400 text-xs">Level {pokemon.level}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+          </div>
+
+          {/* Trade Summary */}
+          <div className="mt-4 p-4 bg-slate-800/50 rounded border-2 border-purple-500/30">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="text-gray-400 text-sm mb-2">You offer:</p>
+                {mySelectedPokemon ? (
+                  <div className="flex items-center gap-2">
+                    <img src={mySelectedPokemon.sprite} alt={mySelectedPokemon.displayName} className="w-16 h-16" />
+                    <div>
+                      <p className="text-white font-bold">{mySelectedPokemon.nickname || mySelectedPokemon.displayName}</p>
+                      <p className="text-gray-400 text-sm">Level {mySelectedPokemon.level}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-gray-500">No Pokemon selected</p>
+                )}
+              </div>
+              
+              <div className="text-4xl text-purple-400 mx-4">⇄</div>
+              
+              <div className="flex-1">
+                <p className="text-gray-400 text-sm mb-2">You receive:</p>
+                {partnerSelectedPokemon ? (
+                  <div className="flex items-center gap-2">
+                    <img src={partnerSelectedPokemon.sprite} alt={partnerSelectedPokemon.displayName} className="w-16 h-16" />
+                    <div>
+                      <p className="text-white font-bold">{partnerSelectedPokemon.nickname || partnerSelectedPokemon.displayName}</p>
+                      <p className="text-gray-400 text-sm">Level {partnerSelectedPokemon.level}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-gray-500">No Pokemon selected</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-2 mt-4">
+            <Button
+              onClick={() => {
+                setShowTradeDialog(false);
+                setMySelectedPokemon(null);
+                setPartnerSelectedPokemon(null);
+              }}
+              className="flex-1 bg-gray-600 hover:bg-gray-500"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSendPokemonTrade}
+              disabled={!mySelectedPokemon || !partnerSelectedPokemon}
+              className="flex-1 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600"
+            >
+              Send Trade Request
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
