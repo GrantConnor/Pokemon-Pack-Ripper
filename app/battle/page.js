@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -10,7 +10,7 @@ import { ArrowLeft, Swords } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
-export default function BattlePage() {
+function BattlePageContent() {
   const searchParams = useSearchParams();
   const battleId = searchParams.get('id');
   
@@ -411,4 +411,12 @@ export default function BattlePage() {
   }
 
   return null;
+}
+
+export default function BattlePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center text-white">Loading battle...</div>}>
+      <BattlePageContent />
+    </Suspense>
+  );
 }
