@@ -1002,7 +1002,7 @@ export default function App() {
           <div className="flex items-center gap-4">
             <Link href="/wilds">
               <Button className="bg-green-600 hover:bg-green-500 border-2 border-green-400 font-bold shadow-[0_0_15px_rgba(34,197,94,0.5)]">
-                🌿 Pokemon Wilds
+                Pokemon Wilds
               </Button>
             </Link>
             <div className="flex items-center gap-2 bg-slate-800/50 px-4 py-2 rounded-lg border-2 border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)] backdrop-blur-sm">

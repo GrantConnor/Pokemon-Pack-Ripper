@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 
@@ -395,6 +395,21 @@ async function fetchPokemonData(pokemonId) {
     const shuffledMoves = allMoves.sort(() => 0.5 - Math.random());
     const moveset = shuffledMoves.slice(0, Math.min(4, allMoves.length));
     
+    // Generate gender based on gender_rate
+    // gender_rate: -1 = genderless, 0 = always male, 8 = always female, 1-7 = ratio
+    let gender = null;
+    if (species.gender_rate === -1) {
+      gender = 'genderless';
+    } else if (species.gender_rate === 0) {
+      gender = 'male';
+    } else if (species.gender_rate === 8) {
+      gender = 'female';
+    } else {
+      // Random based on ratio (gender_rate is eighths, so 4 = 50/50)
+      const femaleChance = species.gender_rate / 8;
+      gender = Math.random() < femaleChance ? 'female' : 'male';
+    }
+    
     return {
       id: pokemon.id,
       name: pokemon.name,
@@ -404,9 +419,11 @@ async function fetchPokemonData(pokemonId) {
       captureRate: species.capture_rate,
       isLegendary: species.is_legendary,
       isMythical: species.is_mythical,
+      gender: gender,
       ivs: ivs,
       moveset: moveset,
       allMoves: allMoves,
+      nickname: null, // Will be set by user
       baseStats: {
         hp: pokemon.stats[0].base_stat,
         attack: pokemon.stats[1].base_stat,
@@ -1469,6 +1486,117 @@ export async function POST(request) {
           message: `${spawn.pokemon.displayName} broke free!`
         });
       }
+    }
+
+    // Admin: Force spawn a new Pokemon (Spheal only)
+    if (pathname.includes('/api/wilds/admin-spawn')) {
+      const { adminId } = body;
+      
+      if (!adminId) {
+        return NextResponse.json({ error: 'Admin ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const admin = await database.collection('users').findOne({ id: adminId });
+      
+      if (!admin || admin.username !== 'Spheal') {
+        return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
+      }
+
+      // Force create new spawn
+      const randomId = Math.floor(Math.random() * MAX_POKEMON_ID) + 1;
+      const pokemonData = await fetchPokemonData(randomId);
+      
+      const newSpawn = {
+        id: 'current',
+        pokemon: pokemonData,
+        spawnedAt: Date.now(),
+        nextSpawnTime: null,
+        caughtBy: null,
+        catchAttempts: {}
+      };
+      
+      await database.collection('global_spawn').updateOne(
+        { id: 'current' },
+        { $set: newSpawn },
+        { upsert: true }
+      );
+
+      return NextResponse.json({ 
+        success: true, 
+        spawn: newSpawn,
+        message: `Spawned ${pokemonData.displayName}!`
+      });
+    }
+
+    // Update Pokemon nickname
+    if (pathname.includes('/api/wilds/update-nickname')) {
+      const { userId, pokemonId, nickname } = body;
+      
+      if (!userId || !pokemonId) {
+        return NextResponse.json({ error: 'User ID and Pokemon ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      
+      // Update the specific Pokemon's nickname
+      const result = await database.collection('caught_pokemon').updateOne(
+        { _id: new ObjectId(pokemonId), userId: userId },
+        { $set: { nickname: nickname || null } }
+      );
+
+      if (result.matchedCount === 0) {
+        return NextResponse.json({ error: 'Pokemon not found' }, { status: 404 });
+      }
+
+      return NextResponse.json({ 
+        success: true,
+        message: 'Nickname updated'
+      });
+    }
+
+    // Update Pokemon moveset
+    if (pathname.includes('/api/wilds/update-moveset')) {
+      const { userId, pokemonId, moveset } = body;
+      
+      if (!userId || !pokemonId || !moveset || !Array.isArray(moveset)) {
+        return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+      }
+
+      if (moveset.length !== 4) {
+        return NextResponse.json({ error: 'Moveset must have exactly 4 moves' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      
+      // Get the Pokemon to verify moves are learnable
+      const pokemon = await database.collection('caught_pokemon').findOne({ 
+        _id: new ObjectId(pokemonId), 
+        userId: userId 
+      });
+
+      if (!pokemon) {
+        return NextResponse.json({ error: 'Pokemon not found' }, { status: 404 });
+      }
+
+      // Verify all moves are in the Pokemon's learnable moves
+      const invalidMoves = moveset.filter(move => !pokemon.allMoves.includes(move));
+      if (invalidMoves.length > 0) {
+        return NextResponse.json({ 
+          error: `Invalid moves: ${invalidMoves.join(', ')}` 
+        }, { status: 400 });
+      }
+
+      // Update moveset
+      await database.collection('caught_pokemon').updateOne(
+        { _id: new ObjectId(pokemonId), userId: userId },
+        { $set: { moveset: moveset } }
+      );
+
+      return NextResponse.json({ 
+        success: true,
+        message: 'Moveset updated'
+      });
     }
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });

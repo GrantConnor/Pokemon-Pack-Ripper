@@ -807,6 +807,54 @@ test_plan:
         agent: "testing"
         comment: "✅ PASSED: User's caught Pokemon endpoint working perfectly. Successfully retrieves caught Pokemon list from MongoDB with proper structure (pokemon array with id, name, displayName, userId, caughtAt fields). Tested with user who caught Noivern - correctly returned 1 Pokemon with valid data structure. Error handling working: returns 400 'User ID required' when userId missing, returns empty array for users with no caught Pokemon. Sorting by caughtAt (newest first) working correctly."
 
+  - task: "Pokemon Wilds Gender System - Pokemon have gender field"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED: Gender system working perfectly. Pokemon have valid gender field with values 'male', 'female', or 'genderless' based on species data from PokéAPI. Gender assignment logic implemented in fetchPokemonData function (lines 398-411) using species.gender_rate: -1=genderless, 0=always male, 8=always female, 1-7=ratio-based random assignment. Tested with existing caught Pokemon showing gender field present and valid."
+
+  - task: "POST /api/wilds/admin-spawn - Admin force spawn Pokemon"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED: Admin spawn endpoint working perfectly with proper authorization. Correctly requires adminId parameter (returns 400 when missing). Properly validates admin user must have exact username 'Spheal' (returns 403 for non-Spheal users). Authorization logic secure: checks admin.username === 'Spheal' preventing privilege escalation. When valid admin access provided, creates new Pokemon spawn immediately with all required fields including gender. Endpoint implemented in lines 1492-1530."
+
+  - task: "POST /api/wilds/update-nickname - Update Pokemon nickname"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED: Nickname system working perfectly. Successfully tested setting nickname 'TestNick_1775351782' and verified it was saved to database. Clearing nickname with null value works correctly. Proper validation: requires userId and pokemonId (returns 400 when missing). Uses MongoDB ObjectId for Pokemon identification. Database updates work correctly with updateOne operation. Nickname field properly added/updated in caught_pokemon collection. Endpoint implemented in lines 1533-1556."
+
+  - task: "POST /api/wilds/update-moveset - Update Pokemon moveset"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED: Moveset editing system working perfectly. Successfully tested updating moveset from ['flamethrower', 'hyper-beam', 'solar-beam', 'fire-spin'] to ['attract', 'crunch', 'sunny-day', 'fire-blast'] and verified changes saved to database. Proper validation: requires exactly 4 moves (returns 400 for wrong count), validates all moves are in Pokemon's allMoves list (returns 400 for invalid moves like 'invalid-move-1'). Uses MongoDB ObjectId for Pokemon identification. Tested with Pokemon having 66 learnable moves. Endpoint implemented in lines 1559-1600."
+
 agent_communication:
   - agent: "testing"
     message: "Starting comprehensive backend API testing for Pokemon Pack Ripper. All endpoints are implemented and ready for testing. Will test in logical order: sets -> auth -> session -> cards -> pack opening -> collection."
@@ -842,3 +890,5 @@ agent_communication:
     message: "🎉 CARD BREAKDOWN QUANTITY TESTING COMPLETE - ALL TESTS PASSED! Final testing of card breakdown quantity feature after server restart completed successfully with 100% pass rate (2/2 tests passed). ✅ BREAKDOWN-QUANTITY ENDPOINT: Working perfectly on local server - creates test user with 3 Common cards (xy1-65 Timburr), processes amount=2 correctly, awards 20 points (10 per Common × 2), removes 2 cards from collection (2→0 remaining), increases user points correctly (750→770). ✅ BATCH BREAKDOWN ENDPOINT: Continues working correctly alongside new quantity endpoint. ✅ CORE FUNCTIONALITY VERIFIED: Response success:true, points awarded:20, collection updated correctly, user points increased by 20. NOTE: Production deployment issue detected - local server reflects code changes correctly, but production environment (Netlify) may need redeployment. Card breakdown functionality is working as designed after server restart!"
   - agent: "testing"
     message: "🎉 POKEMON WILDS BACKEND TESTING COMPLETE - ALL TESTS PASSED! Comprehensive testing of new Pokemon Wilds feature completed successfully with 100% pass rate (3/3 endpoints tested). ✅ KEY FINDINGS: 1) GET /api/wilds/current - Pokemon spawn system generates valid Pokemon data from PokéAPI with all required fields (id, name, displayName, types, sprite, captureRate, IVs 0-31, moveset), tested with Noivern (Flying/Dragon, capture rate 45), 2) POST /api/wilds/catch - Catch system working perfectly with proper attempt tracking (max 3 attempts), catch chance calculation based on rarity, successful catch saves to caught_pokemon collection with userId and timestamp, 3) GET /api/wilds/my-pokemon - User Pokemon retrieval working correctly, returns proper array structure sorted by caughtAt. ✅ ERROR HANDLING: All validation working (400 for missing userId, 'No Pokemon available' when spawn caught/null). ⚠️ DEPLOYMENT NOTE: Feature working perfectly on local server but production deployment needs update. Pokemon Wilds feature is production-ready!"
+  - agent: "testing"
+    message: "🎉 POKEMON WILDS ENHANCED FEATURES TESTING COMPLETE - ALL TESTS PASSED! Comprehensive testing of Pokemon Wilds enhanced features completed successfully with 100% pass rate (4/4 features tested). ✅ KEY FINDINGS: 1) GENDER SYSTEM ✅ - Pokemon have valid gender field (male/female/genderless) based on species data, gender assignment logic working correctly using species.gender_rate from PokéAPI, 2) ADMIN SPAWN ✅ - POST /api/wilds/admin-spawn working with proper authorization (requires exact 'Spheal' username), correctly rejects non-Spheal users with 403, validates adminId parameter, 3) NICKNAME SYSTEM ✅ - POST /api/wilds/update-nickname working perfectly, successfully tested setting/clearing nicknames, proper validation and MongoDB ObjectId integration, 4) MOVESET EDITING ✅ - POST /api/wilds/update-moveset working perfectly, validates exactly 4 moves, checks moves against Pokemon's learnable moves, proper error handling for invalid moves. ✅ CRITICAL FIX APPLIED: Added ObjectId import and fixed MongoDB _id handling for update operations. All enhanced features are production-ready!"

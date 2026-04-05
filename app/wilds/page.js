@@ -18,6 +18,11 @@ export default function PokemonWilds() {
   const [showMyPokemon, setShowMyPokemon] = useState(false);
   const [selectedPokemon, setSelectedPokemon] = useState(null);
   const [timeUntilSpawn, setTimeUntilSpawn] = useState(null);
+  const [editingNickname, setEditingNickname] = useState(false);
+  const [newNickname, setNewNickname] = useState('');
+  const [editingMoveset, setEditingMoveset] = useState(false);
+  const [selectedMoves, setSelectedMoves] = useState([]);
+  const [availableMoves, setAvailableMoves] = useState([]);
 
   useEffect(() => {
     // Check if user is logged in
@@ -148,6 +153,89 @@ export default function PokemonWilds() {
     }
   };
 
+  const handleAdminSpawn = async () => {
+    if (!user || user.username !== 'Spheal') return;
+    
+    try {
+      const response = await fetch('/api/wilds/admin-spawn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminId: user.id })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        loadCurrentSpawn();
+        alert(data.message);
+      }
+    } catch (err) {
+      alert('Error spawning Pokemon');
+    }
+  };
+
+  const handleUpdateNickname = async () => {
+    if (!selectedPokemon) return;
+
+    try {
+      const response = await fetch('/api/wilds/update-nickname', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId: user.id,
+          pokemonId: selectedPokemon._id,
+          nickname: newNickname.trim()
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setSelectedPokemon({ ...selectedPokemon, nickname: newNickname.trim() });
+        setEditingNickname(false);
+        loadMyPokemon();
+      }
+    } catch (err) {
+      alert('Error updating nickname');
+    }
+  };
+
+  const handleUpdateMoveset = async () => {
+    if (!selectedPokemon || selectedMoves.length !== 4) {
+      alert('Please select exactly 4 moves');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/wilds/update-moveset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId: user.id,
+          pokemonId: selectedPokemon._id,
+          moveset: selectedMoves
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setSelectedPokemon({ ...selectedPokemon, moveset: selectedMoves });
+        setEditingMoveset(false);
+        loadMyPokemon();
+      } else {
+        alert(data.error || 'Error updating moveset');
+      }
+    } catch (err) {
+      alert('Error updating moveset');
+    }
+  };
+
+  const toggleMoveSelection = (move) => {
+    if (selectedMoves.includes(move)) {
+      setSelectedMoves(selectedMoves.filter(m => m !== move));
+    } else if (selectedMoves.length < 4) {
+      setSelectedMoves([...selectedMoves, move]);
+    }
+  };
+
   const formatTime = (ms) => {
     if (!ms) return '...';
     const totalSeconds = Math.floor((ms - Date.now()) / 1000);
@@ -204,6 +292,14 @@ export default function PokemonWilds() {
               </div>
             </div>
             <div className="flex gap-4 items-center">
+              {user.username === 'Spheal' && (
+                <Button 
+                  onClick={handleAdminSpawn}
+                  className="bg-red-600 hover:bg-red-500 border-2 border-red-400 font-bold"
+                >
+                  ⚡ Spawn Pokemon Now
+                </Button>
+              )}
               <Button 
                 onClick={() => {
                   setShowMyPokemon(true);
@@ -244,6 +340,11 @@ export default function PokemonWilds() {
                   <CardTitle className="text-3xl text-cyan-400 flex items-center justify-center gap-2">
                     {spawn.pokemon.displayName}
                     <span className="text-gray-400 text-lg">#{spawn.pokemon.id}</span>
+                    {spawn.pokemon.gender && spawn.pokemon.gender !== 'genderless' && (
+                      <span className="text-2xl">
+                        {spawn.pokemon.gender === 'male' ? '♂️' : '♀️'}
+                      </span>
+                    )}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -281,12 +382,7 @@ export default function PokemonWilds() {
                 <CardContent className="py-12">
                   <Clock className="w-16 h-16 mx-auto mb-4 text-cyan-400 animate-pulse" />
                   <h2 className="text-2xl font-bold text-white mb-2">No Pokemon Currently</h2>
-                  <p className="text-gray-400 mb-4">The wilds are quiet...</p>
-                  {timeUntilSpawn && (
-                    <div className="text-cyan-400 text-xl font-bold">
-                      Next spawn in: {formatTime(timeUntilSpawn)}
-                    </div>
-                  )}
+                  <p className="text-gray-400">The wilds are quiet... check back soon!</p>
                 </CardContent>
               </Card>
             </div>
@@ -428,22 +524,37 @@ export default function PokemonWilds() {
 
       {/* Pokemon Details Dialog */}
       {selectedPokemon && (
-        <Dialog open={!!selectedPokemon} onOpenChange={() => setSelectedPokemon(null)}>
-          <DialogContent className="max-w-2xl border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
+        <Dialog open={!!selectedPokemon} onOpenChange={() => {
+          setSelectedPokemon(null);
+          setEditingNickname(false);
+          setEditingMoveset(false);
+        }}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
             <DialogHeader>
-              <DialogTitle className="text-3xl font-bold text-cyan-400">
-                {selectedPokemon.displayName} #{selectedPokemon.id}
+              <DialogTitle className="text-3xl font-bold text-cyan-400 flex items-center gap-3">
+                <span>
+                  {selectedPokemon.nickname || selectedPokemon.displayName} 
+                  {selectedPokemon.nickname && (
+                    <span className="text-gray-400 text-lg ml-2">({selectedPokemon.displayName})</span>
+                  )}
+                </span>
+                <span className="text-xl text-gray-400">#{selectedPokemon.id}</span>
+                {selectedPokemon.gender && selectedPokemon.gender !== 'genderless' && (
+                  <span className="text-2xl">
+                    {selectedPokemon.gender === 'male' ? '♂' : '♀'}
+                  </span>
+                )}
               </DialogTitle>
             </DialogHeader>
 
             <div className="grid grid-cols-2 gap-6">
-              <div>
+              <div className="space-y-4">
                 <img
                   src={selectedPokemon.sprite}
                   alt={selectedPokemon.displayName}
                   className="w-full"
                 />
-                <div className="flex gap-2 justify-center mt-4">
+                <div className="flex gap-2 justify-center">
                   {selectedPokemon.types.map(type => (
                     <Badge 
                       key={type} 
@@ -452,6 +563,52 @@ export default function PokemonWilds() {
                       {type}
                     </Badge>
                   ))}
+                </div>
+                
+                {/* Nickname Section */}
+                <div className="bg-slate-800 p-3 rounded-lg">
+                  <h4 className="text-white font-bold mb-2">Nickname</h4>
+                  {editingNickname ? (
+                    <div className="space-y-2">
+                      <Input
+                        value={newNickname}
+                        onChange={(e) => setNewNickname(e.target.value)}
+                        placeholder="Enter nickname..."
+                        className="bg-slate-700 text-white border-cyan-500/30"
+                        maxLength={12}
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={handleUpdateNickname}
+                          className="flex-1 bg-green-600 hover:bg-green-500"
+                          size="sm"
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            setEditingNickname(false);
+                            setNewNickname('');
+                          }}
+                          className="flex-1 bg-gray-600 hover:bg-gray-500"
+                          size="sm"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={() => {
+                        setEditingNickname(true);
+                        setNewNickname(selectedPokemon.nickname || '');
+                      }}
+                      className="w-full bg-cyan-600 hover:bg-cyan-500"
+                      size="sm"
+                    >
+                      {selectedPokemon.nickname ? 'Change Nickname' : 'Set Nickname'}
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -486,15 +643,96 @@ export default function PokemonWilds() {
                   </div>
                 </div>
 
+                {/* Moveset Section */}
                 <div>
-                  <h3 className="text-xl font-bold text-white mb-2">Moveset</h3>
-                  <div className="space-y-1">
-                    {selectedPokemon.moveset.map((move, idx) => (
-                      <div key={idx} className="bg-slate-800 p-2 rounded text-white capitalize">
-                        {move.replace('-', ' ')}
-                      </div>
-                    ))}
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="text-xl font-bold text-white">Moveset</h3>
+                    {!editingMoveset && (
+                      <Button
+                        onClick={() => {
+                          setEditingMoveset(true);
+                          setSelectedMoves([...selectedPokemon.moveset]);
+                          setAvailableMoves(selectedPokemon.allMoves || []);
+                        }}
+                        className="bg-cyan-600 hover:bg-cyan-500"
+                        size="sm"
+                      >
+                        Edit Moves
+                      </Button>
+                    )}
                   </div>
+                  
+                  {editingMoveset ? (
+                    <div className="space-y-3">
+                      <div className="bg-slate-800 p-3 rounded">
+                        <p className="text-sm text-gray-400 mb-2">
+                          Selected: {selectedMoves.length}/4 moves
+                        </p>
+                        <div className="space-y-1">
+                          {selectedMoves.map((move, idx) => (
+                            <div key={idx} className="bg-cyan-700 p-2 rounded text-white capitalize flex justify-between items-center">
+                              <span>{move.replace('-', ' ')}</span>
+                              <Button
+                                onClick={() => setSelectedMoves(selectedMoves.filter((_, i) => i !== idx))}
+                                size="sm"
+                                className="bg-red-600 hover:bg-red-500 h-6 px-2"
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <ScrollArea className="h-40 bg-slate-800 p-2 rounded">
+                        <div className="space-y-1">
+                          {availableMoves.map((move, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => toggleMoveSelection(move)}
+                              disabled={selectedMoves.includes(move) || selectedMoves.length >= 4}
+                              className={`w-full text-left p-2 rounded capitalize transition-colors ${
+                                selectedMoves.includes(move)
+                                  ? 'bg-cyan-700 text-white cursor-not-allowed'
+                                  : selectedMoves.length >= 4
+                                  ? 'bg-slate-700 text-gray-500 cursor-not-allowed'
+                                  : 'bg-slate-700 text-white hover:bg-slate-600'
+                              }`}
+                            >
+                              {move.replace('-', ' ')}
+                            </button>
+                          ))}
+                        </div>
+                      </ScrollArea>
+
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={handleUpdateMoveset}
+                          disabled={selectedMoves.length !== 4}
+                          className="flex-1 bg-green-600 hover:bg-green-500"
+                        >
+                          Save Moveset
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            setEditingMoveset(false);
+                            setSelectedMoves([]);
+                          }}
+                          className="flex-1 bg-gray-600 hover:bg-gray-500"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {selectedPokemon.moveset.map((move, idx) => (
+                        <div key={idx} className="bg-slate-800 p-2 rounded text-white capitalize">
+                          {move.replace('-', ' ')}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <p className="text-gray-400 text-sm">
