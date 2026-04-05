@@ -2146,6 +2146,8 @@ export async function POST(request) {
     if (pathname.includes('/api/wilds/release')) {
       const { userId, pokemonId } = body;
       
+      console.log(`🗑️ Release request - userId: ${userId}, pokemonId: ${pokemonId}`);
+      
       if (!userId || !pokemonId) {
         return NextResponse.json({ error: 'User ID and Pokemon ID required' }, { status: 400 });
       }
@@ -2159,13 +2161,30 @@ export async function POST(request) {
       });
 
       if (result.deletedCount === 0) {
+        console.log(`❌ Pokemon not found for release - pokemonId: ${pokemonId}`);
         return NextResponse.json({ error: 'Pokemon not found' }, { status: 404 });
       }
+
+      console.log(`✅ Pokemon released successfully`);
 
       return NextResponse.json({
         success: true,
         message: 'Pokemon released'
       });
+    }
+
+    // Check if a Pokemon can evolve (returns evolution data)
+    if (pathname.includes('/api/wilds/check-evolution')) {
+      const { pokemonId } = body;
+      
+      if (!pokemonId) {
+        return NextResponse.json({ error: 'Pokemon ID required' }, { status: 400 });
+      }
+
+      // Fetch evolution data
+      const evolutionData = await fetchEvolutionChain(pokemonId);
+      
+      return NextResponse.json(evolutionData);
     }
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });

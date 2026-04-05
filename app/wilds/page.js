@@ -42,6 +42,8 @@ export default function PokemonWilds() {
   const [buyingXP, setBuyingXP] = useState(false);
   const [evolving, setEvolving] = useState(false);
   const [releasingPokemon, setReleasingPokemon] = useState(false);
+  const [evolutionData, setEvolutionData] = useState(null);
+  const [fetchingEvolutionData, setFetchingEvolutionData] = useState(false);
 
   useEffect(() => {
     // Check if user is logged in
@@ -133,6 +135,31 @@ export default function PokemonWilds() {
       setMyPokemon(pokemonList);
     } catch (err) {
       console.error('Error loading Pokemon:', err);
+    }
+  };
+
+  // Fetch evolution data for a Pokemon
+  const fetchEvolutionDataForPokemon = async (pokemon) => {
+    if (!pokemon || fetchingEvolutionData) return;
+    
+    setFetchingEvolutionData(true);
+    try {
+      const response = await fetch('/api/wilds/check-evolution', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          pokemonId: pokemon.id // Pokemon species ID, not database _id
+        })
+      });
+
+      const data = await response.json();
+      console.log('Evolution data for', pokemon.displayName, ':', data);
+      setEvolutionData(data);
+    } catch (err) {
+      console.error('Error fetching evolution data:', err);
+      setEvolutionData(null);
+    } finally {
+      setFetchingEvolutionData(false);
     }
   };
 
@@ -800,7 +827,10 @@ export default function PokemonWilds() {
                   className={`bg-slate-800/90 border-purple-500/30 cursor-pointer hover:border-purple-500 transition-all ${
                     pokemon.isShiny ? 'ring-2 ring-yellow-400' : ''
                   }`}
-                  onClick={() => setSelectedPokemon(pokemon)}
+                  onClick={() => {
+                    setSelectedPokemon(pokemon);
+                    fetchEvolutionDataForPokemon(pokemon);
+                  }}
                 >
                   <CardContent className="p-4 relative">
                     <img
@@ -842,6 +872,7 @@ export default function PokemonWilds() {
           setSelectedPokemon(null);
           setEditingNickname(false);
           setEditingMoveset(false);
+          setEvolutionData(null);
         }}>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
             <DialogHeader>
@@ -1117,13 +1148,23 @@ export default function PokemonWilds() {
 
                 {/* Evolution and Release Buttons */}
                 <div className="space-y-2">
-                  <Button
-                    onClick={handleEvolve}
-                    disabled={evolving}
-                    className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed font-bold text-lg py-6"
-                  >
-                    {evolving ? 'Evolving...' : '✨ Evolve Pokemon ✨'}
-                  </Button>
+                  {/* Only show evolve button if Pokemon can evolve */}
+                  {evolutionData && evolutionData.canEvolve && (
+                    <div>
+                      <Button
+                        onClick={handleEvolve}
+                        disabled={evolving || (evolutionData.minLevel && selectedPokemon.level < evolutionData.minLevel)}
+                        className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed font-bold text-lg py-6"
+                      >
+                        {evolving ? 'Evolving...' : '✨ Evolve Pokemon ✨'}
+                      </Button>
+                      {evolutionData.minLevel && selectedPokemon.level < evolutionData.minLevel && (
+                        <p className="text-gray-400 text-xs text-center mt-1">
+                          Requires level {evolutionData.minLevel}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   
                   <Button
                     onClick={handleReleasePokemon}
