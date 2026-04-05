@@ -906,7 +906,8 @@ export async function GET(request) {
           username: user.username,
           points: user.points,
           nextPointsIn: nextPointsIn,
-          setAchievements: user.setAchievements || {}
+          setAchievements: user.setAchievements || {},
+          tradesCompleted: user.tradesCompleted || 0
         } 
       });
     }
@@ -1072,7 +1073,8 @@ export async function POST(request) {
           username: user.username,
           points: user.points,
           nextPointsIn: nextPointsIn,
-          setAchievements: user.setAchievements || {}
+          setAchievements: user.setAchievements || {},
+          tradesCompleted: user.tradesCompleted || 0
         } 
       });
     }
@@ -1367,103 +1369,7 @@ export async function POST(request) {
       });
     }
 
-    // Friends: Accept friend request
-    if (pathname.includes('/api/friends/accept')) {
-      const { userId, friendId } = body;
-      
-      if (!userId || !friendId) {
-        return NextResponse.json({ error: 'User ID and friend ID required' }, { status: 400 });
-      }
-
-      const database = await connectDB();
-      
-      // Add to both users' friend lists
-      await database.collection('users').updateOne(
-        { id: userId },
-        { 
-          $addToSet: { friends: friendId },
-          $pull: { friendRequests: friendId }
-        }
-      );
-
-      await database.collection('users').updateOne(
-        { id: friendId },
-        { 
-          $addToSet: { friends: userId },
-          $pull: { sentFriendRequests: userId }
-        }
-      );
-
-      return NextResponse.json({ success: true });
-    }
-
-    // Friends: Decline friend request
-    if (pathname.includes('/api/friends/decline')) {
-      const { userId, friendId } = body;
-      
-      if (!userId || !friendId) {
-        return NextResponse.json({ error: 'User ID and friend ID required' }, { status: 400 });
-      }
-
-      const database = await connectDB();
-      
-      await database.collection('users').updateOne(
-        { id: userId },
-        { $pull: { friendRequests: friendId } }
-      );
-
-      await database.collection('users').updateOne(
-        { id: friendId },
-        { $pull: { sentFriendRequests: userId } }
-      );
-
-      return NextResponse.json({ success: true });
-    }
-
-    // Pokemon Trade: Send Pokemon trade request
-    if (pathname.includes('/api/friends/trade')) {
-      const { fromId, toId, offeredPokemon, requestedPokemon, type } = body;
-      
-      if (!fromId || !toId || !offeredPokemon || !requestedPokemon) {
-        return NextResponse.json({ error: 'Invalid trade request' }, { status: 400 });
-      }
-
-      const database = await connectDB();
-      const fromUser = await database.collection('users').findOne({ id: fromId });
-      const toUser = await database.collection('users').findOne({ id: toId });
-
-      if (!fromUser || !toUser) {
-        return NextResponse.json({ error: 'User not found' }, { status: 404 });
-      }
-
-      // Create trade request
-      const tradeRequest = {
-        id: uuidv4(),
-        fromId,
-        fromUsername: fromUser.username,
-        toId,
-        toUsername: toUser.username,
-        offeredPokemon,
-        requestedPokemon,
-        type: type || 'pokemon-trade',
-        status: 'pending',
-        createdAt: new Date().toISOString()
-      };
-
-      // Add to recipient's trade requests
-      await database.collection('users').updateOne(
-        { id: toId },
-        { $push: { tradeRequests: tradeRequest } }
-      );
-
-      return NextResponse.json({ 
-        success: true, 
-        message: `Trade request sent to ${toUser.username}`,
-        trade: tradeRequest
-      });
-    }
-
-    // Accept Pokemon Trade
+    // Accept Pokemon Trade (MUST be checked before general /api/friends/accept)
     if (pathname.includes('/api/friends/accept-pokemon-trade')) {
       const { userId, tradeId } = body;
       
@@ -1572,6 +1478,102 @@ export async function POST(request) {
       await database.collection('users').updateOne(
         { id: userId },
         { $pull: { tradeRequests: { id: tradeId } } }
+      );
+
+      return NextResponse.json({ success: true });
+    }
+
+    // Pokemon Trade: Send Pokemon trade request
+    if (pathname.includes('/api/friends/trade')) {
+      const { fromId, toId, offeredPokemon, requestedPokemon, type } = body;
+      
+      if (!fromId || !toId || !offeredPokemon || !requestedPokemon) {
+        return NextResponse.json({ error: 'Invalid trade request' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const fromUser = await database.collection('users').findOne({ id: fromId });
+      const toUser = await database.collection('users').findOne({ id: toId });
+
+      if (!fromUser || !toUser) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      // Create trade request
+      const tradeRequest = {
+        id: uuidv4(),
+        fromId,
+        fromUsername: fromUser.username,
+        toId,
+        toUsername: toUser.username,
+        offeredPokemon,
+        requestedPokemon,
+        type: type || 'pokemon-trade',
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+
+      // Add to recipient's trade requests
+      await database.collection('users').updateOne(
+        { id: toId },
+        { $push: { tradeRequests: tradeRequest } }
+      );
+
+      return NextResponse.json({ 
+        success: true, 
+        message: `Trade request sent to ${toUser.username}`,
+        trade: tradeRequest
+      });
+    }
+
+    // Friends: Accept friend request (MUST be after Pokemon trade endpoints)
+    if (pathname.includes('/api/friends/accept')) {
+      const { userId, friendId } = body;
+      
+      if (!userId || !friendId) {
+        return NextResponse.json({ error: 'User ID and friend ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      
+      // Add to both users' friend lists
+      await database.collection('users').updateOne(
+        { id: userId },
+        { 
+          $addToSet: { friends: friendId },
+          $pull: { friendRequests: friendId }
+        }
+      );
+
+      await database.collection('users').updateOne(
+        { id: friendId },
+        { 
+          $addToSet: { friends: userId },
+          $pull: { sentFriendRequests: userId }
+        }
+      );
+
+      return NextResponse.json({ success: true });
+    }
+
+    // Friends: Decline friend request (MUST be after Pokemon trade endpoints)
+    if (pathname.includes('/api/friends/decline')) {
+      const { userId, friendId } = body;
+      
+      if (!userId || !friendId) {
+        return NextResponse.json({ error: 'User ID and friend ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      
+      await database.collection('users').updateOne(
+        { id: userId },
+        { $pull: { friendRequests: friendId } }
+      );
+
+      await database.collection('users').updateOne(
+        { id: friendId },
+        { $pull: { sentFriendRequests: userId } }
       );
 
       return NextResponse.json({ success: true });
