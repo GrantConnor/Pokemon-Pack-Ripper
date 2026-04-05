@@ -377,12 +377,12 @@ async function fetchPokemonData(pokemonId) {
     // Get sprite (shiny or normal)
     let sprite;
     if (isShiny) {
-      // Try multiple shiny sprite sources
-      sprite = pokemon.sprites.other?.['official-artwork']?.front_shiny || 
+      // For shiny, use regular sprite sources (official-artwork rarely has shiny)
+      sprite = pokemon.sprites.front_shiny || 
                pokemon.sprites.other?.home?.front_shiny ||
-               pokemon.sprites.front_shiny || 
-               pokemon.sprites.other?.['official-artwork']?.front_default ||
+               pokemon.sprites.other?.['official-artwork']?.front_shiny || 
                pokemon.sprites.front_default;
+      console.log(`Shiny Pokemon ${pokemon.name} - Using sprite: ${sprite}`);
     } else {
       sprite = pokemon.sprites.other?.['official-artwork']?.front_default || 
                pokemon.sprites.front_default;
@@ -507,7 +507,8 @@ async function updateGlobalSpawn(database) {
   const now = Date.now();
   
   // Check if we need a new spawn
-  if (!globalSpawn || !globalSpawn.nextSpawnTime || now >= globalSpawn.nextSpawnTime) {
+  // Only spawn if: no spawn exists, OR spawn was caught and timer expired
+  if (!globalSpawn || (globalSpawn.caughtBy && globalSpawn.nextSpawnTime && now >= globalSpawn.nextSpawnTime)) {
     // Generate new spawn with rarity-based spawning
     let randomId;
     let pokemonData;
@@ -535,14 +536,11 @@ async function updateGlobalSpawn(database) {
     // Calculate actual stats using Pokemon formula
     pokemonData.stats = calculateStats(pokemonData.baseStats, pokemonData.ivs, pokemonData.level);
     
-    // Random interval for next spawn (5-20 minutes)
-    const nextInterval = MIN_SPAWN_INTERVAL + Math.random() * (MAX_SPAWN_INTERVAL - MIN_SPAWN_INTERVAL);
-    
     const newSpawn = {
       id: 'current',
       pokemon: pokemonData,
       spawnedAt: now,
-      nextSpawnTime: null, // Will be set after caught or fled
+      nextSpawnTime: null, // Will be set after caught
       caughtBy: null,
       catchAttempts: {} // Track attempts per user: { userId: attemptCount }
     };
@@ -553,9 +551,11 @@ async function updateGlobalSpawn(database) {
       { upsert: true }
     );
     
+    console.log(`New Pokemon spawned: ${pokemonData.displayName} (Shiny: ${pokemonData.isShiny})`);
     return newSpawn;
   }
   
+  // Return existing active spawn
   return globalSpawn;
 }
 
@@ -1699,14 +1699,15 @@ export async function POST(request) {
       // FORCE shiny
       pokemonData.isShiny = true;
       
-      // Get shiny sprite - try multiple sources
+      // Get shiny sprite - use regular sprite sources (more reliable for shiny)
       const pokemonResponse = await axios.get(`${POKEAPI_BASE}/pokemon/${randomId}`);
       const pokemon = pokemonResponse.data;
-      pokemonData.sprite = pokemon.sprites.other?.['official-artwork']?.front_shiny || 
+      pokemonData.sprite = pokemon.sprites.front_shiny || 
                           pokemon.sprites.other?.home?.front_shiny ||
-                          pokemon.sprites.front_shiny || 
-                          pokemon.sprites.other?.['official-artwork']?.front_default ||
+                          pokemon.sprites.other?.['official-artwork']?.front_shiny || 
                           pokemon.sprites.front_default;
+      
+      console.log(`Admin Shiny Spawn: ${pokemonData.displayName} - Sprite: ${pokemonData.sprite}`);
       
       // Add level and stats
       pokemonData.level = Math.floor(Math.random() * 46) + 5;
