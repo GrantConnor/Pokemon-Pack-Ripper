@@ -2050,6 +2050,8 @@ export async function POST(request) {
     if (pathname.includes('/api/wilds/evolve')) {
       const { userId, pokemonId } = body;
       
+      console.log(`🔄 Evolution request - userId: ${userId}, pokemonId: ${pokemonId}`);
+      
       if (!userId || !pokemonId) {
         return NextResponse.json({ error: 'User ID and Pokemon ID required' }, { status: 400 });
       }
@@ -2063,13 +2065,19 @@ export async function POST(request) {
       });
 
       if (!pokemon) {
+        console.log(`❌ Pokemon not found - pokemonId: ${pokemonId}`);
         return NextResponse.json({ error: 'Pokemon not found' }, { status: 404 });
       }
+
+      console.log(`📊 Pokemon found: ${pokemon.displayName} (ID: ${pokemon.id}), Level: ${pokemon.level}`);
 
       // Fetch evolution data
       const evolutionData = await fetchEvolutionChain(pokemon.id);
       
+      console.log(`🧬 Evolution data:`, evolutionData);
+      
       if (!evolutionData.canEvolve) {
+        console.log(`❌ Cannot evolve - Pokemon is fully evolved`);
         return NextResponse.json({ 
           error: 'This Pokemon cannot evolve'
         }, { status: 400 });
@@ -2077,6 +2085,7 @@ export async function POST(request) {
 
       // Check if level requirement is met
       if (evolutionData.minLevel && pokemon.level < evolutionData.minLevel) {
+        console.log(`❌ Level too low - needs ${evolutionData.minLevel}, has ${pokemon.level}`);
         return NextResponse.json({
           error: `Pokemon must be level ${evolutionData.minLevel} to evolve`,
           requiredLevel: evolutionData.minLevel
@@ -2085,14 +2094,19 @@ export async function POST(request) {
 
       // Check if it's a level-up evolution
       if (evolutionData.trigger !== 'level-up') {
+        console.log(`❌ Wrong trigger type - needs ${evolutionData.trigger}`);
         return NextResponse.json({
           error: 'This Pokemon requires a special evolution method',
           trigger: evolutionData.trigger
         }, { status: 400 });
       }
 
+      console.log(`✅ Evolution requirements met! Evolving to Pokemon ID ${evolutionData.evolvesTo}...`);
+
       // Fetch the evolved Pokemon data
       const evolvedData = await fetchPokemonData(evolutionData.evolvesTo, pokemon.isShiny);
+      
+      console.log(`📦 Evolved data fetched: ${evolvedData.displayName}`);
       
       // Prepare update: preserve level, XP, IVs, nickname, isShiny, caughtAt
       // Update: id, name, displayName, sprite, baseStats, types, allMoves, allMovesData
@@ -2119,10 +2133,38 @@ export async function POST(request) {
         { $set: updateData }
       );
 
+      console.log(`🎉 Evolution complete! ${pokemon.displayName} → ${evolvedData.displayName}`);
+
       return NextResponse.json({
         success: true,
         evolvedTo: evolvedData.displayName,
         message: `${pokemon.nickname || pokemon.displayName} evolved into ${evolvedData.displayName}!`
+      });
+    }
+
+    // Release a Pokemon (delete from collection)
+    if (pathname.includes('/api/wilds/release')) {
+      const { userId, pokemonId } = body;
+      
+      if (!userId || !pokemonId) {
+        return NextResponse.json({ error: 'User ID and Pokemon ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      
+      // Delete the Pokemon
+      const result = await database.collection('caught_pokemon').deleteOne({
+        _id: new ObjectId(pokemonId),
+        userId: userId
+      });
+
+      if (result.deletedCount === 0) {
+        return NextResponse.json({ error: 'Pokemon not found' }, { status: 404 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: 'Pokemon released'
       });
     }
 

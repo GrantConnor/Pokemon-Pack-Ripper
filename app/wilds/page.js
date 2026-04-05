@@ -25,7 +25,7 @@ export default function PokemonWilds() {
   const [editingMoveset, setEditingMoveset] = useState(false);
   const [selectedMoves, setSelectedMoves] = useState([]);
   const [availableMoves, setAvailableMoves] = useState([]);
-  const [showStats, setShowStats] = useState(false); // Toggle between IVs and Stats
+  const [showStats, setShowStats] = useState(true); // Toggle between IVs and Stats - default to Stats
   const [showMovesetDialog, setShowMovesetDialog] = useState(false);
   const [movesetPokemon, setMovesetPokemon] = useState(null);
   
@@ -41,6 +41,7 @@ export default function PokemonWilds() {
   // Leveling and Evolution states
   const [buyingXP, setBuyingXP] = useState(false);
   const [evolving, setEvolving] = useState(false);
+  const [releasingPokemon, setReleasingPokemon] = useState(false);
 
   useEffect(() => {
     // Check if user is logged in
@@ -453,7 +454,7 @@ export default function PokemonWilds() {
   const handleEvolve = async () => {
     if (!selectedPokemon || evolving) return;
 
-    const confirmEvolve = confirm(`Evolve ${selectedPokemon.nickname || selectedPokemon.displayName}?`);
+    const confirmEvolve = confirm(`Evolve ${selectedPokemon.nickname || selectedPokemon.displayName}? This cannot be undone.`);
     if (!confirmEvolve) return;
 
     setEvolving(true);
@@ -469,18 +470,53 @@ export default function PokemonWilds() {
 
       const data = await response.json();
       if (data.success) {
-        alert(data.message);
+        alert(`🎉 ${data.message}`);
         
         // Close dialog and reload
         setSelectedPokemon(null);
         await loadMyPokemon();
       } else {
-        alert(data.error || 'Cannot evolve this Pokemon');
+        alert(`Cannot evolve: ${data.error || 'Unknown error'}`);
       }
     } catch (err) {
-      alert('Error evolving Pokemon');
+      console.error('Evolution error:', err);
+      alert('Error evolving Pokemon: ' + err.message);
     } finally {
       setEvolving(false);
+    }
+  };
+
+  const handleReleasePokemon = async () => {
+    if (!selectedPokemon || releasingPokemon) return;
+
+    const confirmRelease = confirm(`Are you sure you want to release ${selectedPokemon.nickname || selectedPokemon.displayName}? This cannot be undone!`);
+    if (!confirmRelease) return;
+
+    setReleasingPokemon(true);
+    try {
+      const response = await fetch('/api/wilds/release', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId: user.id,
+          pokemonId: selectedPokemon._id
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert(`Released ${selectedPokemon.nickname || selectedPokemon.displayName}`);
+        
+        // Close dialog and reload
+        setSelectedPokemon(null);
+        await loadMyPokemon();
+      } else {
+        alert(data.error || 'Error releasing Pokemon');
+      }
+    } catch (err) {
+      alert('Error releasing Pokemon');
+    } finally {
+      setReleasingPokemon(false);
     }
   };
 
@@ -1079,19 +1115,24 @@ export default function PokemonWilds() {
                   </div>
                 </div>
 
-                {/* Evolution Button */}
-                <Button
-                  onClick={handleEvolve}
-                  disabled={evolving || selectedPokemon.level < 16}
-                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed font-bold text-lg py-6"
-                >
-                  {evolving ? 'Evolving...' : '✨ Evolve Pokemon ✨'}
-                </Button>
-                {selectedPokemon.level < 16 && (
-                  <p className="text-gray-400 text-xs text-center -mt-2">
-                    Most Pokemon evolve at level 16 or higher
-                  </p>
-                )}
+                {/* Evolution and Release Buttons */}
+                <div className="space-y-2">
+                  <Button
+                    onClick={handleEvolve}
+                    disabled={evolving}
+                    className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed font-bold text-lg py-6"
+                  >
+                    {evolving ? 'Evolving...' : '✨ Evolve Pokemon ✨'}
+                  </Button>
+                  
+                  <Button
+                    onClick={handleReleasePokemon}
+                    disabled={releasingPokemon}
+                    className="w-full bg-red-600 hover:bg-red-500 disabled:bg-gray-600 disabled:cursor-not-allowed font-bold"
+                  >
+                    {releasingPokemon ? 'Releasing...' : '🗑️ Release Pokemon'}
+                  </Button>
+                </div>
 
                 <p className="text-gray-400 text-sm">
                   Caught: {new Date(selectedPokemon.caughtAt).toLocaleDateString()}
