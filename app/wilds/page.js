@@ -47,6 +47,13 @@ export default function PokemonWilds() {
   const [showEvolveConfirm, setShowEvolveConfirm] = useState(false);
   const [showReleaseConfirm, setShowReleaseConfirm] = useState(false);
 
+  // Battle states
+  const [activeBattle, setActiveBattle] = useState(null);
+  const [showBattleSelection, setShowBattleSelection] = useState(false);
+  const [selectedForBattle, setSelectedForBattle] = useState([]);
+  const [battleOpponent, setBattleOpponent] = useState(null);
+  const [showBattleScreen, setShowBattleScreen] = useState(false);
+
   useEffect(() => {
     // Check if user is logged in
     const storedUserId = localStorage.getItem('userId');
@@ -221,6 +228,70 @@ export default function PokemonWilds() {
       status: 'pending'
     });
     setSelectedPokemonForTrade([]);
+  };
+
+  const handleSendBattleRequest = async (friend) => {
+    try {
+      const response = await fetch('/api/battles/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromUserId: user.id,
+          toUserId: friend.id
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert(`Battle request sent to ${friend.username}!`);
+      } else {
+        alert(data.error || 'Error sending battle request');
+      }
+    } catch (err) {
+      console.error('Battle request error:', err);
+      alert('Error sending battle request');
+    }
+  };
+
+  const handleAcceptBattleRequest = async (request) => {
+    try {
+      const response = await fetch('/api/battles/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          requestId: request.id
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        // Navigate to battle page
+        window.location.href = `/battle?id=${data.battle.id}`;
+      } else {
+        alert(data.error || 'Error accepting battle');
+      }
+    } catch (err) {
+      console.error('Accept battle error:', err);
+      alert('Error accepting battle');
+    }
+  };
+
+  const handleDeclineBattleRequest = async (request) => {
+    try {
+      await fetch('/api/battles/decline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          requestId: request.id
+        })
+      });
+
+      loadFriends();
+    } catch (err) {
+      console.error('Decline battle error:', err);
+    }
   };
 
   const togglePokemonForTrade = (pokemon) => {

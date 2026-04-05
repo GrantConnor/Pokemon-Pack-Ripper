@@ -516,23 +516,38 @@ async function fetchPokemonData(pokemonId, forceShiny = false) {
 
 // Calculate catch chance based on Pokemon rarity
 function calculateCatchChance(captureRate, isLegendary, isMythical) {
-  // Base formula: Higher capture_rate = easier to catch
-  // capture_rate ranges from 3 (hardest) to 255 (easiest)
-  
-  let baseChance;
+  // New simplified catch rates:
+  // Legendary/Mythical: 50%
+  // All others: 100%
   
   if (isLegendary || isMythical) {
-    // Legendaries/Mythicals: 10-30% base chance
-    baseChance = 10 + (captureRate / 255) * 20;
-  } else if (captureRate <= 45) {
-    // Pseudo-legendaries and rare Pokemon: 30-50%
-    baseChance = 30 + (captureRate / 255) * 20;
-  } else {
-    // Common/Uncommon Pokemon: 50-90%
-    baseChance = 50 + (captureRate / 255) * 40;
+    return 50; // 50% catch rate for legendary/mythical
   }
   
-  return Math.min(90, Math.max(10, baseChance)); // Cap between 10-90%
+  return 100; // 100% catch rate for normal Pokemon
+}
+
+// Battle damage calculation (simplified Pokemon formula)
+function calculateDamage(attacker, defender, move) {
+  if (!move.power || move.damageClass === 'status') {
+    return 0; // Status moves don't deal damage
+  }
+  
+  const level = attacker.level || 50;
+  const power = move.power;
+  
+  // Determine if move is physical or special
+  const isPhysical = move.damageClass === 'physical';
+  const attackStat = isPhysical ? attacker.stats.attack : attacker.stats.spAttack;
+  const defenseStat = isPhysical ? defender.stats.defense : defender.stats.spDefense;
+  
+  // Simplified damage formula: ((2 * Level / 5 + 2) * Power * Attack / Defense / 50 + 2)
+  const baseDamage = ((2 * level / 5 + 2) * power * attackStat / defenseStat / 50 + 2);
+  
+  // Add some randomness (85-100% of base damage)
+  const randomFactor = 0.85 + Math.random() * 0.15;
+  
+  return Math.floor(baseDamage * randomFactor);
 }
 
 // Initialize or update global spawn
@@ -826,7 +841,8 @@ export async function GET(request) {
         friends,
         pendingRequests: requests,
         sentRequests,
-        tradeRequests: user.tradeRequests || []
+        tradeRequests: user.tradeRequests || [],
+        battleRequests: user.battleRequests || []
       });
     }
 
@@ -2185,6 +2201,327 @@ export async function POST(request) {
       const evolutionData = await fetchEvolutionChain(pokemonId);
       
       return NextResponse.json(evolutionData);
+    }
+
+    // ===== BATTLE SYSTEM ENDPOINTS =====
+    
+    // Send battle request
+    if (pathname.includes('/api/battles/request')) {
+      const { fromUserId, toUserId } = body;
+      
+      if (!fromUserId || !toUserId) {
+        return NextResponse.json({ error: 'User IDs required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      
+      const fromUser = await database.collection('users').findOne({ id: fromUserId });
+      const toUser = await database.collection('users').findOne({ id: toUserId });
+      
+      if (!fromUser || !toUser) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      // Create battle request
+      const battleRequest = {
+        id: uuidv4(),
+        from: { id: fromUser.id, username: fromUser.username },
+        to: { id: toUser.id, username: toUser.username },
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+
+      // Add to recipient's battle requests
+      await database.collection('users').updateOne(
+        { id: toUserId },
+        { $push: { battleRequests: battleRequest } }
+      );
+
+      return NextResponse.json({ success: true, request: battleRequest });
+    }
+
+    // Accept battle request
+    if (pathname.includes('/api/battles/accept')) {
+      const { userId, requestId } = body;
+      
+      if (!userId || !requestId) {
+        return NextResponse.json({ error: 'User ID and request ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      
+      const user = await database.collection('users').findOne({ id: userId });
+      if (!user) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      const request = user.battleRequests?.find(r => r.id === requestId);
+      if (!request) {
+        return NextResponse.json({ error: 'Battle request not found' }, { status: 404 });
+      }
+
+      // Create battle
+      const battle = {
+        id: uuidv4(),
+        player1: {
+          userId: request.from.id,
+          username: request.from.username,
+          pokemon: [],
+          currentPokemonIndex: 0,
+          ready: false
+        },
+        player2: {
+          userId: request.to.id,
+          username: request.to.username,
+          pokemon: [],
+          currentPokemonIndex: 0,
+          ready: false
+        },
+        currentTurn: request.from.id,
+        status: 'selecting', // selecting -> ready -> active -> finished
+        winner: null,
+        battleLog: [],
+        createdAt: new Date().toISOString()
+      };
+
+      await database.collection('battles').insertOne(battle);
+
+      // Remove battle request
+      await database.collection('users').updateOne(
+        { id: userId },
+        { $pull: { battleRequests: { id: requestId } } }
+      );
+
+      return NextResponse.json({ success: true, battle });
+    }
+
+    // Decline battle request
+    if (pathname.includes('/api/battles/decline')) {
+      const { userId, requestId } = body;
+      
+      if (!userId || !requestId) {
+        return NextResponse.json({ error: 'User ID and request ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+
+      await database.collection('users').updateOne(
+        { id: userId },
+        { $pull: { battleRequests: { id: requestId } } }
+      );
+
+      return NextResponse.json({ success: true });
+    }
+
+    // Select Pokemon for battle
+    if (pathname.includes('/api/battles/select-pokemon')) {
+      const { battleId, userId, pokemonIds } = body;
+      
+      if (!battleId || !userId || !pokemonIds || !Array.isArray(pokemonIds)) {
+        return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+      }
+
+      if (pokemonIds.length > 6 || pokemonIds.length === 0) {
+        return NextResponse.json({ error: 'Must select 1-6 Pokemon' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const battle = await database.collection('battles').findOne({ id: battleId });
+      
+      if (!battle) {
+        return NextResponse.json({ error: 'Battle not found' }, { status: 404 });
+      }
+
+      // Fetch the Pokemon from database
+      const pokemon = await database.collection('caught_pokemon')
+        .find({ 
+          _id: { $in: pokemonIds.map(id => new ObjectId(id)) },
+          userId: userId
+        })
+        .toArray();
+
+      // Add current HP to each Pokemon (start at max HP)
+      const pokemonWithHP = pokemon.map(p => ({
+        ...p,
+        currentHP: p.stats.hp,
+        maxHP: p.stats.hp
+      }));
+
+      // Determine which player and update
+      const isPlayer1 = battle.player1.userId === userId;
+      const playerField = isPlayer1 ? 'player1' : 'player2';
+
+      await database.collection('battles').updateOne(
+        { id: battleId },
+        { 
+          $set: { 
+            [`${playerField}.pokemon`]: pokemonWithHP,
+            [`${playerField}.ready`]: true
+          }
+        }
+      );
+
+      // Check if both players are ready
+      const updatedBattle = await database.collection('battles').findOne({ id: battleId });
+      if (updatedBattle.player1.ready && updatedBattle.player2.ready) {
+        await database.collection('battles').updateOne(
+          { id: battleId },
+          { $set: { status: 'active' } }
+        );
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
+    // Get battle state
+    if (pathname.includes('/api/battles/state')) {
+      const { battleId } = body;
+      
+      if (!battleId) {
+        return NextResponse.json({ error: 'Battle ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const battle = await database.collection('battles').findOne({ id: battleId });
+      
+      if (!battle) {
+        return NextResponse.json({ error: 'Battle not found' }, { status: 404 });
+      }
+
+      return NextResponse.json({ battle });
+    }
+
+    // Perform battle action (attack)
+    if (pathname.includes('/api/battles/attack')) {
+      const { battleId, userId, moveIndex } = body;
+      
+      if (!battleId || !userId || moveIndex === undefined) {
+        return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const battle = await database.collection('battles').findOne({ id: battleId });
+      
+      if (!battle || battle.status !== 'active') {
+        return NextResponse.json({ error: 'Battle not active' }, { status: 400 });
+      }
+
+      if (battle.currentTurn !== userId) {
+        return NextResponse.json({ error: 'Not your turn' }, { status: 400 });
+      }
+
+      const isPlayer1 = battle.player1.userId === userId;
+      const attacker = isPlayer1 ? battle.player1 : battle.player2;
+      const defender = isPlayer1 ? battle.player2 : battle.player1;
+
+      const attackingPokemon = attacker.pokemon[attacker.currentPokemonIndex];
+      const defendingPokemon = defender.pokemon[defender.currentPokemonIndex];
+
+      // Get move details
+      const moveName = attackingPokemon.moveset[moveIndex];
+      const moveData = attackingPokemon.allMovesData?.find(m => m.name === moveName);
+
+      if (!moveData) {
+        return NextResponse.json({ error: 'Invalid move' }, { status: 400 });
+      }
+
+      // Calculate damage
+      const damage = calculateDamage(attackingPokemon, defendingPokemon, moveData);
+      const newHP = Math.max(0, defendingPokemon.currentHP - damage);
+
+      // Update defender's Pokemon HP
+      const defenderField = isPlayer1 ? 'player2' : 'player1';
+      await database.collection('battles').updateOne(
+        { id: battleId },
+        { 
+          $set: { 
+            [`${defenderField}.pokemon.${defender.currentPokemonIndex}.currentHP`]: newHP
+          }
+        }
+      );
+
+      // Create battle log entry
+      const logEntry = {
+        turn: battle.battleLog.length + 1,
+        attacker: attacker.username,
+        defender: defender.username,
+        move: moveName.replace('-', ' '),
+        damage: damage,
+        timestamp: new Date().toISOString()
+      };
+
+      await database.collection('battles').updateOne(
+        { id: battleId },
+        { $push: { battleLog: logEntry } }
+      );
+
+      // Check if Pokemon fainted
+      let battleUpdate = {};
+      if (newHP === 0) {
+        // Pokemon fainted, check if defender has more Pokemon
+        const alivePokemon = defender.pokemon.filter((p, idx) => 
+          idx > defender.currentPokemonIndex && p.currentHP > 0
+        );
+
+        if (alivePokemon.length === 0) {
+          // Battle over, attacker wins
+          battleUpdate = {
+            status: 'finished',
+            winner: userId
+          };
+        } else {
+          // Switch to next Pokemon
+          battleUpdate[`${defenderField}.currentPokemonIndex`] = defender.currentPokemonIndex + 1;
+        }
+      }
+
+      // Switch turn
+      if (battleUpdate.status !== 'finished') {
+        battleUpdate.currentTurn = defender.userId;
+      }
+
+      await database.collection('battles').updateOne(
+        { id: battleId },
+        { $set: battleUpdate }
+      );
+
+      return NextResponse.json({ 
+        success: true, 
+        damage,
+        fainted: newHP === 0,
+        battleOver: battleUpdate.status === 'finished',
+        winner: battleUpdate.winner
+      });
+    }
+
+    // Forfeit battle
+    if (pathname.includes('/api/battles/forfeit')) {
+      const { battleId, userId } = body;
+      
+      if (!battleId || !userId) {
+        return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const battle = await database.collection('battles').findOne({ id: battleId });
+      
+      if (!battle) {
+        return NextResponse.json({ error: 'Battle not found' }, { status: 404 });
+      }
+
+      const winner = battle.player1.userId === userId ? battle.player2.userId : battle.player1.userId;
+
+      await database.collection('battles').updateOne(
+        { id: battleId },
+        { 
+          $set: { 
+            status: 'finished',
+            winner: winner
+          }
+        }
+      );
+
+      return NextResponse.json({ success: true, winner });
     }
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
