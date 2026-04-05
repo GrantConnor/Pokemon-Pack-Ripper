@@ -59,6 +59,10 @@ export default function App() {
   const [viewingFriendCollection, setViewingFriendCollection] = useState([]);
   const [breakdownMode, setBreakdownMode] = useState(false);
   const [selectedForBreakdown, setSelectedForBreakdown] = useState([]);
+  const [showBreakdownQuantityModal, setShowBreakdownQuantityModal] = useState(false);
+  const [breakdownQuantityCard, setBreakdownQuantityCard] = useState(null);
+  const [breakdownQuantity, setBreakdownQuantity] = useState(1);
+  const [isDissolving, setIsDissolving] = useState(false);
 
   useEffect(() => {
     // Check if user is logged in
@@ -497,6 +501,15 @@ export default function App() {
   };
 
   const toggleBreakdownCard = (card) => {
+    // If card has multiple copies, show quantity modal
+    if (card.count > 1) {
+      setBreakdownQuantityCard(card);
+      setBreakdownQuantity(1);
+      setShowBreakdownQuantityModal(true);
+      return;
+    }
+    
+    // Single copy - toggle selection as before
     const isSelected = selectedForBreakdown.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
     if (isSelected) {
       setSelectedForBreakdown(selectedForBreakdown.filter(c => !(c.id === card.id && c.pulledAt === card.pulledAt)));
@@ -559,6 +572,68 @@ export default function App() {
       }
     } catch (err) {
       alert('Error breaking down cards');
+    }
+  };
+
+  const handleBreakdownSingleCard = async () => {
+    if (!breakdownQuantityCard || breakdownQuantity < 1) {
+      return;
+    }
+
+    // Play dissolving animation
+    setIsDissolving(true);
+
+    // Wait for animation to complete (1.5 seconds)
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    try {
+      const breakdownValues = {
+        'Common': 10,
+        'Uncommon': 20,
+        'Rare': 50,
+        'Rare Holo': 50,
+        'Double Rare': 100,
+        'Illustration Rare': 200,
+        'Ultra Rare': 200,
+        'Rare Ultra': 200,
+        'Rare Rainbow': 200,
+        'Special Illustration Rare': 400,
+        'Hyper Rare': 500,
+        'Rare Secret': 500,
+        'Secret Rare': 500
+      };
+
+      const pointValue = breakdownValues[breakdownQuantityCard.rarity] || 10;
+      const totalPoints = pointValue * breakdownQuantity;
+
+      const response = await fetch('/api/cards/breakdown-single', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId: user.id, 
+          cardId: breakdownQuantityCard.id,
+          amount: breakdownQuantity
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        // Update user points
+        setUser(prev => ({ ...prev, points: prev.points + data.pointsAwarded }));
+        loadCollection();
+        
+        // Close modal and reset
+        setShowBreakdownQuantityModal(false);
+        setBreakdownQuantityCard(null);
+        setBreakdownQuantity(1);
+        setIsDissolving(false);
+      } else {
+        alert(data.error);
+        setIsDissolving(false);
+      }
+    } catch (err) {
+      alert('Error breaking down card');
+      setIsDissolving(false);
     }
   };
 
@@ -2061,6 +2136,120 @@ export default function App() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Breakdown Quantity Modal */}
+      <Dialog open={showBreakdownQuantityModal} onOpenChange={() => {
+        if (!isDissolving) {
+          setShowBreakdownQuantityModal(false);
+          setBreakdownQuantityCard(null);
+          setBreakdownQuantity(1);
+        }
+      }}>
+        <DialogContent className="max-w-md border-4 border-red-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-red-400">
+              Break Down Cards
+            </DialogTitle>
+          </DialogHeader>
+
+          {breakdownQuantityCard && (
+            <div className="space-y-6">
+              {/* Card Preview with Dissolving Animation */}
+              <div className={`relative transition-all duration-1500 ${isDissolving ? 'animate-dissolve' : ''}`}>
+                <img
+                  src={breakdownQuantityCard.images.small}
+                  alt={breakdownQuantityCard.name}
+                  className={`w-full rounded-lg border-2 border-red-500/30 ${isDissolving ? 'dissolving-card' : ''}`}
+                />
+                {isDissolving && (
+                  <div className="absolute inset-0 bg-gradient-to-t from-red-600/80 via-orange-500/60 to-transparent rounded-lg animate-pulse"></div>
+                )}
+              </div>
+
+              {!isDissolving && (
+                <>
+                  <div>
+                    <h3 className="text-xl font-bold text-white mb-2">{breakdownQuantityCard.name}</h3>
+                    <p className="text-gray-400">
+                      You own <span className="text-cyan-400 font-bold">{breakdownQuantityCard.count}</span> {breakdownQuantityCard.count === 1 ? 'copy' : 'copies'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-gray-300">How many to break down?</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max={breakdownQuantityCard.count}
+                      value={breakdownQuantity}
+                      onChange={(e) => setBreakdownQuantity(Math.min(Math.max(1, parseInt(e.target.value) || 1), breakdownQuantityCard.count))}
+                      className="bg-slate-800 border-red-500/30 text-white"
+                    />
+                  </div>
+
+                  <div className="bg-slate-800/50 p-4 rounded-lg border border-red-500/30">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-300">Points per card:</span>
+                      <span className="text-yellow-400 font-bold">
+                        {(() => {
+                          const values = {
+                            'Common': 10, 'Uncommon': 20, 'Rare': 50, 'Rare Holo': 50,
+                            'Double Rare': 100, 'Illustration Rare': 200, 'Ultra Rare': 200,
+                            'Rare Ultra': 200, 'Rare Rainbow': 200, 'Special Illustration Rare': 400,
+                            'Hyper Rare': 500, 'Rare Secret': 500, 'Secret Rare': 500
+                          };
+                          return values[breakdownQuantityCard.rarity] || 10;
+                        })()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center mt-2 pt-2 border-t border-red-500/30">
+                      <span className="text-white font-bold">Total points:</span>
+                      <span className="text-yellow-400 font-bold text-xl">
+                        {(() => {
+                          const values = {
+                            'Common': 10, 'Uncommon': 20, 'Rare': 50, 'Rare Holo': 50,
+                            'Double Rare': 100, 'Illustration Rare': 200, 'Ultra Rare': 200,
+                            'Rare Ultra': 200, 'Rare Rainbow': 200, 'Special Illustration Rare': 400,
+                            'Hyper Rare': 500, 'Rare Secret': 500, 'Secret Rare': 500
+                          };
+                          return (values[breakdownQuantityCard.rarity] || 10) * breakdownQuantity;
+                        })()}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <Button
+                      onClick={() => {
+                        setShowBreakdownQuantityModal(false);
+                        setBreakdownQuantityCard(null);
+                        setBreakdownQuantity(1);
+                      }}
+                      className="flex-1 bg-gray-600 hover:bg-gray-500"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleBreakdownSingleCard}
+                      className="flex-1 bg-red-600 hover:bg-red-500 font-bold"
+                    >
+                      Confirm Breakdown
+                    </Button>
+                  </div>
+                </>
+              )}
+
+              {isDissolving && (
+                <div className="text-center">
+                  <p className="text-xl font-bold text-red-400 animate-pulse">
+                    Breaking down cards...
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

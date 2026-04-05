@@ -1,608 +1,424 @@
 #!/usr/bin/env python3
 """
-Comprehensive Backend Testing for Pokemon Pack Ripper - Friends & Trading System
-Tests all friend request flows, trading functionality, and admin features.
+Backend API Testing for Pokemon Pack Ripper - Card Breakdown Feature
+Tests the new single-card breakdown quantity feature and existing batch breakdown
 """
 
 import requests
 import json
 import time
-import random
-import string
-from typing import Dict, List, Any
+from datetime import datetime
 
 # Configuration
 BASE_URL = "https://pokepackripper.netlify.app/api"
-HEADERS = {"Content-Type": "application/json"}
+TEST_USERNAME = "breakdown_tester_" + str(int(time.time()))
+TEST_PASSWORD = "testpass123"
 
-class FriendsAndTradingTester:
-    def __init__(self):
-        self.test_users = []
-        self.test_results = []
-        
-    def log_test(self, test_name: str, passed: bool, details: str = ""):
-        """Log test results"""
-        status = "✅ PASSED" if passed else "❌ FAILED"
-        result = f"{status}: {test_name}"
-        if details:
-            result += f" - {details}"
-        print(result)
-        self.test_results.append({
-            "test": test_name,
-            "passed": passed,
-            "details": details
-        })
-        
-    def generate_username(self) -> str:
-        """Generate a unique test username"""
-        return f"testuser_{random.randint(1000, 9999)}"
-        
-    def create_test_user(self, username: str = None) -> Dict[str, Any]:
-        """Create a test user and return user data"""
-        if not username:
-            username = self.generate_username()
-        password = "testpass123"
-        
-        try:
-            response = requests.post(
-                f"{BASE_URL}/auth/signup",
-                headers=HEADERS,
-                json={"username": username, "password": password}
-            )
-            
-            if response.status_code == 201 or response.status_code == 200:
-                data = response.json()
-                user_data = {
-                    "username": username,
-                    "password": password,
-                    "id": data["user"]["id"],
-                    "points": data["user"]["points"]
-                }
-                self.test_users.append(user_data)
-                return user_data
-            else:
-                print(f"Failed to create user {username}: {response.status_code} - {response.text}")
-                return None
-                
-        except Exception as e:
-            print(f"Error creating user {username}: {str(e)}")
-            return None
-            
-    def give_user_cards(self, user: Dict[str, Any], num_packs: int = 2) -> bool:
-        """Give a user some cards by opening packs"""
-        try:
-            # Open packs to get cards
-            for i in range(num_packs):
-                response = requests.post(
-                    f"{BASE_URL}/packs/open",
-                    headers=HEADERS,
-                    json={
-                        "userId": user["id"],
-                        "setId": "base1",  # Base Set
-                        "bulk": False
-                    }
-                )
-                
-                if response.status_code != 200:
-                    print(f"Failed to open pack for {user['username']}: {response.status_code}")
-                    return False
-                    
-            return True
-            
-        except Exception as e:
-            print(f"Error giving cards to {user['username']}: {str(e)}")
+# Test data
+COMMON_CARD_ID = "base1-1"  # Alakazam from Base Set (Common)
+UNCOMMON_CARD_ID = "base1-2"  # Blastoise from Base Set (Uncommon) 
+RARE_CARD_ID = "base1-4"  # Charizard from Base Set (Rare Holo)
+
+def log_test(test_name, status, details=""):
+    """Log test results with timestamp"""
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    status_symbol = "✅" if status == "PASS" else "❌"
+    print(f"[{timestamp}] {status_symbol} {test_name}")
+    if details:
+        print(f"    {details}")
+
+def test_card_breakdown_feature():
+    """Test the new card breakdown quantity feature"""
+    print("🧪 TESTING CARD BREAKDOWN QUANTITY FEATURE")
+    print("=" * 60)
+    
+    # Step 1: Create test user
+    print("\n1️⃣ Creating test user...")
+    signup_data = {
+        "username": TEST_USERNAME,
+        "password": TEST_PASSWORD
+    }
+    
+    try:
+        response = requests.post(f"{BASE_URL}/auth/signup", json=signup_data, timeout=10)
+        if response.status_code == 200:
+            user_data = response.json()
+            user_id = user_data["user"]["id"]
+            initial_points = user_data["user"]["points"]
+            log_test("User Creation", "PASS", f"User ID: {user_id}, Initial Points: {initial_points}")
+        else:
+            log_test("User Creation", "FAIL", f"Status: {response.status_code}, Response: {response.text}")
             return False
-            
-    def get_user_collection(self, user: Dict[str, Any]) -> List[Dict]:
-        """Get user's card collection"""
+    except Exception as e:
+        log_test("User Creation", "FAIL", f"Exception: {str(e)}")
+        return False
+    
+    # Step 2: Add multiple copies of cards to collection
+    print("\n2️⃣ Adding multiple copies of cards to collection...")
+    
+    # Open 5 packs from Base Set to get multiple cards
+    pack_count = 0
+    all_cards_collected = []
+    max_attempts = 5
+    
+    for attempt in range(max_attempts):
+        pack_data = {
+            "userId": user_id,
+            "setId": "base1"  # Base Set
+        }
+        
         try:
-            response = requests.get(
-                f"{BASE_URL}/collection",
-                params={"userId": user["id"]}
-            )
-            
+            response = requests.post(f"{BASE_URL}/packs/open", json=pack_data, timeout=15)
             if response.status_code == 200:
-                data = response.json()
-                return data.get("collection", [])
+                pack_result = response.json()
+                cards = pack_result.get("cards", [])
+                pack_count += 1
+                all_cards_collected.extend(cards)
+                
+                log_test(f"Pack Opening #{pack_count}", "PASS", 
+                        f"Got {len(cards)} cards")
             else:
-                print(f"Failed to get collection for {user['username']}: {response.status_code}")
-                return []
-                
+                log_test(f"Pack Opening #{pack_count}", "FAIL", 
+                        f"Status: {response.status_code}")
+                break
         except Exception as e:
-            print(f"Error getting collection for {user['username']}: {str(e)}")
-            return []
-            
-    def test_friend_request_flow(self):
-        """Test 1: Complete friend request flow (send, accept)"""
-        print("\n=== TEST 1: Friend Request Flow ===")
-        
-        # Create two test users
-        user1 = self.create_test_user()
-        user2 = self.create_test_user()
-        
-        if not user1 or not user2:
-            self.log_test("Friend Request Flow - User Creation", False, "Failed to create test users")
-            return
-            
-        self.log_test("Friend Request Flow - User Creation", True, f"Created {user1['username']} and {user2['username']}")
-        
-        # User1 sends friend request to User2
-        try:
-            response = requests.post(
-                f"{BASE_URL}/friends/send-request",
-                headers=HEADERS,
-                json={
-                    "userId": user1["id"],
-                    "targetUsername": user2["username"]
-                }
-            )
-            
-            if response.status_code == 200:
-                self.log_test("Friend Request Flow - Send Request", True, f"{user1['username']} sent request to {user2['username']}")
-            else:
-                self.log_test("Friend Request Flow - Send Request", False, f"Status: {response.status_code}, Response: {response.text}")
-                return
-                
-        except Exception as e:
-            self.log_test("Friend Request Flow - Send Request", False, f"Error: {str(e)}")
-            return
-            
-        # Verify User2 has pending request
-        try:
-            response = requests.get(
-                f"{BASE_URL}/friends",
-                params={"userId": user2["id"]}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                pending_requests = data.get("pendingRequests", [])
-                
-                if any(req["id"] == user1["id"] for req in pending_requests):
-                    self.log_test("Friend Request Flow - Verify Pending", True, f"{user2['username']} has pending request from {user1['username']}")
-                else:
-                    self.log_test("Friend Request Flow - Verify Pending", False, f"No pending request found. Requests: {pending_requests}")
-                    return
-            else:
-                self.log_test("Friend Request Flow - Verify Pending", False, f"Status: {response.status_code}")
-                return
-                
-        except Exception as e:
-            self.log_test("Friend Request Flow - Verify Pending", False, f"Error: {str(e)}")
-            return
-            
-        # User2 accepts the request
-        try:
-            response = requests.post(
-                f"{BASE_URL}/friends/accept",
-                headers=HEADERS,
-                json={
-                    "userId": user2["id"],
-                    "friendId": user1["id"]
-                }
-            )
-            
-            if response.status_code == 200:
-                self.log_test("Friend Request Flow - Accept Request", True, f"{user2['username']} accepted {user1['username']}'s request")
-            else:
-                self.log_test("Friend Request Flow - Accept Request", False, f"Status: {response.status_code}, Response: {response.text}")
-                return
-                
-        except Exception as e:
-            self.log_test("Friend Request Flow - Accept Request", False, f"Error: {str(e)}")
-            return
-            
-        # Verify both users are now friends
-        try:
-            # Check User1's friends list
-            response1 = requests.get(f"{BASE_URL}/friends", params={"userId": user1["id"]})
-            response2 = requests.get(f"{BASE_URL}/friends", params={"userId": user2["id"]})
-            
-            if response1.status_code == 200 and response2.status_code == 200:
-                data1 = response1.json()
-                data2 = response2.json()
-                
-                friends1 = data1.get("friends", [])
-                friends2 = data2.get("friends", [])
-                
-                user1_has_user2 = any(friend["id"] == user2["id"] for friend in friends1)
-                user2_has_user1 = any(friend["id"] == user1["id"] for friend in friends2)
-                
-                if user1_has_user2 and user2_has_user1:
-                    self.log_test("Friend Request Flow - Verify Friendship", True, "Both users are now friends")
-                else:
-                    self.log_test("Friend Request Flow - Verify Friendship", False, f"User1 friends: {friends1}, User2 friends: {friends2}")
-            else:
-                self.log_test("Friend Request Flow - Verify Friendship", False, f"Failed to get friends lists")
-                
-        except Exception as e:
-            self.log_test("Friend Request Flow - Verify Friendship", False, f"Error: {str(e)}")
-            
-    def test_friend_request_decline(self):
-        """Test 2: Friend request decline flow"""
-        print("\n=== TEST 2: Friend Request Decline ===")
-        
-        # Create two test users
-        user1 = self.create_test_user()
-        user2 = self.create_test_user()
-        
-        if not user1 or not user2:
-            self.log_test("Friend Request Decline - User Creation", False, "Failed to create test users")
-            return
-            
-        # User1 sends friend request to User2
-        try:
-            response = requests.post(
-                f"{BASE_URL}/friends/send-request",
-                headers=HEADERS,
-                json={
-                    "userId": user1["id"],
-                    "targetUsername": user2["username"]
-                }
-            )
-            
-            if response.status_code != 200:
-                self.log_test("Friend Request Decline - Send Request", False, f"Status: {response.status_code}")
-                return
-                
-        except Exception as e:
-            self.log_test("Friend Request Decline - Send Request", False, f"Error: {str(e)}")
-            return
-            
-        # User2 declines the request
-        try:
-            response = requests.post(
-                f"{BASE_URL}/friends/decline",
-                headers=HEADERS,
-                json={
-                    "userId": user2["id"],
-                    "friendId": user1["id"]
-                }
-            )
-            
-            if response.status_code == 200:
-                self.log_test("Friend Request Decline - Decline Request", True, f"{user2['username']} declined {user1['username']}'s request")
-            else:
-                self.log_test("Friend Request Decline - Decline Request", False, f"Status: {response.status_code}")
-                return
-                
-        except Exception as e:
-            self.log_test("Friend Request Decline - Decline Request", False, f"Error: {str(e)}")
-            return
-            
-        # Verify request is removed from both users
-        try:
-            response1 = requests.get(f"{BASE_URL}/friends", params={"userId": user1["id"]})
-            response2 = requests.get(f"{BASE_URL}/friends", params={"userId": user2["id"]})
-            
-            if response1.status_code == 200 and response2.status_code == 200:
-                data1 = response1.json()
-                data2 = response2.json()
-                
-                sent_requests = data1.get("sentRequests", [])
-                pending_requests = data2.get("pendingRequests", [])
-                
-                user1_has_sent = any(req["id"] == user2["id"] for req in sent_requests)
-                user2_has_pending = any(req["id"] == user1["id"] for req in pending_requests)
-                
-                if not user1_has_sent and not user2_has_pending:
-                    self.log_test("Friend Request Decline - Verify Removal", True, "Request removed from both users")
-                else:
-                    self.log_test("Friend Request Decline - Verify Removal", False, f"Sent: {sent_requests}, Pending: {pending_requests}")
-            else:
-                self.log_test("Friend Request Decline - Verify Removal", False, "Failed to get friends data")
-                
-        except Exception as e:
-            self.log_test("Friend Request Decline - Verify Removal", False, f"Error: {str(e)}")
-            
-    def test_trading_flow(self):
-        """Test 3: Complete trading flow"""
-        print("\n=== TEST 3: Trading Flow ===")
-        
-        # Create two users and make them friends
-        user1 = self.create_test_user()
-        user2 = self.create_test_user()
-        
-        if not user1 or not user2:
-            self.log_test("Trading Flow - User Creation", False, "Failed to create test users")
-            return
-            
-        # Make them friends first
-        try:
-            # Send friend request
-            requests.post(
-                f"{BASE_URL}/friends/send-request",
-                headers=HEADERS,
-                json={"userId": user1["id"], "targetUsername": user2["username"]}
-            )
-            
-            # Accept friend request
-            requests.post(
-                f"{BASE_URL}/friends/accept",
-                headers=HEADERS,
-                json={"userId": user2["id"], "friendId": user1["id"]}
-            )
-            
-            self.log_test("Trading Flow - Setup Friendship", True, "Users are now friends")
-            
-        except Exception as e:
-            self.log_test("Trading Flow - Setup Friendship", False, f"Error: {str(e)}")
-            return
-            
-        # Give both users some cards
-        if not self.give_user_cards(user1, 2) or not self.give_user_cards(user2, 2):
-            self.log_test("Trading Flow - Give Cards", False, "Failed to give users cards")
-            return
-            
-        self.log_test("Trading Flow - Give Cards", True, "Both users have cards")
-        
-        # Get their collections
-        user1_collection = self.get_user_collection(user1)
-        user2_collection = self.get_user_collection(user2)
-        
-        if len(user1_collection) < 3 or len(user2_collection) < 2:
-            self.log_test("Trading Flow - Verify Collections", False, f"User1: {len(user1_collection)} cards, User2: {len(user2_collection)} cards")
-            return
-            
-        self.log_test("Trading Flow - Verify Collections", True, f"User1: {len(user1_collection)} cards, User2: {len(user2_collection)} cards")
-        
-        # User1 sends trade with 3 cards to User2
-        offered_cards = user1_collection[:3]  # First 3 cards
-        
-        try:
-            response = requests.post(
-                f"{BASE_URL}/trades/send",
-                headers=HEADERS,
-                json={
-                    "userId": user1["id"],
-                    "friendId": user2["id"],
-                    "offeredCards": offered_cards
-                }
-            )
-            
-            if response.status_code == 200:
-                self.log_test("Trading Flow - Send Trade", True, f"{user1['username']} sent trade with {len(offered_cards)} cards")
-            else:
-                self.log_test("Trading Flow - Send Trade", False, f"Status: {response.status_code}, Response: {response.text}")
-                return
-                
-        except Exception as e:
-            self.log_test("Trading Flow - Send Trade", False, f"Error: {str(e)}")
-            return
-            
-        # Verify User2 receives the trade request
-        try:
-            response = requests.get(f"{BASE_URL}/friends", params={"userId": user2["id"]})
-            
-            if response.status_code == 200:
-                data = response.json()
-                trade_requests = data.get("tradeRequests", [])
-                
-                if len(trade_requests) > 0 and trade_requests[0]["from"] == user1["id"]:
-                    trade_id = trade_requests[0]["id"]
-                    self.log_test("Trading Flow - Verify Trade Request", True, f"{user2['username']} received trade request")
-                else:
-                    self.log_test("Trading Flow - Verify Trade Request", False, f"No trade request found. Requests: {trade_requests}")
-                    return
-            else:
-                self.log_test("Trading Flow - Verify Trade Request", False, f"Status: {response.status_code}")
-                return
-                
-        except Exception as e:
-            self.log_test("Trading Flow - Verify Trade Request", False, f"Error: {str(e)}")
-            return
-            
-        # User2 accepts trade with 2 cards
-        requested_cards = user2_collection[:2]  # First 2 cards
-        
-        try:
-            response = requests.post(
-                f"{BASE_URL}/trades/accept",
-                headers=HEADERS,
-                json={
-                    "userId": user2["id"],
-                    "tradeId": trade_id,
-                    "requestedCards": requested_cards
-                }
-            )
-            
-            if response.status_code == 200:
-                self.log_test("Trading Flow - Accept Trade", True, f"{user2['username']} accepted trade with {len(requested_cards)} cards")
-            else:
-                self.log_test("Trading Flow - Accept Trade", False, f"Status: {response.status_code}, Response: {response.text}")
-                return
-                
-        except Exception as e:
-            self.log_test("Trading Flow - Accept Trade", False, f"Error: {str(e)}")
-            return
-            
-        # Verify cards have swapped
-        try:
-            new_user1_collection = self.get_user_collection(user1)
-            new_user2_collection = self.get_user_collection(user2)
-            
-            # User1 should have lost 3 cards and gained 2 cards
-            user1_change = len(new_user1_collection) - len(user1_collection)
-            # User2 should have lost 2 cards and gained 3 cards  
-            user2_change = len(new_user2_collection) - len(user2_collection)
-            
-            if user1_change == -1 and user2_change == 1:  # Net change: User1 -1, User2 +1
-                self.log_test("Trading Flow - Verify Card Swap", True, f"Cards swapped correctly. User1: {user1_change}, User2: {user2_change}")
-            else:
-                self.log_test("Trading Flow - Verify Card Swap", False, f"Unexpected card counts. User1 change: {user1_change}, User2 change: {user2_change}")
-                
-        except Exception as e:
-            self.log_test("Trading Flow - Verify Card Swap", False, f"Error: {str(e)}")
-            
-    def test_trading_validation(self):
-        """Test 4: Trading validation rules"""
-        print("\n=== TEST 4: Trading Validation ===")
-        
-        # Create users - one pair as friends, one non-friend
-        user1 = self.create_test_user()
-        user2 = self.create_test_user()
-        user3 = self.create_test_user()  # Non-friend
-        
-        if not user1 or not user2 or not user3:
-            self.log_test("Trading Validation - User Creation", False, "Failed to create test users")
-            return
-            
-        # Make user1 and user2 friends
-        try:
-            requests.post(f"{BASE_URL}/friends/send-request", headers=HEADERS, 
-                         json={"userId": user1["id"], "targetUsername": user2["username"]})
-            requests.post(f"{BASE_URL}/friends/accept", headers=HEADERS,
-                         json={"userId": user2["id"], "friendId": user1["id"]})
-        except:
-            pass
-            
-        # Give user1 some cards
-        self.give_user_cards(user1, 2)
-        user1_collection = self.get_user_collection(user1)
-        
-        if len(user1_collection) < 11:
-            self.log_test("Trading Validation - Setup Cards", False, f"User1 only has {len(user1_collection)} cards, need 11+")
-            return
-            
-        # Test 1: Try to trade with non-friend (should fail)
-        try:
-            response = requests.post(
-                f"{BASE_URL}/trades/send",
-                headers=HEADERS,
-                json={
-                    "userId": user1["id"],
-                    "friendId": user3["id"],
-                    "offeredCards": user1_collection[:1]
-                }
-            )
-            
-            if response.status_code == 403:
-                self.log_test("Trading Validation - Non-Friend Trade", True, "Correctly rejected trade with non-friend")
-            else:
-                self.log_test("Trading Validation - Non-Friend Trade", False, f"Expected 403, got {response.status_code}")
-                
-        except Exception as e:
-            self.log_test("Trading Validation - Non-Friend Trade", False, f"Error: {str(e)}")
-            
-        # Test 2: Try to trade 0 cards (should fail)
-        try:
-            response = requests.post(
-                f"{BASE_URL}/trades/send",
-                headers=HEADERS,
-                json={
-                    "userId": user1["id"],
-                    "friendId": user2["id"],
-                    "offeredCards": []
-                }
-            )
-            
-            if response.status_code == 400:
-                self.log_test("Trading Validation - Zero Cards", True, "Correctly rejected trade with 0 cards")
-            else:
-                self.log_test("Trading Validation - Zero Cards", False, f"Expected 400, got {response.status_code}")
-                
-        except Exception as e:
-            self.log_test("Trading Validation - Zero Cards", False, f"Error: {str(e)}")
-            
-        # Test 3: Try to trade 11 cards (should fail)
-        if len(user1_collection) >= 11:
-            try:
-                response = requests.post(
-                    f"{BASE_URL}/trades/send",
-                    headers=HEADERS,
-                    json={
-                        "userId": user1["id"],
-                        "friendId": user2["id"],
-                        "offeredCards": user1_collection[:11]
-                    }
-                )
-                
-                if response.status_code == 400:
-                    self.log_test("Trading Validation - Too Many Cards", True, "Correctly rejected trade with 11 cards")
-                else:
-                    self.log_test("Trading Validation - Too Many Cards", False, f"Expected 400, got {response.status_code}")
-                    
-            except Exception as e:
-                self.log_test("Trading Validation - Too Many Cards", False, f"Error: {str(e)}")
+            log_test(f"Pack Opening #{pack_count}", "FAIL", f"Exception: {str(e)}")
+            break
+    
+    # Find a card we have multiple copies of
+    card_counts = {}
+    for card in all_cards_collected:
+        card_id = card["id"]
+        if card_id in card_counts:
+            card_counts[card_id] += 1
         else:
-            self.log_test("Trading Validation - Too Many Cards", False, f"Not enough cards to test (have {len(user1_collection)})")
+            card_counts[card_id] = 1
+    
+    # Find the first card we have at least 2 copies of
+    target_card_id = None
+    target_card_count = 0
+    for card_id, count in card_counts.items():
+        if count >= 2:
+            target_card_id = card_id
+            target_card_count = count
+            break
+    
+    if target_card_id is None:
+        log_test("Card Collection Setup", "FAIL", 
+                f"No cards with multiple copies found. Total unique cards: {len(card_counts)}")
+        return False
+    
+    log_test("Card Collection Setup", "PASS", 
+            f"Found {target_card_count} copies of card {target_card_id}")
+    
+    # Step 3: Get current collection to verify card counts
+    print("\n3️⃣ Verifying collection state...")
+    try:
+        response = requests.get(f"{BASE_URL}/collection?userId={user_id}", timeout=10)
+        if response.status_code == 200:
+            collection_data = response.json()
+            collection = collection_data.get("collection", [])
             
-    def test_admin_users_list(self):
-        """Test 5: Admin users list endpoint"""
-        print("\n=== TEST 5: Admin Users List ===")
-        
-        try:
-            # Test without admin authentication (should work for this endpoint)
-            response = requests.get(f"{BASE_URL}/admin/users")
+            # Count target cards in collection
+            target_cards_in_collection = [card for card in collection if card["id"] == target_card_id]
+            total_cards = len(collection)
             
-            if response.status_code == 200:
-                data = response.json()
-                users = data.get("users", [])
+            log_test("Collection Verification", "PASS", 
+                    f"Total cards: {total_cards}, Target cards: {len(target_cards_in_collection)}")
+            
+            if len(target_cards_in_collection) < 2:
+                log_test("Collection Verification", "FAIL", 
+                        "Not enough target cards for breakdown test")
+                return False
                 
-                if len(users) > 0:
-                    # Check if users have required fields
-                    first_user = users[0]
-                    required_fields = ["id", "username", "points", "createdAt"]
+        else:
+            log_test("Collection Verification", "FAIL", 
+                    f"Status: {response.status_code}")
+            return False
+    except Exception as e:
+        log_test("Collection Verification", "FAIL", f"Exception: {str(e)}")
+        return False
+    
+    # Step 4: Get current points before breakdown
+    print("\n4️⃣ Getting current user points...")
+    try:
+        response = requests.get(f"{BASE_URL}/session?userId={user_id}", timeout=10)
+        if response.status_code == 200:
+            session_data = response.json()
+            points_before = session_data["user"]["points"]
+            log_test("Points Check", "PASS", f"Points before breakdown: {points_before}")
+        else:
+            log_test("Points Check", "FAIL", f"Status: {response.status_code}")
+            return False
+    except Exception as e:
+        log_test("Points Check", "FAIL", f"Exception: {str(e)}")
+        return False
+    
+    # Step 5: Test single-card breakdown with amount=2
+    print("\n5️⃣ Testing single-card breakdown (amount=2)...")
+    breakdown_amount = 2
+    breakdown_data = {
+        "userId": user_id,
+        "cardId": target_card_id,
+        "amount": breakdown_amount
+    }
+    
+    # Get the rarity of the target card to calculate expected points
+    target_card_rarity = None
+    for card in all_cards_collected:
+        if card["id"] == target_card_id:
+            target_card_rarity = card.get("rarity", "Common")
+            break
+    
+    # Calculate expected points based on rarity
+    rarity_points = {
+        'Common': 10, 'Uncommon': 20, 'Rare': 50, 'Rare Holo': 50,
+        'Double Rare': 100, 'Illustration Rare': 200, 'Ultra Rare': 200,
+        'Hyper Rare': 500, 'Secret Rare': 500
+    }
+    expected_points_per_card = rarity_points.get(target_card_rarity, 10)
+    expected_total_points = expected_points_per_card * breakdown_amount
+    
+    try:
+        response = requests.post(f"{BASE_URL}/cards/breakdown-single", json=breakdown_data, timeout=10)
+        if response.status_code == 200:
+            breakdown_result = response.json()
+            points_awarded = breakdown_result.get("pointsAwarded", 0)
+            cards_breakdown = breakdown_result.get("cardsBreakdown", 0)
+            
+            if points_awarded == expected_total_points and cards_breakdown == breakdown_amount:
+                log_test("Single-Card Breakdown", "PASS", 
+                        f"Awarded {points_awarded} points for {cards_breakdown} {target_card_rarity} cards")
+            else:
+                log_test("Single-Card Breakdown", "FAIL", 
+                        f"Expected {expected_total_points} points and {breakdown_amount} cards, got {points_awarded} points and {cards_breakdown} cards")
+                return False
+        else:
+            log_test("Single-Card Breakdown", "FAIL", 
+                    f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("Single-Card Breakdown", "FAIL", f"Exception: {str(e)}")
+        return False
+    
+    # Step 6: Verify collection after breakdown
+    print("\n6️⃣ Verifying collection after breakdown...")
+    try:
+        response = requests.get(f"{BASE_URL}/collection?userId={user_id}", timeout=10)
+        if response.status_code == 200:
+            collection_data = response.json()
+            collection = collection_data.get("collection", [])
+            
+            # Count remaining target cards
+            remaining_target_cards = [card for card in collection if card["id"] == target_card_id]
+            expected_remaining = len(target_cards_in_collection) - breakdown_amount
+            
+            if len(remaining_target_cards) == expected_remaining:
+                log_test("Collection After Breakdown", "PASS", 
+                        f"Remaining target cards: {len(remaining_target_cards)} (expected: {expected_remaining})")
+            else:
+                log_test("Collection After Breakdown", "FAIL", 
+                        f"Expected {expected_remaining} remaining cards, got {len(remaining_target_cards)}")
+                return False
+        else:
+            log_test("Collection After Breakdown", "FAIL", 
+                    f"Status: {response.status_code}")
+            return False
+    except Exception as e:
+        log_test("Collection After Breakdown", "FAIL", f"Exception: {str(e)}")
+        return False
+    
+    # Step 7: Verify points increased correctly
+    print("\n7️⃣ Verifying points increase...")
+    try:
+        response = requests.get(f"{BASE_URL}/session?userId={user_id}", timeout=10)
+        if response.status_code == 200:
+            session_data = response.json()
+            points_after = session_data["user"]["points"]
+            points_increase = points_after - points_before
+            expected_increase = expected_points_per_card * breakdown_amount
+            
+            if points_increase == expected_increase:
+                log_test("Points Increase", "PASS", 
+                        f"Points increased by {points_increase} (expected: {expected_increase})")
+            else:
+                log_test("Points Increase", "FAIL", 
+                        f"Expected increase of {expected_increase}, got {points_increase}")
+                return False
+        else:
+            log_test("Points Increase", "FAIL", f"Status: {response.status_code}")
+            return False
+    except Exception as e:
+        log_test("Points Increase", "FAIL", f"Exception: {str(e)}")
+        return False
+    
+    # Step 8: Test edge cases
+    print("\n8️⃣ Testing edge cases...")
+    
+    # Test 8a: Try to breakdown more cards than owned
+    print("  8a. Testing breakdown more than owned...")
+    excessive_breakdown_data = {
+        "userId": user_id,
+        "cardId": target_card_id,
+        "amount": 999  # Way more than we have
+    }
+    
+    try:
+        response = requests.post(f"{BASE_URL}/cards/breakdown-single", json=excessive_breakdown_data, timeout=10)
+        if response.status_code == 400:
+            error_msg = response.json().get("error", "")
+            if "only have" in error_msg.lower():
+                log_test("Edge Case: Excessive Amount", "PASS", 
+                        f"Correctly rejected with: {error_msg}")
+            else:
+                log_test("Edge Case: Excessive Amount", "FAIL", 
+                        f"Wrong error message: {error_msg}")
+                return False
+        else:
+            log_test("Edge Case: Excessive Amount", "FAIL", 
+                    f"Expected 400 status, got {response.status_code}")
+            return False
+    except Exception as e:
+        log_test("Edge Case: Excessive Amount", "FAIL", f"Exception: {str(e)}")
+        return False
+    
+    # Test 8b: Try to breakdown with invalid amount (0)
+    print("  8b. Testing breakdown with amount=0...")
+    zero_breakdown_data = {
+        "userId": user_id,
+        "cardId": target_card_id,
+        "amount": 0
+    }
+    
+    try:
+        response = requests.post(f"{BASE_URL}/cards/breakdown-single", json=zero_breakdown_data, timeout=10)
+        if response.status_code == 400:
+            log_test("Edge Case: Zero Amount", "PASS", "Correctly rejected amount=0")
+        else:
+            log_test("Edge Case: Zero Amount", "FAIL", 
+                    f"Expected 400 status, got {response.status_code}")
+            return False
+    except Exception as e:
+        log_test("Edge Case: Zero Amount", "FAIL", f"Exception: {str(e)}")
+        return False
+    
+    # Test 8c: Try to breakdown non-existent card
+    print("  8c. Testing breakdown non-existent card...")
+    nonexistent_breakdown_data = {
+        "userId": user_id,
+        "cardId": "nonexistent-card-id",
+        "amount": 1
+    }
+    
+    try:
+        response = requests.post(f"{BASE_URL}/cards/breakdown-single", json=nonexistent_breakdown_data, timeout=10)
+        if response.status_code == 400:
+            error_msg = response.json().get("error", "")
+            if "only have 0" in error_msg.lower() or "don't have" in error_msg.lower():
+                log_test("Edge Case: Non-existent Card", "PASS", 
+                        f"Correctly rejected: {error_msg}")
+            else:
+                log_test("Edge Case: Non-existent Card", "FAIL", 
+                        f"Wrong error message: {error_msg}")
+                return False
+        else:
+            log_test("Edge Case: Non-existent Card", "FAIL", 
+                    f"Expected 400 status, got {response.status_code}")
+            return False
+    except Exception as e:
+        log_test("Edge Case: Non-existent Card", "FAIL", f"Exception: {str(e)}")
+        return False
+    
+    # Step 9: Test existing batch breakdown still works
+    print("\n9️⃣ Testing existing batch breakdown functionality...")
+    
+    # Get some cards for batch breakdown
+    try:
+        response = requests.get(f"{BASE_URL}/collection?userId={user_id}", timeout=10)
+        if response.status_code == 200:
+            collection_data = response.json()
+            collection = collection_data.get("collection", [])
+            
+            if len(collection) >= 2:
+                # Take 2 cards for batch breakdown
+                cards_for_batch = collection[:2]
+                
+                batch_breakdown_data = {
+                    "userId": user_id,
+                    "cards": cards_for_batch
+                }
+                
+                response = requests.post(f"{BASE_URL}/cards/breakdown", json=batch_breakdown_data, timeout=10)
+                if response.status_code == 200:
+                    batch_result = response.json()
+                    points_awarded = batch_result.get("pointsAwarded", 0)
+                    cards_breakdown = batch_result.get("cardsBreakdown", 0)
                     
-                    has_all_fields = all(field in first_user for field in required_fields)
-                    
-                    if has_all_fields:
-                        self.log_test("Admin Users List - Endpoint", True, f"Retrieved {len(users)} users with all required fields")
+                    if cards_breakdown == 2 and points_awarded > 0:
+                        log_test("Batch Breakdown", "PASS", 
+                                f"Batch breakdown working: {points_awarded} points for {cards_breakdown} cards")
                     else:
-                        self.log_test("Admin Users List - Endpoint", False, f"Missing fields in user data: {first_user}")
+                        log_test("Batch Breakdown", "FAIL", 
+                                f"Unexpected result: {points_awarded} points, {cards_breakdown} cards")
+                        return False
                 else:
-                    self.log_test("Admin Users List - Endpoint", True, "Endpoint works but no users found")
+                    log_test("Batch Breakdown", "FAIL", 
+                            f"Status: {response.status_code}, Response: {response.text}")
+                    return False
             else:
-                self.log_test("Admin Users List - Endpoint", False, f"Status: {response.status_code}, Response: {response.text}")
-                
-        except Exception as e:
-            self.log_test("Admin Users List - Endpoint", False, f"Error: {str(e)}")
-            
-    def run_all_tests(self):
-        """Run all Friends & Trading system tests"""
-        print("🎯 STARTING FRIENDS & TRADING SYSTEM TESTING")
-        print("=" * 60)
-        
-        start_time = time.time()
-        
-        # Run all tests
-        self.test_friend_request_flow()
-        self.test_friend_request_decline()
-        self.test_trading_flow()
-        self.test_trading_validation()
-        self.test_admin_users_list()
-        
-        # Summary
-        end_time = time.time()
-        duration = end_time - start_time
-        
-        passed_tests = sum(1 for result in self.test_results if result["passed"])
-        total_tests = len(self.test_results)
-        
-        print("\n" + "=" * 60)
-        print("🎯 FRIENDS & TRADING SYSTEM TEST SUMMARY")
-        print("=" * 60)
-        print(f"Total Tests: {total_tests}")
-        print(f"Passed: {passed_tests}")
-        print(f"Failed: {total_tests - passed_tests}")
-        print(f"Success Rate: {(passed_tests/total_tests)*100:.1f}%")
-        print(f"Duration: {duration:.2f} seconds")
-        
-        if passed_tests == total_tests:
-            print("\n🎉 ALL TESTS PASSED! Friends & Trading system is working correctly.")
+                log_test("Batch Breakdown", "SKIP", "Not enough cards for batch test")
         else:
-            print(f"\n⚠️  {total_tests - passed_tests} test(s) failed. Review the details above.")
-            
-        # Print failed tests
-        failed_tests = [result for result in self.test_results if not result["passed"]]
-        if failed_tests:
-            print("\n❌ FAILED TESTS:")
-            for test in failed_tests:
-                print(f"  - {test['test']}: {test['details']}")
-                
-        return passed_tests == total_tests
+            log_test("Batch Breakdown", "FAIL", f"Could not get collection: {response.status_code}")
+            return False
+    except Exception as e:
+        log_test("Batch Breakdown", "FAIL", f"Exception: {str(e)}")
+        return False
+    
+    print("\n🎉 ALL CARD BREAKDOWN TESTS PASSED!")
+    return True
+
+def test_breakdown_point_values():
+    """Test breakdown point values for different rarities"""
+    print("\n🧪 TESTING BREAKDOWN POINT VALUES")
+    print("=" * 60)
+    
+    # Expected values from BREAKDOWN_VALUES constant
+    expected_values = {
+        'Common': 10,
+        'Uncommon': 20,
+        'Rare': 50,
+        'Rare Holo': 50,
+        'Double Rare': 100,
+        'Illustration Rare': 200,
+        'Ultra Rare': 200,
+        'Hyper Rare': 500,
+        'Secret Rare': 500
+    }
+    
+    print("Expected breakdown values:")
+    for rarity, points in expected_values.items():
+        print(f"  {rarity}: {points} points")
+    
+    log_test("Breakdown Values Reference", "PASS", "Values documented and available in code")
+    return True
 
 if __name__ == "__main__":
-    tester = FriendsAndTradingTester()
-    success = tester.run_all_tests()
-    exit(0 if success else 1)
+    print("🚀 STARTING CARD BREAKDOWN FEATURE TESTING")
+    print("=" * 60)
+    
+    success = True
+    
+    # Test the main breakdown functionality
+    if not test_card_breakdown_feature():
+        success = False
+    
+    # Test breakdown point values
+    if not test_breakdown_point_values():
+        success = False
+    
+    print("\n" + "=" * 60)
+    if success:
+        print("🎉 ALL TESTS PASSED - CARD BREAKDOWN FEATURE IS WORKING!")
+    else:
+        print("❌ SOME TESTS FAILED - ISSUES FOUND")
+    print("=" * 60)

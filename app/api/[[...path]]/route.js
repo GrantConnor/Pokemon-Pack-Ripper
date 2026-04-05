@@ -1101,8 +1101,78 @@ export async function POST(request) {
       return NextResponse.json({ success: true });
     }
 
-    // Breakdown cards for points
-    if (pathname.includes('/api/cards/breakdown')) {
+    // TEST ENDPOINT
+    if (pathname.includes('/api/test-single')) {
+      return NextResponse.json({ message: 'Test single endpoint working' });
+    }
+
+    // Breakdown single card with quantity - NEW ENDPOINT NAME
+    if (pathname.includes('/api/cards/breakdown-quantity')) {
+      const { userId, cardId, amount } = body;
+      
+      // Validation
+      if (!userId || !cardId) {
+        return NextResponse.json({ error: 'User ID and Card ID required' }, { status: 400 });
+      }
+      
+      if (amount === undefined || amount === null || isNaN(amount) || Number(amount) < 1) {
+        return NextResponse.json({ error: 'Valid amount required (must be >= 1)' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const user = await database.collection('users').findOne({ id: userId });
+
+      if (!user) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      // Find all instances of this card for this user
+      const userCards = user.collection || [];
+      const matchingCards = userCards.filter(card => card.id === cardId);
+
+      if (matchingCards.length < amount) {
+        return NextResponse.json({ 
+          error: `You only have ${matchingCards.length} of this card` 
+        }, { status: 400 });
+      }
+
+      // Sort by pulledAt (oldest first) and take the amount to break down
+      const cardsToBreakdown = matchingCards
+        .sort((a, b) => new Date(a.pulledAt) - new Date(b.pulledAt))
+        .slice(0, amount);
+
+      // Calculate points
+      const firstCard = cardsToBreakdown[0];
+      const pointValue = BREAKDOWN_VALUES[firstCard.rarity] || 10;
+      const totalPoints = pointValue * amount;
+
+      // Remove the specific cards by their pulledAt timestamps
+      await database.collection('users').updateOne(
+        { id: userId },
+        { 
+          $pull: { 
+            collection: { 
+              $or: cardsToBreakdown.map(card => ({ id: card.id, pulledAt: card.pulledAt })) 
+            } 
+          },
+          $inc: { points: totalPoints }
+        }
+      );
+
+      return NextResponse.json({ 
+        success: true, 
+        pointsAwarded: totalPoints,
+        cardsBreakdown: amount
+      });
+    }
+
+    // Breakdown single card with quantity (check this BEFORE general breakdown)
+    if (pathname.includes('/api/cards/breakdown-single')) {
+      return NextResponse.json({ message: 'SINGLE BREAKDOWN ENDPOINT REACHED', body: body });
+    }
+
+    // Breakdown cards for points (batch breakdown)
+    if (pathname.includes('/api/cards/breakdown') && !pathname.includes('/api/cards/breakdown-quantity') && !pathname.includes('/api/cards/breakdown-single')) {
       const { userId, cards } = body;
       
       if (!userId || !cards || !Array.isArray(cards) || cards.length === 0) {

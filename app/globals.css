@@ -163,3 +163,38 @@ button[aria-label="Close"] {
   background-position: center;
   background-repeat: no-repeat;
 }
+
+/* Pixelated dissolving animation for card breakdown */
+@keyframes pixelate-dissolve {
+  0% {
+    filter: none;
+    opacity: 1;
+  }
+  25% {
+    filter: blur(0px);
+    opacity: 0.9;
+  }
+  50% {
+    filter: blur(2px) contrast(1.2);
+    opacity: 0.7;
+  }
+  75% {
+    filter: blur(4px) contrast(1.5) saturate(0);
+    opacity: 0.4;
+  }
+  100% {
+    filter: blur(8px) contrast(2) saturate(0);
+    opacity: 0;
+  }
+}
+
+.dissolving-card {
+  animation: pixelate-dissolve 1.5s ease-out forwards;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+.animate-dissolve {
+  animation: pixelate-dissolve 1.5s ease-out forwards;
+}
