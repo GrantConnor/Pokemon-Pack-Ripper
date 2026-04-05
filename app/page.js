@@ -1202,7 +1202,7 @@ export default function App() {
           <TabsContent value="packs" className="space-y-6">
             <div className="text-center mb-6">
               <h2 className="text-3xl font-bold text-white drop-shadow-[0_0_10px_rgba(6,182,212,0.5)] mb-2">Choose Your Pack</h2>
-              <p className="text-cyan-100/70 font-medium">Select a Pokemon TCG set to open a booster pack (100 points per pack)</p>
+              <p className="text-cyan-100/70 font-medium">Select a Pokemon TCG set to open a booster pack</p>
             </div>
 
             {/* Pack Search */}
@@ -1238,7 +1238,9 @@ export default function App() {
                   </div>
                 ) : (
                   filteredPacks.map((set) => {
-                    const canAfford = user.points >= 100 || user.username === 'Spheal';
+                    const packPrice = set.packPrice || 100;
+                    const bulkPrice = set.bulkPrice || 1000;
+                    const canAfford = user.points >= packPrice || user.username === 'Spheal';
                     return (
                       <Card key={set.id} className="overflow-hidden hover:shadow-[0_0_30px_rgba(6,182,212,0.4)] transition-all bg-slate-800/50 backdrop-blur-sm border-2 border-cyan-500/30 hover:border-cyan-500/60 group">
                         <CardHeader className="p-0">
@@ -1279,7 +1281,7 @@ export default function App() {
                               {canAfford ? (
                                 <>
                                   <Coins className="h-4 w-4 mr-2" />
-                                  Open Pack (100)
+                                  Open Pack ({packPrice})
                                 </>
                               ) : (
                                 'Not Enough Points'
@@ -1287,17 +1289,17 @@ export default function App() {
                             </Button>
                             <Button 
                               className={`w-full font-bold border-2 transition-all text-sm ${
-                                (user.points >= 1000 || user.username === 'Spheal')
+                                (user.points >= bulkPrice || user.username === 'Spheal')
                                   ? 'bg-purple-500 text-white hover:bg-purple-400 border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.5)] hover:shadow-[0_0_25px_rgba(168,85,247,0.8)]' 
                                   : 'bg-slate-700 text-slate-400 border-slate-600'
                               }`}
                               onClick={() => handleOpenPack(set, true)}
-                              disabled={openingPack || (user.points < 1000 && user.username !== 'Spheal')}
+                              disabled={openingPack || (user.points < bulkPrice && user.username !== 'Spheal')}
                             >
-                              {(user.points >= 1000 || user.username === 'Spheal') ? (
+                              {(user.points >= bulkPrice || user.username === 'Spheal') ? (
                                 <>
                                   <Package className="h-4 w-4 mr-2" />
-                                  Open 10 Packs (1000)
+                                  Open 10 Packs ({bulkPrice})
                                 </>
                               ) : (
                                 'Not Enough Points'

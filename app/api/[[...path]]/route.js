@@ -803,7 +803,14 @@ export async function GET(request) {
         return true;
       });
       
-      return NextResponse.json({ sets: filteredSets });
+      // Add pricing information to each set
+      const setsWithPricing = filteredSets.map(set => ({
+        ...set,
+        packPrice: getPackCost(set.id, false),
+        bulkPrice: getPackCost(set.id, true)
+      }));
+      
+      return NextResponse.json({ sets: setsWithPricing });
     }
 
     // Get cards from a specific set
