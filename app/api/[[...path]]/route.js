@@ -166,7 +166,7 @@ function calculateRegeneratedPoints(user) {
   
   const now = new Date().getTime();
   const lastRefresh = new Date(user.lastPointsRefresh || user.createdAt).getTime();
-  const timeElapsed = now - lastRefresh;``
+  const timeElapsed = now - lastRefresh;
   const hoursElapsed = timeElapsed / POINTS_REGEN_INTERVAL;
   const pointsToAdd = Math.floor(hoursElapsed * POINTS_REGEN_RATE);
   
