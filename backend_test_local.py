@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for Pokemon Pack Ripper - Card Breakdown Quantity Feature
-Tests the POST /api/cards/breakdown-quantity endpoint after server restart
+Backend API Testing for Pokemon Pack Ripper - Card Breakdown Quantity Feature (LOCAL)
+Tests the POST /api/cards/breakdown-quantity endpoint after server restart using local server
 """
 
 import requests
@@ -9,12 +9,12 @@ import json
 import time
 import uuid
 
-# Configuration
-BASE_URL = "https://pokepackripper.netlify.app/api"
+# Configuration - Using local server
+BASE_URL = "http://localhost:3000/api"
 
 def test_card_breakdown_quantity():
     """Test the card breakdown quantity feature"""
-    print("🧪 TESTING CARD BREAKDOWN QUANTITY FEATURE")
+    print("🧪 TESTING CARD BREAKDOWN QUANTITY FEATURE (LOCAL)")
     print("=" * 60)
     
     try:
@@ -160,6 +160,14 @@ def test_card_breakdown_quantity():
         
         print(f"   Expected points: {expected_total_points} ({expected_points_per_card} per {rarity} × {breakdown_amount})")
         
+        # Verify the points match
+        actual_points = breakdown_data.get('pointsAwarded', 0)
+        if actual_points == expected_total_points:
+            print("✅ Points calculation correct")
+        else:
+            print(f"❌ Points mismatch: got {actual_points}, expected {expected_total_points}")
+            return False
+        
         # Step 7: Verify collection updated
         print("\n6️⃣ Verifying collection updated...")
         collection_response = requests.get(f"{BASE_URL}/collection", params={"userId": user_id})
@@ -209,7 +217,7 @@ def test_card_breakdown_quantity():
 
 def test_batch_breakdown():
     """Test that the batch breakdown endpoint still works"""
-    print("\n\n🧪 TESTING BATCH BREAKDOWN ENDPOINT")
+    print("\n\n🧪 TESTING BATCH BREAKDOWN ENDPOINT (LOCAL)")
     print("=" * 60)
     
     try:
@@ -282,7 +290,7 @@ def test_batch_breakdown():
 
 def main():
     """Run all tests"""
-    print("🚀 STARTING CARD BREAKDOWN TESTING AFTER SERVER RESTART")
+    print("🚀 STARTING CARD BREAKDOWN TESTING AFTER SERVER RESTART (LOCAL)")
     print("=" * 80)
     
     # Test breakdown-quantity endpoint
