@@ -9,8 +9,8 @@ const STARTING_POINTS = 1000;
 const PACK_COST = 100;
 const BULK_PACK_COUNT = 10;
 const BULK_PACK_COST = 1000;
-const POINTS_REGEN_RATE = 100; // Points per regeneration
-const POINTS_REGEN_INTERVAL = 21600000; // 6 hours in milliseconds (6 * 60 * 60 * 1000)
+const POINTS_REGEN_RATE = 1000; // Points per regeneration
+const POINTS_REGEN_INTERVAL = 7200000; // 2 hours in milliseconds (2 * 60 * 60 * 1000)
 
 // Pokemon Wilds constants
 const MAX_POKEMON_ID = 1010; // Gen 1-9 (up to Paldea)
