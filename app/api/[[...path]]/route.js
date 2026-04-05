@@ -18,6 +18,28 @@ const MIN_SPAWN_INTERVAL = 5 * 60 * 1000; // 5 minutes
 const MAX_SPAWN_INTERVAL = 20 * 60 * 1000; // 20 minutes
 const MAX_CATCH_ATTEMPTS = 3;
 
+// XP and Leveling constants
+const XP_FROM_PACK_OPEN = 50; // XP all Pokemon get when opening a pack
+const XP_FROM_CATCH = 100; // XP all Pokemon get when catching a Pokemon
+const XP_POINT_COST = 10; // Points cost per 100 XP
+
+// XP calculation (Pokemon games use: xp = level^3 for medium-fast growth)
+function getXPForLevel(level) {
+  return Math.floor(Math.pow(level, 3));
+}
+
+function getXPToNextLevel(currentLevel) {
+  return getXPForLevel(currentLevel + 1) - getXPForLevel(currentLevel);
+}
+
+function calculateLevelFromXP(xp) {
+  let level = 1;
+  while (getXPForLevel(level + 1) <= xp && level < 100) {
+    level++;
+  }
+  return level;
+}
+
 // Achievement milestones (per set)
 const ACHIEVEMENTS = {
   TEN_CARDS: { threshold: 10, reward: 50, name: '10 Unique Cards' },
