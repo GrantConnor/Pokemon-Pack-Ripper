@@ -6,11 +6,55 @@ import axios from 'axios';
 const POKEMON_TCG_API = 'https://api.pokemontcg.io/v2';
 const POKEAPI_BASE = 'https://pokeapi.co/api/v2';
 const STARTING_POINTS = 1000;
-const PACK_COST = 100;
+const PACK_COST = 100; // Default cost
 const BULK_PACK_COUNT = 10;
-const BULK_PACK_COST = 1000;
 const POINTS_REGEN_RATE = 1000; // Points per regeneration
 const POINTS_REGEN_INTERVAL = 7200000; // 2 hours in milliseconds (2 * 60 * 60 * 1000)
+
+// Set-specific pricing
+const SET_PRICING = {
+  // Vintage sets (Base - Sky Ridge): 200 for 1, 2000 for 10
+  'base1': { single: 200, bulk: 2000 },
+  'base2': { single: 200, bulk: 2000 },
+  'basep': { single: 200, bulk: 2000 }, // Base Set
+  'jungle': { single: 200, bulk: 2000 },
+  'fossil': { single: 200, bulk: 2000 },
+  'base3': { single: 200, bulk: 2000 }, // Base Set 2
+  'gym1': { single: 200, bulk: 2000 }, // Gym Heroes
+  'gym2': { single: 200, bulk: 2000 }, // Gym Challenge
+  'neo1': { single: 200, bulk: 2000 }, // Neo Genesis
+  'neo2': { single: 200, bulk: 2000 }, // Neo Discovery
+  'neo3': { single: 200, bulk: 2000 }, // Neo Revelation
+  'neo4': { single: 200, bulk: 2000 }, // Neo Destiny
+  'base4': { single: 200, bulk: 2000 }, // Legendary Collection
+  'ecard1': { single: 200, bulk: 2000 }, // Expedition
+  'ecard2': { single: 200, bulk: 2000 }, // Aquapolis
+  'ecard3': { single: 200, bulk: 2000 }, // Sky Ridge
+  
+  // EX era sets: 150 for 1, 1500 for 10
+  'ex1': { single: 150, bulk: 1500 }, // EX Ruby & Sapphire
+  'ex2': { single: 150, bulk: 1500 }, // EX Sandstorm
+  'ex3': { single: 150, bulk: 1500 }, // EX Dragon
+  'ex4': { single: 150, bulk: 1500 }, // EX Team Magma vs Team Aqua
+  'ex5': { single: 150, bulk: 1500 }, // EX Hidden Legends
+  'ex6': { single: 150, bulk: 1500 }, // EX FireRed & LeafGreen
+  'ex7': { single: 150, bulk: 1500 }, // EX Team Rocket Returns
+  'ex8': { single: 150, bulk: 1500 }, // EX Deoxys
+  'ex9': { single: 150, bulk: 1500 }, // EX Emerald
+  'ex10': { single: 150, bulk: 1500 }, // EX Unseen Forces
+  'ex11': { single: 150, bulk: 1500 }, // EX Delta Species
+  'ex12': { single: 150, bulk: 1500 }, // EX Legend Maker
+};
+
+// Function to get pack cost for a set
+function getPackCost(setId, bulk = false) {
+  const pricing = SET_PRICING[setId];
+  if (pricing) {
+    return bulk ? pricing.bulk : pricing.single;
+  }
+  // Default pricing for modern sets
+  return bulk ? (PACK_COST * 10) : PACK_COST;
+}
 
 // Pokemon Wilds constants
 const MAX_POKEMON_ID = 1010; // Gen 1-9 (up to Paldea)
@@ -750,6 +794,9 @@ export async function GET(request) {
         // Remove Hidden Fates Shiny Vault (we'll merge it with Hidden Fates)
         if (name.includes('shiny vault')) return false;
         
+        // Remove Crown Zenith Galarian Gallery (we'll merge it with Crown Zenith)
+        if (set.id === 'swsh12pt5' || name.includes('galarian gallery')) return false;
+        
         // Remove sets with less than 50 cards
         if (total < 50) return false;
         
@@ -1095,7 +1142,7 @@ export async function POST(request) {
       }
 
       const packCount = bulk ? BULK_PACK_COUNT : 1;
-      const totalCost = bulk ? BULK_PACK_COST : PACK_COST;
+      const totalCost = getPackCost(setId, bulk);
 
       // Check if user has enough points (except Spheal)
       if (user.username !== 'Spheal' && user.points < totalCost) {
@@ -1105,7 +1152,7 @@ export async function POST(request) {
         }, { status: 402 });
       }
 
-      // Fetch all cards from the set (with Hidden Fates merge)
+      // Fetch all cards from the set (with merges for Hidden Fates and Crown Zenith)
       let allCards = [];
       
       if (setId === 'sm115') {
@@ -1115,6 +1162,13 @@ export async function POST(request) {
         
         const shinyVaultResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:sma&pageSize=250`);
         allCards = [...allCards, ...shinyVaultResponse.data.data];
+      } else if (setId === 'swsh12' || setId === 'swsh12pt5') {
+        // Merge both Crown Zenith sets (Crown Zenith + Crown Zenith Galarian Gallery)
+        const crownZenithResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:swsh12&pageSize=250`);
+        allCards = [...crownZenithResponse.data.data];
+        
+        const gaларianGalleryResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:swsh12pt5&pageSize=250`);
+        allCards = [...allCards, ...gaларianGalleryResponse.data.data];
       } else {
         const response = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:${setId}&pageSize=250`);
         allCards = response.data.data;
