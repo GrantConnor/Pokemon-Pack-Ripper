@@ -374,29 +374,26 @@ async function fetchPokemonData(pokemonId) {
     // Extract data
     const types = pokemon.types.map(t => t.type.name);
     
-    // Get sprite - CRITICAL: Use correct shiny path
+    // Get sprite - CRITICAL: official-artwork does NOT have shiny sprites!
     let sprite;
     if (isShiny) {
-      // For shiny: MUST use official-artwork shiny path
-      sprite = pokemon.sprites.other?.['official-artwork']?.front_shiny;
+      // SHINY: Use sprites.front_shiny directly (official-artwork has NO shiny version!)
+      sprite = pokemon.sprites.front_shiny || 
+               pokemon.sprites.other?.home?.front_shiny ||
+               pokemon.sprites.front_default;
       
-      // If official artwork shiny doesn't exist, use regular shiny sprite
-      if (!sprite) {
-        sprite = pokemon.sprites.front_shiny || 
-                 pokemon.sprites.other?.home?.front_shiny ||
-                 pokemon.sprites.front_default;
-      }
-      
-      console.log(`✨ SHINY SPAWN: ${pokemon.name} #${pokemonId} - Sprite: ${sprite}`);
+      console.log(`✨ SHINY SPAWN: ${pokemon.name} #${pokemonId}`);
+      console.log(`   Sprite URL: ${sprite}`);
+      console.log(`   Has /shiny/: ${sprite?.includes('/shiny/')}`);
     } else {
-      // Normal sprite
+      // Normal sprite - use official-artwork for better quality
       sprite = pokemon.sprites.other?.['official-artwork']?.front_default || 
                pokemon.sprites.front_default;
     }
     
     // VERIFY sprite URL
     if (isShiny && sprite && !sprite.includes('/shiny/')) {
-      console.warn(`⚠️ WARNING: Shiny Pokemon ${pokemon.name} has non-shiny sprite URL: ${sprite}`);
+      console.error(`❌ ERROR: Shiny Pokemon ${pokemon.name} has NON-SHINY sprite URL: ${sprite}`);
     }
     
     // Get all learnable moves with their data
@@ -1714,29 +1711,24 @@ export async function POST(request) {
       // FORCE shiny to TRUE
       pokemonData.isShiny = true;
       
-      // FORCE shiny sprite - fetch fresh to ensure correct URL
+      // FORCE shiny sprite - official-artwork does NOT have shiny!
       const pokemonResponse = await axios.get(`${POKEAPI_BASE}/pokemon/${randomId}`);
       const pokemon = pokemonResponse.data;
       
-      // CRITICAL: Use official-artwork shiny path
-      let shinySprite = pokemon.sprites.other?.['official-artwork']?.front_shiny;
-      
-      // Fallback if official artwork doesn't have shiny
-      if (!shinySprite) {
-        shinySprite = pokemon.sprites.front_shiny || 
-                     pokemon.sprites.other?.home?.front_shiny ||
-                     pokemon.sprites.front_default;
-      }
+      // CRITICAL: Use sprites.front_shiny (official-artwork has NO shiny version!)
+      let shinySprite = pokemon.sprites.front_shiny || 
+                       pokemon.sprites.other?.home?.front_shiny ||
+                       pokemon.sprites.front_default;
       
       pokemonData.sprite = shinySprite;
       
       console.log(`✨✨ ADMIN SHINY SPAWN #${randomId}: ${pokemonData.displayName}`);
       console.log(`   Sprite URL: ${shinySprite}`);
-      console.log(`   Is Shiny URL: ${shinySprite.includes('/shiny/')}`);
+      console.log(`   Has /shiny/: ${shinySprite?.includes('/shiny/')}`);
       
       // VERIFY it's actually a shiny sprite
-      if (!shinySprite.includes('/shiny/')) {
-        console.error(`❌ ERROR: Admin spawn shiny sprite is NOT shiny: ${shinySprite}`);
+      if (!shinySprite || !shinySprite.includes('/shiny/')) {
+        console.error(`❌ ERROR: Admin spawn sprite is NOT shiny: ${shinySprite}`);
       }
       
       // Add level and stats
