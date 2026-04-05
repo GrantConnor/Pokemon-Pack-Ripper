@@ -1285,3 +1285,66 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ PASSED: Pokemon trade database integration working perfectly. ✅ POKEMON OWNERSHIP: Successfully swaps Pokemon ownership in caught_pokemon collection using MongoDB ObjectId lookups and userId updates. ✅ TRADE REQUESTS: Properly stores and manages trade requests in users' tradeRequests arrays with complete trade data structure. ✅ USER UPDATES: Correctly updates both users' tradesCompleted counters and removes completed trade requests. ✅ DATA INTEGRITY: All Pokemon data (displayName, stats, IVs, isShiny, etc.) preserved during ownership transfer. Database operations are atomic and reliable."
+
+  - task: "Pack Opening Pricing Tiers - Vintage Sets (200/pack, 2000/10)"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED: Vintage set pricing working correctly. SET_PRICING object correctly defines vintage sets (base1, jungle, fossil, base2, neo1-4, base4, ecard1-3) with 200 points for single pack and 2000 for bulk (10 packs). getPackCost function returns correct values. Tested with base1 (Base Set) - totalCost calculation shows 200 points as expected. Note: Final user points may appear different due to achievement bonuses being awarded simultaneously."
+
+  - task: "Pack Opening Pricing Tiers - EX Era Sets (150/pack, 1500/10)"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED: EX era set pricing working correctly. SET_PRICING object correctly defines EX era sets (ex1-ex12) with 150 points for single pack and 1500 for bulk (10 packs). Tested with ex1 (Ruby & Sapphire) - pack opening functionality works correctly with proper card distribution and bulk pack support."
+
+  - task: "Pack Opening Pricing Tiers - Modern Sets (100/pack, 1000/10)"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED: Modern set pricing working correctly. Sets not defined in SET_PRICING object default to PACK_COST (100) for single pack and PACK_COST * 10 (1000) for bulk packs. getPackCost function correctly returns default pricing for modern sets. All modern sets use the standard 100/1000 pricing structure."
+
+  - task: "Crown Zenith Set Filtering and Merging"
+    implemented: true
+    working: false
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "❌ IMPLEMENTATION ISSUE: Crown Zenith merging has incorrect set IDs. Current code attempts to merge swsh12 (Silver Tempest) with swsh12pt5 (Crown Zenith), but this is incorrect. According to Pokemon TCG API: Crown Zenith is swsh12pt5 (160 cards) and Crown Zenith Galarian Gallery is swsh12pt5gg (70 cards). The code should merge swsh12pt5 + swsh12pt5gg, not swsh12 + swsh12pt5. SET FILTERING: ✅ swsh12pt5 correctly filtered from sets list. CARDS ENDPOINT: ❌ Only returns swsh12 cards (Silver Tempest), no merge. PACK OPENING: ✅ Partially working - does pull some cards from both sets but using wrong set IDs."
+
+  - task: "Achievement Bonus Points Integration with Pricing"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED: Achievement bonus points system working correctly with new pricing tiers. Pack opening process: 1) Correct cost deducted (e.g., 200 points for vintage sets), 2) Cards added to collection, 3) checkAchievements function runs and awards bonus points (e.g., +50 for TEN_CARDS achievement), 4) Final user balance reflects both deduction and bonus. This explains why users appear to be charged less than the actual pack cost - they're receiving achievement bonuses simultaneously. System working as designed."
+
+  - agent: "testing"
+    message: "🎯 PACK OPENING PRICING TIERS & CROWN ZENITH TESTING COMPLETE: Comprehensive testing of new pricing structure and Crown Zenith merging completed. Results: 4/5 tests passed (80%). ✅ PRICING TIERS WORKING PERFECTLY: 1) Vintage Sets (200/pack, 2000/10) - SET_PRICING correctly defines all vintage sets, getPackCost returns proper values, 2) EX Era Sets (150/pack, 1500/10) - All EX sets properly priced, 3) Modern Sets (100/pack, 1000/10) - Default pricing working for non-vintage/EX sets, 4) Achievement Integration - Bonus points awarded correctly alongside pricing (explains apparent cost differences). ❌ CROWN ZENITH ISSUE: Implementation uses wrong set IDs - should merge swsh12pt5 (Crown Zenith) + swsh12pt5gg (Galarian Gallery), not swsh12 + swsh12pt5. Current code merges Silver Tempest with Crown Zenith incorrectly. PRICING SYSTEM IS PRODUCTION-READY, Crown Zenith needs set ID correction."
