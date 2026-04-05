@@ -37,6 +37,8 @@ export default function PokemonWilds() {
   const [selectedPokemonForTrade, setSelectedPokemonForTrade] = useState([]);
   const [viewingFriendPokemon, setViewingFriendPokemon] = useState(null);
   const [friendPokemonList, setFriendPokemonList] = useState([]);
+  const [battleRequests, setBattleRequests] = useState([]);
+  const [tradeRequests, setTradeRequests] = useState([]);
   
   // Leveling and Evolution states
   const [buyingXP, setBuyingXP] = useState(false);
@@ -178,6 +180,8 @@ export default function PokemonWilds() {
       const response = await fetch(`/api/friends?userId=${user.id}`);
       const data = await response.json();
       setFriends(data.friends || []);
+      setBattleRequests(data.battleRequests || []);
+      setTradeRequests(data.tradeRequests || []);
     } catch (err) {
       console.error('Error loading friends:', err);
     }
@@ -1390,6 +1394,132 @@ export default function PokemonWilds() {
       </Dialog>
 
       {/* Friends Panel Dialog */}
+      <Dialog open={showFriendsPanel} onOpenChange={setShowFriendsPanel}>
+        <DialogContent className="max-w-4xl max-h-[90vh] border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-cyan-400 flex items-center gap-2">
+              <Users className="h-6 w-6" />
+              Friends & Battles
+            </DialogTitle>
+          </DialogHeader>
+
+          <ScrollArea className="max-h-[70vh]">
+            <div className="space-y-4 pr-4">
+              {/* Friends List */}
+              <Card className="border-2 border-cyan-500/30 bg-slate-800/50">
+                <CardHeader>
+                  <CardTitle className="text-cyan-400">My Friends ({friends.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {friends.length === 0 ? (
+                    <p className="text-gray-400 text-center py-4">No friends yet</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {friends.map((friend) => (
+                        <div 
+                          key={friend.id}
+                          className="flex items-center justify-between p-3 bg-slate-700/50 rounded"
+                        >
+                          <div>
+                            <p className="text-white font-bold">{friend.username}</p>
+                            <p className="text-xs text-gray-400">{friend.tradesCompleted || 0} trades completed</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                handleViewFriendPokemon(friend);
+                              }}
+                              className="bg-purple-600 hover:bg-purple-500 text-xs"
+                            >
+                              Trade Pokemon
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => handleSendBattleRequest(friend)}
+                              className="bg-red-600 hover:bg-red-500 text-xs"
+                            >
+                              ⚔️ Battle
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Battle Requests */}
+              <Card className="border-2 border-red-500/30 bg-slate-800/50">
+                <CardHeader>
+                  <CardTitle className="text-red-400">Battle Requests ({battleRequests.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {battleRequests.length === 0 ? (
+                    <p className="text-gray-400 text-center py-4">No battle requests</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {battleRequests.map(request => (
+                        <div key={request.id} className="flex items-center justify-between p-3 bg-slate-700/50 rounded">
+                          <div>
+                            <p className="text-white font-bold">{request.from.username}</p>
+                            <p className="text-xs text-gray-400">wants to battle!</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => handleAcceptBattleRequest(request)}
+                              className="bg-green-600 hover:bg-green-500"
+                            >
+                              Accept
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => handleDeclineBattleRequest(request)}
+                              className="bg-gray-600 hover:bg-gray-500"
+                            >
+                              Decline
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Trade Requests */}
+              {tradeRequests && tradeRequests.length > 0 && (
+                <Card className="border-2 border-purple-500/30 bg-slate-800/50">
+                  <CardHeader>
+                    <CardTitle className="text-purple-400">Pokemon Trade Requests ({tradeRequests.length})</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {tradeRequests.map((trade) => (
+                        <div key={trade.id} className="p-3 bg-slate-700/50 rounded">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-white font-bold">{trade.fromUsername}</span>
+                            <Badge className="bg-purple-500">{trade.offeredPokemon?.length || 0} Pokemon</Badge>
+                          </div>
+                          <Button
+                            size="sm"
+                            onClick={() => {/* Handle view trade */}}
+                            className="w-full bg-purple-600 hover:bg-purple-500"
+                          >
+                            View Trade
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
