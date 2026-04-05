@@ -46,6 +46,13 @@ const SET_PRICING = {
   'ex12': { single: 150, bulk: 1500 }, // EX Legend Maker
 };
 
+// Vintage sets (2000-point tier) - these have 15% rare drop rate
+const VINTAGE_SETS = [
+  'base1', 'base2', 'basep', 'jungle', 'fossil', 'base3',
+  'gym1', 'gym2', 'neo1', 'neo2', 'neo3', 'neo4',
+  'base4', 'ecard1', 'ecard2', 'ecard3'
+];
+
 // Function to get pack cost for a set
 function getPackCost(setId, bulk = false) {
   const pricing = SET_PRICING[setId];
@@ -261,7 +268,8 @@ async function checkAchievements(user, database, setId, setName, totalCardsInSet
 
 // TCG-accurate pack opening logic (10 cards total: 4 commons, 3 uncommons, 3 foil slots)
 // NO DUPLICATES within a single pack
-function openPack(cards) {
+// Vintage sets (2000-point tier) have 15% rare drop rate
+function openPack(cards, setId = null) {
   // Filter out Energy cards
   const nonEnergyCards = cards.filter(c => c.supertype !== 'Energy');
   
@@ -394,7 +402,25 @@ function openPack(cards) {
   }
 
   // 3. Pull 1 guaranteed rare-or-better (with realistic TCG weighted odds)
-  const guaranteedRare = selectRareOrBetter();
+  // SPECIAL: Vintage sets (2000-point tier) only have 15% chance of getting a Rare
+  let guaranteedRare;
+  
+  if (setId && VINTAGE_SETS.includes(setId)) {
+    // Vintage set: 15% chance for Rare, 85% chance for Uncommon
+    const rareRoll = Math.random() * 100;
+    
+    if (rareRoll <= 15) {
+      // Lucky! You get a rare
+      guaranteedRare = selectRareOrBetter();
+    } else {
+      // 85% of the time: get an uncommon instead
+      guaranteedRare = uncommons.length > 0 ? getUniqueCard(uncommons) : getUniqueCard(nonEnergyCards);
+    }
+  } else {
+    // Modern/EX sets: Normal rare drop rate (100% guaranteed)
+    guaranteedRare = selectRareOrBetter();
+  }
+  
   if (guaranteedRare) {
     pulledCards.push(guaranteedRare);
   } else {
@@ -1190,7 +1216,7 @@ export async function POST(request) {
       let individualPacks = []; // Track each pack separately for bulk openings
       
       for (let i = 0; i < packCount; i++) {
-        const pulledCards = openPack(allCards);
+        const pulledCards = openPack(allCards, setId);
         allPulledCards = [...allPulledCards, ...pulledCards];
         
         if (bulk) {

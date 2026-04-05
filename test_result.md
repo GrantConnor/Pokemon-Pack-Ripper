@@ -1028,6 +1028,8 @@ agent_communication:
     message: "🌟 COMPREHENSIVE SHINY POKEMON SYSTEM TESTING COMPLETE - ALL REQUIREMENTS VERIFIED! Conducted thorough analysis and testing of the complete shiny Pokemon system implementation. ✅ CRITICAL FINDINGS: 1) SHINY PROBABILITY ✅ - Correctly implemented 1/4000 chance (0.025%) using Math.random() < (1/4000), both natural spawns and forced spawns supported, 2) SHINY SPRITE VERIFICATION ✅ - Perfect implementation with GitHub URL pattern 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/{id}.png', normal Pokemon use regular sprites (no /shiny/), 3) DATA PERSISTENCE ✅ - Complete isShiny field preservation in caught_pokemon MongoDB collection, all Pokemon data intact including sprite URLs, 4) SEPARATE INSTANCES ✅ - Each catch creates separate MongoDB document, no merging logic, normal and shiny of same species stored independently, 5) API ENDPOINTS ✅ - All 5 endpoints implemented (current, catch, my-pokemon, admin-spawn, admin-spawn-shiny), 6) DETERMINISTIC TESTS ✅ - Admin force spawn guarantees 100% shiny rate with proper validation, 7) DATA STRUCTURE ✅ - All required fields present (id, name, displayName, sprite, isShiny, types, ivs, moveset, level, stats, gender), 8) ERROR HANDLING ✅ - Comprehensive validation for user IDs, admin authorization, and edge cases. ⚠️ DEPLOYMENT NOTE: Code analysis confirms full implementation, server logs show endpoints working, but direct API testing shows intermittent 404s suggesting deployment/caching issue. CONCLUSION: Shiny Pokemon system is FULLY IMPLEMENTED and PRODUCTION READY with all success criteria met!"
   - agent: "testing"
     message: "🎯 POKEMON WILDS LEVELING & EVOLUTION SYSTEM TESTING COMPLETE: Comprehensive testing of leveling and evolution system completed after server restart with 5/7 tests passed (71.4%). ✅ WORKING CORRECTLY: 1) GET /api/wilds/current - Pokemon spawn system working (retrieved Gallade Level 6), 2) GET /api/wilds/my-pokemon - Returns 11 Pokemon with currentXP field, 3) POST /api/wilds/catch - Catches Pokemon and initializes with currentXP: 0, 4) Pack Opening XP Gain - All 12 Pokemon gained exactly 2 XP from pack opening, 5) Catch XP Gain - All 12 existing Pokemon gained exactly 10 XP from catching, 6) Buy XP Feature - Pokemon gained exactly 50 XP (from 10 to 60). ⚠️ MINOR ISSUES: 1) Newly caught Pokemon gets 10 XP instead of 0 (working as designed - XP applies to ALL Pokemon), 2) Points deduction not visible for Spheal (unlimited points), 3) Evolution system not tested (no suitable Pokemon found). CONCLUSION: Core leveling system is WORKING CORRECTLY with XP gains from pack opening (2 XP), catching (10 XP), and buy-xp (50 XP) all functioning as specified."
+  - agent: "testing"
+    message: "⚠️ VINTAGE DROP RATE TESTING ATTEMPTED: Attempted comprehensive testing of 15% vintage drop rate feature but encountered critical API performance issues. 🔍 CODE ANALYSIS COMPLETED: Verified implementation is correct - VINTAGE_SETS array properly defined with 16 vintage set IDs (base1, base2, basep, jungle, fossil, base3, gym1, gym2, neo1, neo2, neo3, neo4, base4, ecard1, ecard2, ecard3), vintage drop rate logic correctly implemented in openPack function (lines 408-422), 15% rare chance vs 85% uncommon for vintage sets, 100% guaranteed rare for EX/modern sets. ❌ TESTING BLOCKED: Pack opening API extremely slow (30+ second timeouts), preventing statistical validation. Sets endpoint working (confirmed vintage sets have 200/2000 pricing), authentication working, but pack opening unresponsive. 📋 RECOMMENDATION: Fix API performance issues before conducting full statistical testing of vintage drop rate feature."
   - task: "Leveling System - XP from Pack Opening"
     implemented: true
     working: true
@@ -1348,3 +1350,44 @@ backend:
 
   - agent: "testing"
     message: "🎯 PACK OPENING PRICING TIERS & CROWN ZENITH TESTING COMPLETE: Comprehensive testing of new pricing structure and Crown Zenith merging completed. Results: 4/5 tests passed (80%). ✅ PRICING TIERS WORKING PERFECTLY: 1) Vintage Sets (200/pack, 2000/10) - SET_PRICING correctly defines all vintage sets, getPackCost returns proper values, 2) EX Era Sets (150/pack, 1500/10) - All EX sets properly priced, 3) Modern Sets (100/pack, 1000/10) - Default pricing working for non-vintage/EX sets, 4) Achievement Integration - Bonus points awarded correctly alongside pricing (explains apparent cost differences). ❌ CROWN ZENITH ISSUE: Implementation uses wrong set IDs - should merge swsh12pt5 (Crown Zenith) + swsh12pt5gg (Galarian Gallery), not swsh12 + swsh12pt5. Current code merges Silver Tempest with Crown Zenith incorrectly. PRICING SYSTEM IS PRODUCTION-READY, Crown Zenith needs set ID correction."
+
+
+  - task: "15% Rare Drop Rate for Vintage 2000-Point Sets"
+    implemented: true
+    working: "NA"
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "IMPLEMENTED: Modified openPack function to accept setId parameter. Added VINTAGE_SETS array containing all 2000-point tier sets (base1, base2, basep, jungle, fossil, base3, gym1, gym2, neo1-neo4, base4, ecard1-ecard3). Updated rare card selection logic: if setId is in VINTAGE_SETS, apply 15% chance for rare (roll 0-100, if <= 15 get rare, else get uncommon). All other sets maintain 100% guaranteed rare drop rate. Updated openPack call at line 1193 to pass setId. READY FOR TESTING - Need to simulate 100+ pack openings of vintage sets (e.g., base1) to verify ~15% rare drop rate."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 0
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "15% Rare Drop Rate for Vintage 2000-Point Sets"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+  - task: "15% Vintage Drop Rate Implementation"
+    implemented: true
+    working: "NA"
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "testing"
+        comment: "⚠️ TESTING BLOCKED BY API PERFORMANCE: Code analysis confirms correct implementation - VINTAGE_SETS array defined with 16 vintage set IDs, openPack function (lines 408-422) correctly implements 15% rare drop rate for vintage sets vs 100% for EX/modern sets. However, pack opening API extremely slow (30+ second timeouts) preventing statistical validation. Sets endpoint working, authentication working, but pack opening unresponsive. Recommendation: Fix API performance issues before conducting full statistical testing."
+    message: "🎯 IMPLEMENTED 15% RARE DROP RATE FOR VINTAGE SETS: Modified the openPack function to implement user's requirement for vintage packs (2000-point tier) to have ONLY 15% chance of getting a rare card (85% chance to get uncommon instead). Implementation details: 1) Created VINTAGE_SETS array with all 16 vintage set IDs, 2) Updated openPack signature to accept setId parameter, 3) Added conditional logic in rare card selection - if vintage set, roll random 0-100, only proceed with rare if <= 15, else give uncommon, 4) Updated call to openPack to pass setId. EX era and Modern sets maintain their 100% guaranteed rare drop rate (unchanged). TESTING REQUIRED: Need to simulate 100+ pack openings from a vintage set (like base1) to statistically verify the ~15% rare drop rate is working correctly. User specifically requested this be tested thoroughly before deployment."
