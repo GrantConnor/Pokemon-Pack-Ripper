@@ -1,6 +1,6 @@
 [build]
   command = "yarn build"
-  publish = ".next"
+
   
 [build.environment]
   NODE_VERSION = "18"
@@ -8,6 +8,6 @@
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
-# Environment variables can also be set in Netlify UI
+
 [context.production.environment]
   NODE_ENV = "production"

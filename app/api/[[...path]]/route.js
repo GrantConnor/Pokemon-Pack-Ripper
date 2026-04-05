@@ -136,9 +136,24 @@ let db;
 
 async function connectDB() {
   if (db) return db;
-  
+
+  if (!process.env.MONGO_URL) {
+    throw new Error('Missing MONGO_URL');
+  }
+
+  if (!process.env.DB_NAME) {
+    throw new Error('Missing DB_NAME');
+  }
+
+  console.log('Connecting to Mongo...');
+  console.log('DB_NAME:', process.env.DB_NAME);
+  console.log('MONGO_URL exists:', !!process.env.MONGO_URL);
+
   client = new MongoClient(process.env.MONGO_URL);
   await client.connect();
+
+  console.log('Mongo connected successfully');
+
   db = client.db(process.env.DB_NAME);
   return db;
 }
@@ -2845,9 +2860,15 @@ if (pathname.includes('/api/auth/signin')) {
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (error) {
-    console.error('POST Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  console.error('POST Error:', error);
+  return NextResponse.json(
+    {
+      error: error.message,
+      stack: process.env.NODE_ENV !== 'production' ? error.stack : undefined
+    },
+    { status: 500 }
+  );
+}
 }
 
 export async function DELETE(request) {
