@@ -248,6 +248,7 @@ export default function PokemonWilds() {
       const data = await response.json();
       if (data.success) {
         alert(`Battle request sent to ${friend.username}!`);
+        loadFriends(); // Reload to update UI
       } else {
         alert(data.error || 'Error sending battle request');
       }
@@ -292,7 +293,7 @@ export default function PokemonWilds() {
         })
       });
 
-      loadFriends();
+      loadFriends(); // Reload to update UI
     } catch (err) {
       console.error('Decline battle error:', err);
     }
@@ -1405,6 +1406,30 @@ export default function PokemonWilds() {
 
           <ScrollArea className="max-h-[70vh]">
             <div className="space-y-4 pr-4">
+              {/* Add Friend */}
+              <Card className="border-2 border-green-500/30 bg-slate-800/50">
+                <CardHeader>
+                  <CardTitle className="text-green-400">Add Friend</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Enter friend's username..."
+                      value={friendSearchTerm}
+                      onChange={(e) => setFriendSearchTerm(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleAddFriend()}
+                      className="border-2 border-green-500/30 bg-slate-700/50 text-white"
+                    />
+                    <Button
+                      onClick={handleAddFriend}
+                      className="bg-green-600 hover:bg-green-500"
+                    >
+                      Add
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
               {/* Friends List */}
               <Card className="border-2 border-cyan-500/30 bg-slate-800/50">
                 <CardHeader>
@@ -1412,7 +1437,7 @@ export default function PokemonWilds() {
                 </CardHeader>
                 <CardContent>
                   {friends.length === 0 ? (
-                    <p className="text-gray-400 text-center py-4">No friends yet</p>
+                    <p className="text-gray-400 text-center py-4">No friends yet. Add friends to trade and battle!</p>
                   ) : (
                     <div className="space-y-2">
                       {friends.map((friend) => (
