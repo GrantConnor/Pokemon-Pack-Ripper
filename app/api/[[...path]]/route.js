@@ -4,12 +4,19 @@ import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 
 const POKEMON_TCG_API = 'https://api.pokemontcg.io/v2';
+const POKEAPI_BASE = 'https://pokeapi.co/api/v2';
 const STARTING_POINTS = 1000;
 const PACK_COST = 100;
 const BULK_PACK_COUNT = 10;
 const BULK_PACK_COST = 1000;
 const POINTS_REGEN_RATE = 100; // Points per regeneration
 const POINTS_REGEN_INTERVAL = 21600000; // 6 hours in milliseconds (6 * 60 * 60 * 1000)
+
+// Pokemon Wilds constants
+const MAX_POKEMON_ID = 1010; // Gen 1-9 (up to Paldea)
+const MIN_SPAWN_INTERVAL = 5 * 60 * 1000; // 5 minutes
+const MAX_SPAWN_INTERVAL = 20 * 60 * 1000; // 20 minutes
+const MAX_CATCH_ATTEMPTS = 3;
 
 // Achievement milestones (per set)
 const ACHIEVEMENTS = {
@@ -348,6 +355,129 @@ function openPack(cards) {
   return pulledCards.slice(0, 10); // Ensure exactly 10 cards
 }
 
+// ===== POKEMON WILDS HELPER FUNCTIONS =====
+
+// Fetch Pokemon data from PokéAPI
+async function fetchPokemonData(pokemonId) {
+  try {
+    // Fetch basic Pokemon data
+    const pokemonResponse = await axios.get(`${POKEAPI_BASE}/pokemon/${pokemonId}`);
+    const pokemon = pokemonResponse.data;
+    
+    // Fetch species data for rarity info
+    const speciesResponse = await axios.get(`${POKEAPI_BASE}/pokemon-species/${pokemonId}`);
+    const species = speciesResponse.data;
+    
+    // Extract data
+    const types = pokemon.types.map(t => t.type.name);
+    const sprite = pokemon.sprites.other['official-artwork'].front_default || pokemon.sprites.front_default;
+    
+    // Get all learnable moves (filter for latest version group)
+    const allMoves = pokemon.moves
+      .filter(m => {
+        // Get the most recent learn method
+        const details = m.version_group_details;
+        return details.some(d => d.move_learn_method.name === 'level-up' || d.move_learn_method.name === 'machine');
+      })
+      .map(m => m.move.name);
+    
+    // Generate random IVs (0-31 for each stat)
+    const ivs = {
+      hp: Math.floor(Math.random() * 32),
+      attack: Math.floor(Math.random() * 32),
+      defense: Math.floor(Math.random() * 32),
+      spAttack: Math.floor(Math.random() * 32),
+      spDefense: Math.floor(Math.random() * 32),
+      speed: Math.floor(Math.random() * 32)
+    };
+    
+    // Select 4 random moves for starting moveset
+    const shuffledMoves = allMoves.sort(() => 0.5 - Math.random());
+    const moveset = shuffledMoves.slice(0, Math.min(4, allMoves.length));
+    
+    return {
+      id: pokemon.id,
+      name: pokemon.name,
+      displayName: species.names.find(n => n.language.name === 'en')?.name || pokemon.name,
+      types: types,
+      sprite: sprite,
+      captureRate: species.capture_rate,
+      isLegendary: species.is_legendary,
+      isMythical: species.is_mythical,
+      ivs: ivs,
+      moveset: moveset,
+      allMoves: allMoves,
+      baseStats: {
+        hp: pokemon.stats[0].base_stat,
+        attack: pokemon.stats[1].base_stat,
+        defense: pokemon.stats[2].base_stat,
+        spAttack: pokemon.stats[3].base_stat,
+        spDefense: pokemon.stats[4].base_stat,
+        speed: pokemon.stats[5].base_stat
+      }
+    };
+  } catch (error) {
+    console.error(`Error fetching Pokemon ${pokemonId}:`, error.message);
+    throw error;
+  }
+}
+
+// Calculate catch chance based on Pokemon rarity
+function calculateCatchChance(captureRate, isLegendary, isMythical) {
+  // Base formula: Higher capture_rate = easier to catch
+  // capture_rate ranges from 3 (hardest) to 255 (easiest)
+  
+  let baseChance;
+  
+  if (isLegendary || isMythical) {
+    // Legendaries/Mythicals: 10-30% base chance
+    baseChance = 10 + (captureRate / 255) * 20;
+  } else if (captureRate <= 45) {
+    // Pseudo-legendaries and rare Pokemon: 30-50%
+    baseChance = 30 + (captureRate / 255) * 20;
+  } else {
+    // Common/Uncommon Pokemon: 50-90%
+    baseChance = 50 + (captureRate / 255) * 40;
+  }
+  
+  return Math.min(90, Math.max(10, baseChance)); // Cap between 10-90%
+}
+
+// Initialize or update global spawn
+async function updateGlobalSpawn(database) {
+  const globalSpawn = await database.collection('global_spawn').findOne({ id: 'current' });
+  const now = Date.now();
+  
+  // Check if we need a new spawn
+  if (!globalSpawn || !globalSpawn.nextSpawnTime || now >= globalSpawn.nextSpawnTime) {
+    // Generate new spawn
+    const randomId = Math.floor(Math.random() * MAX_POKEMON_ID) + 1;
+    const pokemonData = await fetchPokemonData(randomId);
+    
+    // Random interval for next spawn (5-20 minutes)
+    const nextInterval = MIN_SPAWN_INTERVAL + Math.random() * (MAX_SPAWN_INTERVAL - MIN_SPAWN_INTERVAL);
+    
+    const newSpawn = {
+      id: 'current',
+      pokemon: pokemonData,
+      spawnedAt: now,
+      nextSpawnTime: null, // Will be set after caught or fled
+      caughtBy: null,
+      catchAttempts: {} // Track attempts per user: { userId: attemptCount }
+    };
+    
+    await database.collection('global_spawn').updateOne(
+      { id: 'current' },
+      { $set: newSpawn },
+      { upsert: true }
+    );
+    
+    return newSpawn;
+  }
+  
+  return globalSpawn;
+}
+
 export async function GET(request) {
   const { pathname, searchParams } = new URL(request.url);
 
@@ -530,6 +660,38 @@ export async function GET(request) {
           setAchievements: user.setAchievements || {}
         } 
       });
+    }
+
+    // Get current Pokemon spawn
+    if (pathname.includes('/api/wilds/current')) {
+      const database = await connectDB();
+      const spawn = await updateGlobalSpawn(database);
+      
+      // Don't send if already caught
+      if (spawn.caughtBy) {
+        return NextResponse.json({ 
+          spawn: null,
+          nextSpawnTime: spawn.nextSpawnTime
+        });
+      }
+      
+      return NextResponse.json({ spawn });
+    }
+
+    // Get user's caught Pokemon
+    if (pathname.includes('/api/wilds/my-pokemon')) {
+      const userId = searchParams.get('userId');
+      if (!userId) {
+        return NextResponse.json({ error: 'User ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const caughtPokemon = await database.collection('caught_pokemon')
+        .find({ userId })
+        .sort({ caughtAt: -1 })
+        .toArray();
+
+      return NextResponse.json({ pokemon: caughtPokemon });
     }
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -1207,6 +1369,106 @@ export async function POST(request) {
         pointsAwarded: totalPoints,
         cardsBreakdown: cards.length
       });
+    }
+
+    // Attempt to catch Pokemon
+    if (pathname.includes('/api/wilds/catch')) {
+      const { userId } = body;
+      
+      if (!userId) {
+        return NextResponse.json({ error: 'User ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const spawn = await database.collection('global_spawn').findOne({ id: 'current' });
+      
+      if (!spawn || !spawn.pokemon || spawn.caughtBy) {
+        return NextResponse.json({ error: 'No Pokemon available to catch' }, { status: 400 });
+      }
+
+      // Check if user has already made 3 attempts
+      const userAttempts = spawn.catchAttempts[userId] || 0;
+      if (userAttempts >= MAX_CATCH_ATTEMPTS) {
+        return NextResponse.json({ 
+          success: false, 
+          fled: true, 
+          message: 'The Pokemon has fled from you!'
+        });
+      }
+
+      // Calculate catch chance
+      const catchChance = calculateCatchChance(
+        spawn.pokemon.captureRate,
+        spawn.pokemon.isLegendary,
+        spawn.pokemon.isMythical
+      );
+
+      // Attempt catch
+      const roll = Math.random() * 100;
+      const caught = roll < catchChance;
+
+      // Update attempts
+      const newAttempts = userAttempts + 1;
+      const updateData = {
+        [`catchAttempts.${userId}`]: newAttempts
+      };
+
+      if (caught) {
+        // Pokemon caught!
+        const caughtPokemon = {
+          ...spawn.pokemon,
+          userId: userId,
+          caughtAt: new Date().toISOString(),
+          spawnId: spawn.spawnedAt
+        };
+
+        // Save to user's caught Pokemon
+        await database.collection('caught_pokemon').insertOne(caughtPokemon);
+
+        // Mark spawn as caught and set next spawn time
+        const nextInterval = MIN_SPAWN_INTERVAL + Math.random() * (MAX_SPAWN_INTERVAL - MIN_SPAWN_INTERVAL);
+        await database.collection('global_spawn').updateOne(
+          { id: 'current' },
+          { 
+            $set: { 
+              caughtBy: userId,
+              nextSpawnTime: Date.now() + nextInterval
+            }
+          }
+        );
+
+        return NextResponse.json({ 
+          success: true, 
+          caught: true,
+          pokemon: caughtPokemon,
+          message: `You caught ${spawn.pokemon.displayName}!`
+        });
+      } else {
+        // Failed attempt
+        await database.collection('global_spawn').updateOne(
+          { id: 'current' },
+          { $set: updateData }
+        );
+
+        if (newAttempts >= MAX_CATCH_ATTEMPTS) {
+          return NextResponse.json({ 
+            success: false, 
+            caught: false,
+            fled: true,
+            attemptsRemaining: 0,
+            message: `${spawn.pokemon.displayName} has fled!`
+          });
+        }
+
+        return NextResponse.json({ 
+          success: false, 
+          caught: false,
+          fled: false,
+          attemptsRemaining: MAX_CATCH_ATTEMPTS - newAttempts,
+          catchChance: Math.round(catchChance),
+          message: `${spawn.pokemon.displayName} broke free!`
+        });
+      }
     }
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });

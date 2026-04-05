@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sparkles, Package, Library, LogOut, Coins, Search, Clock, Eye, Users, Send, X, Check } from 'lucide-react';
+import Link from 'next/link';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -999,6 +1000,11 @@ export default function App() {
             <h1 className="text-2xl font-bold text-white drop-shadow-[0_0_10px_rgba(6,182,212,0.5)]">Pokemon Pack Ripper</h1>
           </div>
           <div className="flex items-center gap-4">
+            <Link href="/wilds">
+              <Button className="bg-green-600 hover:bg-green-500 border-2 border-green-400 font-bold shadow-[0_0_15px_rgba(34,197,94,0.5)]">
+                🌿 Pokemon Wilds
+              </Button>
+            </Link>
             <div className="flex items-center gap-2 bg-slate-800/50 px-4 py-2 rounded-lg border-2 border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)] backdrop-blur-sm">
               <Coins className="h-5 w-5 text-cyan-400" />
               <span className="font-bold text-cyan-400">{user.points || 0}</span>
