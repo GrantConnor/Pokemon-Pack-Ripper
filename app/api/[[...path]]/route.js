@@ -1467,7 +1467,10 @@ export async function POST(request) {
     if (pathname.includes('/api/friends/accept-pokemon-trade')) {
       const { userId, tradeId } = body;
       
+      console.log('🔄 Accept Pokemon Trade Request:', { userId, tradeId });
+      
       if (!userId || !tradeId) {
+        console.log('❌ Missing userId or tradeId');
         return NextResponse.json({ error: 'User ID and Trade ID required' }, { status: 400 });
       }
 
@@ -1475,18 +1478,28 @@ export async function POST(request) {
       const user = await database.collection('users').findOne({ id: userId });
 
       if (!user) {
+        console.log('❌ User not found:', userId);
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
+
+      console.log('✓ User found:', user.username);
+      console.log('📋 User trade requests:', user.tradeRequests);
 
       // Find the trade request
       const tradeRequest = user.tradeRequests?.find(t => t.id === tradeId);
       if (!tradeRequest) {
+        console.log('❌ Trade request not found:', tradeId);
+        console.log('Available trades:', user.tradeRequests?.map(t => t.id));
         return NextResponse.json({ error: 'Trade request not found' }, { status: 404 });
       }
+
+      console.log('✓ Trade request found:', tradeRequest);
 
       // Get both Pokemon from the database
       const fromPokemonId = tradeRequest.offeredPokemon[0].pokemonId;
       const toPokemonId = tradeRequest.requestedPokemon[0].pokemonId;
+
+      console.log('🔍 Looking for Pokemon:', { fromPokemonId, toPokemonId });
 
       const fromPokemon = await database.collection('caught_pokemon').findOne({
         _id: new ObjectId(fromPokemonId),
@@ -1499,8 +1512,11 @@ export async function POST(request) {
       });
 
       if (!fromPokemon || !toPokemon) {
+        console.log('❌ Pokemon not found:', { fromPokemon: !!fromPokemon, toPokemon: !!toPokemon });
         return NextResponse.json({ error: 'One or both Pokemon not found' }, { status: 404 });
       }
+
+      console.log('✓ Both Pokemon found');
 
       // Execute the trade: swap ownership
       await database.collection('caught_pokemon').updateOne(
@@ -1512,6 +1528,8 @@ export async function POST(request) {
         { _id: toPokemon._id },
         { $set: { userId: tradeRequest.fromId } }
       );
+
+      console.log('✓ Pokemon ownership swapped');
 
       // Remove trade request
       await database.collection('users').updateOne(
@@ -1529,6 +1547,8 @@ export async function POST(request) {
         { id: tradeRequest.fromId },
         { $inc: { tradesCompleted: 1 } }
       );
+
+      console.log('✅ Trade completed successfully!');
 
       return NextResponse.json({ 
         success: true,
