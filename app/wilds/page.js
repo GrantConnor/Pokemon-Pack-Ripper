@@ -543,7 +543,6 @@ export default function PokemonWilds() {
                     className="w-full bg-red-600 hover:bg-red-500 text-white font-bold text-xl py-6"
                     disabled={catching}
                   >
-                    <Sparkles className="mr-2 h-5 w-5" />
                     Attempt to Catch
                   </Button>
                 </CardContent>
