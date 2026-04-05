@@ -1463,6 +1463,100 @@ export async function POST(request) {
       });
     }
 
+    // Accept Pokemon Trade
+    if (pathname.includes('/api/friends/accept-pokemon-trade')) {
+      const { userId, tradeId } = body;
+      
+      if (!userId || !tradeId) {
+        return NextResponse.json({ error: 'User ID and Trade ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const user = await database.collection('users').findOne({ id: userId });
+
+      if (!user) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      // Find the trade request
+      const tradeRequest = user.tradeRequests?.find(t => t.id === tradeId);
+      if (!tradeRequest) {
+        return NextResponse.json({ error: 'Trade request not found' }, { status: 404 });
+      }
+
+      // Get both Pokemon from the database
+      const fromPokemonId = tradeRequest.offeredPokemon[0].pokemonId;
+      const toPokemonId = tradeRequest.requestedPokemon[0].pokemonId;
+
+      const fromPokemon = await database.collection('caught_pokemon').findOne({
+        _id: new ObjectId(fromPokemonId),
+        userId: tradeRequest.fromId
+      });
+
+      const toPokemon = await database.collection('caught_pokemon').findOne({
+        _id: new ObjectId(toPokemonId),
+        userId: userId
+      });
+
+      if (!fromPokemon || !toPokemon) {
+        return NextResponse.json({ error: 'One or both Pokemon not found' }, { status: 404 });
+      }
+
+      // Execute the trade: swap ownership
+      await database.collection('caught_pokemon').updateOne(
+        { _id: fromPokemon._id },
+        { $set: { userId: userId } }
+      );
+
+      await database.collection('caught_pokemon').updateOne(
+        { _id: toPokemon._id },
+        { $set: { userId: tradeRequest.fromId } }
+      );
+
+      // Remove trade request
+      await database.collection('users').updateOne(
+        { id: userId },
+        { $pull: { tradeRequests: { id: tradeId } } }
+      );
+
+      // Update trade counts for both users
+      await database.collection('users').updateOne(
+        { id: userId },
+        { $inc: { tradesCompleted: 1 } }
+      );
+
+      await database.collection('users').updateOne(
+        { id: tradeRequest.fromId },
+        { $inc: { tradesCompleted: 1 } }
+      );
+
+      return NextResponse.json({ 
+        success: true,
+        message: `Trade completed! You received ${fromPokemon.displayName}`,
+        receivedPokemon: fromPokemon.displayName,
+        sentPokemon: toPokemon.displayName
+      });
+    }
+
+    // Decline Pokemon Trade
+    if (pathname.includes('/api/friends/decline-trade')) {
+      const { userId, tradeId } = body;
+      
+      if (!userId || !tradeId) {
+        return NextResponse.json({ error: 'User ID and Trade ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+
+      // Remove trade request
+      await database.collection('users').updateOne(
+        { id: userId },
+        { $pull: { tradeRequests: { id: tradeId } } }
+      );
+
+      return NextResponse.json({ success: true });
+    }
+
     // Trades: Send trade request
     if (pathname.includes('/api/trades/send')) {
       const { userId, friendId, offeredCards, requestedCards } = body;

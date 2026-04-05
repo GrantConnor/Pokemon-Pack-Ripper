@@ -352,6 +352,47 @@ export default function PokemonWilds() {
     }
   };
 
+  const handleAcceptPokemonTrade = async (trade) => {
+    try {
+      const response = await fetch('/api/friends/accept-pokemon-trade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          tradeId: trade.id
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        console.log(`Trade completed! Received ${data.receivedPokemon}, sent ${data.sentPokemon}`);
+        loadFriends();
+        loadMyPokemon();
+      } else {
+        console.error(data.error || 'Error accepting trade');
+      }
+    } catch (err) {
+      console.error('Error accepting trade:', err);
+    }
+  };
+
+  const handleDeclinePokemonTrade = async (trade) => {
+    try {
+      await fetch('/api/friends/decline-trade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          tradeId: trade.id
+        })
+      });
+
+      loadFriends();
+    } catch (err) {
+      console.error('Error declining trade:', err);
+    }
+  };
+
   const togglePokemonForTrade = (pokemon) => {
     if (selectedPokemonForTrade.find(p => p._id === pokemon._id)) {
       setSelectedPokemonForTrade(selectedPokemonForTrade.filter(p => p._id !== pokemon._id));
@@ -1630,14 +1671,14 @@ export default function PokemonWilds() {
                           <div className="flex gap-2 mt-2">
                             <Button
                               size="sm"
-                              onClick={() => {/* Handle accept trade */}}
+                              onClick={() => handleAcceptPokemonTrade(trade)}
                               className="flex-1 bg-green-600 hover:bg-green-500"
                             >
                               Accept Trade
                             </Button>
                             <Button
                               size="sm"
-                              onClick={() => {/* Handle decline trade */}}
+                              onClick={() => handleDeclinePokemonTrade(trade)}
                               className="flex-1 bg-gray-600 hover:bg-gray-500"
                             >
                               Decline
