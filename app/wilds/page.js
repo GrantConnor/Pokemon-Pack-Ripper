@@ -191,12 +191,12 @@ export default function PokemonWilds() {
     if (!friendSearchTerm.trim()) return;
     
     try {
-      const response = await fetch('/api/friends/add', {
+      const response = await fetch('/api/friends/send-request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          friendUsername: friendSearchTerm.trim()
+          targetUsername: friendSearchTerm.trim()
         })
       });
 
