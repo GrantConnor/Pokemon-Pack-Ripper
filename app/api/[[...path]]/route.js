@@ -374,26 +374,17 @@ async function fetchPokemonData(pokemonId) {
     // Extract data
     const types = pokemon.types.map(t => t.type.name);
     
-    // Get sprite - CRITICAL: official-artwork does NOT have shiny sprites!
+    // Get sprite - USE DIRECT URL PATTERN (no API needed!)
     let sprite;
     if (isShiny) {
-      // SHINY: Use sprites.front_shiny directly (official-artwork has NO shiny version!)
-      sprite = pokemon.sprites.front_shiny || 
-               pokemon.sprites.other?.home?.front_shiny ||
-               pokemon.sprites.front_default;
-      
+      // SHINY: Direct URL pattern
+      sprite = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${pokemonId}.png`;
       console.log(`✨ SHINY SPAWN: ${pokemon.name} #${pokemonId}`);
       console.log(`   Sprite URL: ${sprite}`);
-      console.log(`   Has /shiny/: ${sprite?.includes('/shiny/')}`);
     } else {
-      // Normal sprite - use official-artwork for better quality
+      // NORMAL: Use official-artwork for better quality
       sprite = pokemon.sprites.other?.['official-artwork']?.front_default || 
                pokemon.sprites.front_default;
-    }
-    
-    // VERIFY sprite URL
-    if (isShiny && sprite && !sprite.includes('/shiny/')) {
-      console.error(`❌ ERROR: Shiny Pokemon ${pokemon.name} has NON-SHINY sprite URL: ${sprite}`);
     }
     
     // Get all learnable moves with their data
@@ -1711,25 +1702,13 @@ export async function POST(request) {
       // FORCE shiny to TRUE
       pokemonData.isShiny = true;
       
-      // FORCE shiny sprite - official-artwork does NOT have shiny!
-      const pokemonResponse = await axios.get(`${POKEAPI_BASE}/pokemon/${randomId}`);
-      const pokemon = pokemonResponse.data;
-      
-      // CRITICAL: Use sprites.front_shiny (official-artwork has NO shiny version!)
-      let shinySprite = pokemon.sprites.front_shiny || 
-                       pokemon.sprites.other?.home?.front_shiny ||
-                       pokemon.sprites.front_default;
-      
+      // FORCE shiny sprite - USE DIRECT URL PATTERN (no API fetch needed!)
+      const shinySprite = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${randomId}.png`;
       pokemonData.sprite = shinySprite;
       
       console.log(`✨✨ ADMIN SHINY SPAWN #${randomId}: ${pokemonData.displayName}`);
       console.log(`   Sprite URL: ${shinySprite}`);
-      console.log(`   Has /shiny/: ${shinySprite?.includes('/shiny/')}`);
-      
-      // VERIFY it's actually a shiny sprite
-      if (!shinySprite || !shinySprite.includes('/shiny/')) {
-        console.error(`❌ ERROR: Admin spawn sprite is NOT shiny: ${shinySprite}`);
-      }
+      console.log(`   isShiny: ${pokemonData.isShiny}`);
       
       // Add level and stats
       pokemonData.level = Math.floor(Math.random() * 46) + 5;
