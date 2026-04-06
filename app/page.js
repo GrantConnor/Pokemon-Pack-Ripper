@@ -1389,8 +1389,13 @@ export default function App() {
     if (!rarity) return 'bg-gray-500';
     if (rarity === 'Common') return 'bg-gray-500';
     if (rarity === 'Uncommon') return 'bg-green-500';
-    if (rarity.includes('Rare') || rarity.includes('Holo')) return 'bg-purple-500';
+    if (rarity.includes('Hyper') || rarity.includes('Secret')) return 'bg-red-500';
+    if (rarity.includes('Rainbow')) return 'bg-pink-500';
     if (rarity.includes('Ultra')) return 'bg-yellow-500';
+    if (rarity.includes('Illustration')) return 'bg-orange-500';
+    if (rarity.includes('Shiny')) return 'bg-emerald-500';
+    if (rarity.includes('Double') || rarity.includes('EX')) return 'bg-blue-500';
+    if (rarity.includes('Rare') || rarity.includes('Holo')) return 'bg-purple-500';
     return 'bg-blue-500';
   };
 
@@ -2263,7 +2268,7 @@ export default function App() {
                               </Badge>
                             )}
                             <Badge className={`absolute bottom-1 left-1 border border-cyan-500/50 text-xs px-1.5 py-0.5 shadow-[0_0_10px_rgba(0,0,0,0.5)] ${getRarityColor(card.rarity)}`}>
-                              {card.rarity?.split(' ')[0] || 'Common'}
+                              {card.rarity || 'Common'}
                             </Badge>
                           </div>
                         </Card>

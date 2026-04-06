@@ -40,6 +40,11 @@ function openPack(cards, setId = null) {
     return card;
   };
 
+  const getRandomCard = (pool) => {
+    if (!pool.length) return null;
+    return pool[Math.floor(Math.random() * pool.length)];
+  };
+
   const rarityValue = (card) => String(card?.rarity || '').toLowerCase();
   const isStandardRareCard = (card) => {
     const rarity = rarityValue(card);
@@ -98,14 +103,24 @@ function openPack(cards, setId = null) {
   const lowPool = lowRarityCards.length ? lowRarityCards : nonEnergyCards;
 
   for (let i = 0; i < 5; i++) {
-    pulledCards.push(getUniqueCard(commons) || getUniqueCard(lowPool) || getUniqueCard(nonEnergyCards));
+    pulledCards.push(
+      getUniqueCard(commons) ||
+      getUniqueCard(lowPool) ||
+      getRandomCard(commons) ||
+      getRandomCard(lowPool)
+    );
   }
 
   for (let i = 0; i < 3; i++) {
-    pulledCards.push(getUniqueCard(uncommons) || getUniqueCard(lowPool) || getUniqueCard(nonEnergyCards));
+    pulledCards.push(
+      getUniqueCard(uncommons) ||
+      getUniqueCard(lowPool) ||
+      getRandomCard(uncommons) ||
+      getRandomCard(lowPool)
+    );
   }
 
-  const reverseHoloBase = getUniqueCard(lowPool) || getUniqueCard(nonEnergyCards);
+  const reverseHoloBase = getUniqueCard(lowPool) || getRandomCard(lowPool);
   if (reverseHoloBase) {
     pulledCards.push({ ...reverseHoloBase, isReverseHolo: true });
   }
@@ -156,11 +171,13 @@ function openPack(cards, setId = null) {
   }
 
   if (!legacyHitRare) {
-    rareSlotCard = getUniqueCard(uncommons) || getUniqueCard(lowPool);
+    rareSlotCard = getUniqueCard(uncommons) || getUniqueCard(lowPool) || getRandomCard(uncommons) || getRandomCard(lowPool);
   }
 
   if (!rareSlotCard) {
-    rareSlotCard = getUniqueCard(nonEnergyCards);
+    rareSlotCard = legacyHitRare
+      ? (getUniqueCard(standardRares) || getRandomCard(standardRares) || getUniqueCard(lowPool) || getRandomCard(lowPool))
+      : (getUniqueCard(lowPool) || getRandomCard(lowPool));
   }
 
   if (rareSlotCard) {

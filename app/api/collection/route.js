@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
+import { normalizeCardRarity } from '@/lib/pokemon-tcg';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -8,7 +9,7 @@ function slimCard(card, favoriteCardIds = []) {
   return {
     id: card?.id,
     name: card?.name,
-    rarity: card?.rarity,
+    rarity: normalizeCardRarity(card),
     supertype: card?.supertype,
     subtypes: card?.subtypes || [],
     types: card?.types || [],
