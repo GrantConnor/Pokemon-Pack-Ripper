@@ -149,12 +149,22 @@ async function connectDB() {
   console.log('DB_NAME:', process.env.DB_NAME);
   console.log('MONGO_URL exists:', !!process.env.MONGO_URL);
 
-  client = new MongoClient(process.env.MONGO_URL);
+  client = new MongoClient(process.env.MONGO_URL, {
+    serverSelectionTimeoutMS: 10000,
+  });
   await client.connect();
 
   console.log('Mongo connected successfully');
 
   db = client.db(process.env.DB_NAME);
+
+  try {
+    await db.collection('users').createIndex({ normalizedUsername: 1 }, { sparse: true });
+    console.log('Ensured users.normalizedUsername index');
+  } catch (indexError) {
+    console.error('Failed to ensure users.normalizedUsername index:', indexError?.message || indexError);
+  }
+
   return db;
 }
 
@@ -168,9 +178,43 @@ function hashPassword(password) {
   return Buffer.from(String(password)).toString('base64');
 }
 
-function verifyPassword(password, hashedPassword) {
-  if (typeof hashedPassword !== 'string') return false;
-  return hashPassword(password) === hashedPassword;
+function verifyPassword(password, storedPassword) {
+  if (typeof storedPassword !== 'string') {
+    return { valid: false, strategy: 'invalid-stored-password-type' };
+  }
+
+  const rawPassword = String(password ?? '');
+  const trimmedPassword = rawPassword.trim();
+  const hashedRawPassword = hashPassword(rawPassword);
+  const hashedTrimmedPassword = hashPassword(trimmedPassword);
+
+  if (storedPassword === hashedTrimmedPassword) {
+    return { valid: true, strategy: 'base64-trimmed' };
+  }
+
+  if (storedPassword === hashedRawPassword) {
+    return { valid: true, strategy: 'base64-raw' };
+  }
+
+  // Legacy fallback: some manually-seeded accounts may still have plaintext passwords.
+  if (storedPassword === trimmedPassword) {
+    return { valid: true, strategy: 'plaintext-trimmed' };
+  }
+
+  if (storedPassword === rawPassword) {
+    return { valid: true, strategy: 'plaintext-raw' };
+  }
+
+  return { valid: false, strategy: 'no-match' };
+}
+
+function logAuth(event, details = {}) {
+  const timestamp = new Date().toISOString();
+  try {
+    console.log(`[AUTH][${timestamp}] ${event}`, JSON.stringify(details));
+  } catch {
+    console.log(`[AUTH][${timestamp}] ${event}`, details);
+  }
 }
 
 // Calculate regenerated points based on time elapsed
@@ -1086,44 +1130,71 @@ export async function POST(request) {
     // Sign up
 if (pathname.includes('/api/auth/signup')) {
   const { username, password } = body;
+  const authTraceId = uuidv4();
+
+  logAuth('signup.request.received', {
+    authTraceId,
+    pathname,
+    usernamePresent: typeof username === 'string' && username.length > 0,
+    usernameLength: typeof username === 'string' ? username.length : 0,
+    passwordLength: typeof password === 'string' ? password.length : 0,
+    contentType: request.headers.get('content-type') || null,
+    host: request.headers.get('host') || null,
+    userAgent: request.headers.get('user-agent') || null,
+  });
 
   if (!username || !password) {
-    return NextResponse.json({ error: 'Username and password required' }, { status: 400 });
+    logAuth('signup.request.invalid', { authTraceId, reason: 'missing-username-or-password' });
+    return NextResponse.json({ error: 'Username and password required', authTraceId }, { status: 400 });
   }
 
   const trimmedUsername = String(username).trim();
   const normalizedUsername = normalizeUsername(trimmedUsername);
   const trimmedPassword = String(password).trim();
 
+  logAuth('signup.request.normalized', {
+    authTraceId,
+    trimmedUsername,
+    normalizedUsername,
+    trimmedUsernameLength: trimmedUsername.length,
+    trimmedPasswordLength: trimmedPassword.length,
+  });
+
   if (!trimmedUsername || !trimmedPassword) {
-    return NextResponse.json({ error: 'Username and password required' }, { status: 400 });
+    logAuth('signup.request.invalid', { authTraceId, reason: 'blank-after-trim', normalizedUsername });
+    return NextResponse.json({ error: 'Username and password required', authTraceId }, { status: 400 });
   }
 
   const database = await connectDB();
+  logAuth('signup.db.connected', { authTraceId, dbName: process.env.DB_NAME || null });
 
-  // Check if user exists using normalized username
-  const existingUser = await database.collection('users').findOne({
-    normalizedUsername
-  });
+  const existingUser = await database.collection('users').findOne({ normalizedUsername });
 
-  // Fallback for older records that may not have normalizedUsername yet
   if (existingUser) {
-    return NextResponse.json({ error: 'Username already exists' }, { status: 409 });
+    logAuth('signup.duplicate.normalized', {
+      authTraceId,
+      normalizedUsername,
+      existingUserId: existingUser.id || String(existingUser._id),
+      existingUsername: existingUser.username || null,
+    });
+    return NextResponse.json({ error: 'Username already exists', authTraceId }, { status: 409 });
   }
 
-  const legacyUsers = await database.collection('users').find({
-    username: { $exists: true }
-  }).toArray();
+  const legacyUsers = await database.collection('users').find({ username: { $exists: true } }).toArray();
+  logAuth('signup.legacy.scan.complete', { authTraceId, legacyUsersScanned: legacyUsers.length, normalizedUsername });
 
-  const legacyMatch = legacyUsers.find(
-    (u) => normalizeUsername(u.username) === normalizedUsername
-  );
+  const legacyMatch = legacyUsers.find((u) => normalizeUsername(u.username) === normalizedUsername);
 
   if (legacyMatch) {
-    return NextResponse.json({ error: 'Username already exists' }, { status: 409 });
+    logAuth('signup.duplicate.legacy', {
+      authTraceId,
+      normalizedUsername,
+      existingUserId: legacyMatch.id || String(legacyMatch._id),
+      existingUsername: legacyMatch.username || null,
+    });
+    return NextResponse.json({ error: 'Username already exists', authTraceId }, { status: 409 });
   }
 
-  // Create new user
   const newUser = {
     id: uuidv4(),
     username: trimmedUsername,
@@ -1141,10 +1212,17 @@ if (pathname.includes('/api/auth/signup')) {
     createdAt: new Date().toISOString()
   };
 
-  await database.collection('users').insertOne(newUser);
+  const insertResult = await database.collection('users').insertOne(newUser);
+  logAuth('signup.insert.success', {
+    authTraceId,
+    insertedId: String(insertResult.insertedId),
+    newUserId: newUser.id,
+    normalizedUsername,
+  });
 
   return NextResponse.json({
     success: true,
+    authTraceId,
     user: {
       id: newUser.id,
       username: newUser.username,
@@ -1156,68 +1234,133 @@ if (pathname.includes('/api/auth/signup')) {
 }
 
     // Sign in
+
 if (pathname.includes('/api/auth/signin')) {
   const { username, password } = body;
+  const authTraceId = uuidv4();
+
+  logAuth('signin.request.received', {
+    authTraceId,
+    pathname,
+    usernamePresent: typeof username === 'string' && username.length > 0,
+    usernameLength: typeof username === 'string' ? username.length : 0,
+    passwordLength: typeof password === 'string' ? password.length : 0,
+    contentType: request.headers.get('content-type') || null,
+    host: request.headers.get('host') || null,
+    userAgent: request.headers.get('user-agent') || null,
+  });
 
   if (!username || !password) {
-    return NextResponse.json({ error: 'Username and password required' }, { status: 400 });
+    logAuth('signin.request.invalid', { authTraceId, reason: 'missing-username-or-password' });
+    return NextResponse.json({ error: 'Username and password required', authTraceId }, { status: 400 });
   }
 
-  const trimmedUsername = String(username).trim();
+  const rawUsername = String(username);
+  const trimmedUsername = rawUsername.trim();
   const normalizedUsername = normalizeUsername(trimmedUsername);
-  const trimmedPassword = String(password).trim();
+  const rawPassword = String(password);
+  const trimmedPassword = rawPassword.trim();
+
+  logAuth('signin.request.normalized', {
+    authTraceId,
+    rawUsernameLength: rawUsername.length,
+    trimmedUsername,
+    normalizedUsername,
+    rawPasswordLength: rawPassword.length,
+    trimmedPasswordLength: trimmedPassword.length,
+  });
 
   if (!trimmedUsername || !trimmedPassword) {
-    return NextResponse.json({ error: 'Username and password required' }, { status: 400 });
+    logAuth('signin.request.invalid', { authTraceId, reason: 'blank-after-trim', normalizedUsername });
+    return NextResponse.json({ error: 'Username and password required', authTraceId }, { status: 400 });
   }
 
   const database = await connectDB();
+  logAuth('signin.db.connected', { authTraceId, dbName: process.env.DB_NAME || null });
 
-  // First try exact normalized lookup
-  let user = await database.collection('users').findOne({
-    normalizedUsername
-  });
+  let user = await database.collection('users').findOne({ normalizedUsername });
+  let lookupStrategy = 'normalizedUsername';
 
-  // Fallback for older accounts that do not yet have normalizedUsername
   if (!user) {
-    const legacyUsers = await database.collection('users').find({
-      username: { $exists: true }
-    }).toArray();
+    const legacyUsers = await database.collection('users').find({ username: { $exists: true } }).toArray();
+    lookupStrategy = 'legacy-username-scan';
+    logAuth('signin.legacy.scan.complete', { authTraceId, legacyUsersScanned: legacyUsers.length, normalizedUsername });
 
-    user = legacyUsers.find(
-      (u) => normalizeUsername(u.username) === normalizedUsername
-    ) || null;
+    user = legacyUsers.find((u) => normalizeUsername(u.username) === normalizedUsername) || null;
 
-    // Backfill normalizedUsername for old records
     if (user && !user.normalizedUsername) {
       await database.collection('users').updateOne(
         { _id: user._id },
         { $set: { normalizedUsername: normalizeUsername(user.username) } }
       );
       user.normalizedUsername = normalizeUsername(user.username);
+      logAuth('signin.legacy.backfill.normalized-username', {
+        authTraceId,
+        userId: user.id || String(user._id),
+        normalizedUsername: user.normalizedUsername,
+      });
     }
   }
 
   if (!user) {
-    return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+    logAuth('signin.user.not-found', { authTraceId, normalizedUsername, lookupStrategy });
+    return NextResponse.json({ error: 'Invalid credentials', authTraceId }, { status: 401 });
   }
 
-  if (!verifyPassword(trimmedPassword, user.password)) {
-    return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+  logAuth('signin.user.found', {
+    authTraceId,
+    userId: user.id || String(user._id),
+    username: user.username || null,
+    normalizedUsername: user.normalizedUsername || null,
+    lookupStrategy,
+    storedPasswordType: typeof user.password,
+    storedPasswordLength: typeof user.password === 'string' ? user.password.length : null,
+  });
+
+  const passwordCheck = verifyPassword(rawPassword, user.password);
+  if (!passwordCheck.valid) {
+    logAuth('signin.password.mismatch', {
+      authTraceId,
+      userId: user.id || String(user._id),
+      username: user.username || null,
+      normalizedUsername,
+      strategyTried: passwordCheck.strategy,
+    });
+    return NextResponse.json({ error: 'Invalid credentials', authTraceId }, { status: 401 });
+  }
+
+  logAuth('signin.password.match', {
+    authTraceId,
+    userId: user.id || String(user._id),
+    strategy: passwordCheck.strategy,
+  });
+
+  if (passwordCheck.strategy.startsWith('plaintext')) {
+    const migratedPassword = hashPassword(trimmedPassword);
+    await database.collection('users').updateOne(
+      { _id: user._id },
+      { $set: { password: migratedPassword } }
+    );
+    user.password = migratedPassword;
+    logAuth('signin.password.migrated-to-base64', {
+      authTraceId,
+      userId: user.id || String(user._id),
+      fromStrategy: passwordCheck.strategy,
+    });
   }
 
   const resolvedUserId = user.id || String(user._id);
 
-  // Backfill missing id for old accounts
   if (!user.id) {
     await database.collection('users').updateOne(
       { _id: user._id },
       { $set: { id: resolvedUserId } }
     );
     user.id = resolvedUserId;
+    logAuth('signin.user.backfill.id', { authTraceId, resolvedUserId });
   }
 
-  // Calculate and update regenerated points
+  const previousPoints = user.points;
   const newPoints = calculateRegeneratedPoints(user);
   const nextPointsIn = calculateNextPointsTime(user);
 
@@ -1232,10 +1375,27 @@ if (pathname.includes('/api/auth/signin')) {
       }
     );
     user.points = newPoints;
+    logAuth('signin.points.regenerated', {
+      authTraceId,
+      userId: resolvedUserId,
+      previousPoints,
+      newPoints,
+      nextPointsIn,
+    });
   }
+
+  logAuth('signin.success', {
+    authTraceId,
+    userId: resolvedUserId,
+    username: user.username || null,
+    normalizedUsername,
+    points: user.points,
+    nextPointsIn,
+  });
 
   return NextResponse.json({
     success: true,
+    authTraceId,
     user: {
       id: resolvedUserId,
       username: user.username,
@@ -2860,7 +3020,12 @@ if (pathname.includes('/api/auth/signin')) {
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (error) {
-  console.error('POST Error:', error);
+  console.error('POST Error:', {
+    message: error?.message,
+    stack: error?.stack,
+    name: error?.name,
+    cause: error?.cause,
+  });
   return NextResponse.json(
     {
       error: error.message,
