@@ -216,7 +216,7 @@ function calculateRegeneratedPoints(user) {
   const hoursElapsed = timeElapsed / POINTS_REGEN_INTERVAL;
   const pointsToAdd = Math.floor(hoursElapsed * POINTS_REGEN_RATE);
   
-  return Math.min(user.points + pointsToAdd, 10000); // Cap at 10000 points
+  return user.points + pointsToAdd;
 }
 
 // Calculate time until next point regeneration
@@ -2561,9 +2561,13 @@ if (pathname.includes('/api/auth/signin')) {
 
       const database = await connectDB();
       
-      const allowedXpAmounts = new Set([50, 2500]);
-      const purchaseAmount = allowedXpAmounts.has(Number(xpAmount)) ? Number(xpAmount) : XP_PER_PURCHASE;
+      const parsedXpAmount = Number(xpAmount);
+      const purchaseAmount = Number.isFinite(parsedXpAmount) ? Math.floor(parsedXpAmount) : XP_PER_PURCHASE;
       const purchaseCost = purchaseAmount;
+
+      if (!Number.isInteger(purchaseAmount) || purchaseAmount <= 0) {
+        return NextResponse.json({ error: 'XP amount must be a positive whole number' }, { status: 400 });
+      }
 
       // Get user to check points
       const user = await database.collection('users').findOne({ id: userId });
