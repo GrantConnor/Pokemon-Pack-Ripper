@@ -38,8 +38,9 @@ export default function PokemonWilds() {
   const [viewingFriendPokemon, setViewingFriendPokemon] = useState(null);
   const [friendPokemonList, setFriendPokemonList] = useState([]);
   const [battleRequests, setBattleRequests] = useState([]);
-  const unreadSocialCount = pendingRequests.length + tradeRequests.length;
+  const [pendingRequests, setPendingRequests] = useState([]);
   const [tradeRequests, setTradeRequests] = useState([]);
+  const unreadSocialCount = pendingRequests.length + tradeRequests.length;
   const [showTradeDialog, setShowTradeDialog] = useState(false);
   const [tradePartner, setTradePartner] = useState(null);
   const [mySelectedPokemon, setMySelectedPokemon] = useState(null);
@@ -202,6 +203,7 @@ export default function PokemonWilds() {
       console.log('📥 Friends API response:', data);
       console.log('👥 Friends array:', data.friends);
       setFriends(data.friends || []);
+      setPendingRequests(data.pendingRequests || []);
       setBattleRequests(data.battleRequests || []);
       setTradeRequests(data.tradeRequests || []);
     } catch (err) {
