@@ -49,6 +49,7 @@ function openPack(cards, setId = null) {
     const rarity = rarityValue(card);
     return (
       rarity.includes('double rare') ||
+      rarity.includes('shiny rare') ||
       (rarity.includes('illustration rare') && !rarity.includes('special')) ||
       rarity.includes('special illustration rare') ||
       rarity.includes('ultra rare') ||
@@ -68,6 +69,7 @@ function openPack(cards, setId = null) {
 
   const specialPools = {
     doubleRare: nonEnergyCards.filter(card => rarityValue(card).includes('double rare') || rarityValue(card).includes('rare holo ex')),
+    shinyRare: nonEnergyCards.filter(card => rarityValue(card).includes('shiny rare')),
     ultraRare: nonEnergyCards.filter(card => rarityValue(card).includes('ultra rare') || rarityValue(card).includes('rare ultra')),
     illustrationRare: nonEnergyCards.filter(card => rarityValue(card).includes('illustration rare')),
     rainbowRare: nonEnergyCards.filter(card => rarityValue(card).includes('rare rainbow')),
@@ -77,6 +79,7 @@ function openPack(cards, setId = null) {
       const handled = [
         'double rare',
         'rare holo ex',
+        'shiny rare',
         'ultra rare',
         'rare ultra',
         'illustration rare',
@@ -108,7 +111,8 @@ function openPack(cards, setId = null) {
   }
 
   const weightedSpecialTable = [
-    { key: 'doubleRare', weight: 60 },
+    { key: 'doubleRare', weight: 45 },
+    { key: 'shinyRare', weight: 15 },
     { key: 'ultraRare', weight: 15 },
     { key: 'illustrationRare', weight: 15 },
     { key: 'rainbowRare', weight: 5 },

@@ -343,6 +343,7 @@ function openPack(cards, setId = null) {
   const rares = nonEnergyCards.filter(c => c.rarity === 'Rare' || c.rarity === 'Rare Holo');
   const doubleRares = nonEnergyCards.filter(c => c.rarity && (c.rarity.includes('Double Rare') || c.rarity.toLowerCase().includes(' ex')));
   const illustrationRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Illustration Rare') && !c.rarity.includes('Special'));
+  const shinyRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Shiny Rare'));
   const ultraRares = nonEnergyCards.filter(c => c.rarity && (c.rarity.includes('Ultra Rare') || c.rarity.includes('Rare Ultra')));
   const rainbowRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Rare Rainbow'));
   const specialIllustrationRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Special Illustration Rare'));
@@ -364,51 +365,52 @@ function openPack(cards, setId = null) {
 
   // Helper to select rare-or-better with BUFFED SYSTEM:
   // Step 1: Always get a regular rare
-  // Step 2: 20% chance (1 in 5 packs) to upgrade to special table [BUFFED from 10%]
+  // Step 2: 10% chance to upgrade to special table
   // Step 3: If upgrade triggers, roll on special rare table
   const selectRareOrBetter = () => {
     // Step 1: Get a regular rare by default
     let selectedCard = rares.length > 0 ? getUniqueCard(rares) : getUniqueCard(nonEnergyCards);
     
-    // Step 2: 20% chance to upgrade to something better (BUFFED!)
+    // Step 2: 10% chance to upgrade to something better
     const upgradeRoll = Math.random() * 100;
     
-    if (upgradeRoll < 20) {
+    if (upgradeRoll < 10) {
       // Step 3: You got the upgrade! Now roll on the special table
       const specialRoll = Math.random() * 100;
       
-      // Special table percentages (out of the 20% that get upgrades):
-      // Hyper Rare: 5% of upgrades (1% overall)
-      if (specialRoll < 5 && hyperRares.length > 0) {
+      // Special table percentages (out of the upgrade table):
+      // Hyper Rare: 2.5% of upgrades
+      if (specialRoll < 2.5 && hyperRares.length > 0) {
         const card = getUniqueCard(hyperRares);
         if (card) return card;
       }
-      // Secret Rare: 5% of upgrades (1% overall) - SAME AS HYPER RARE
-      else if (specialRoll < 10 && secretRares.length > 0) {
+      // Secret Rare: 2.5% of upgrades
+      else if (specialRoll < 5 && secretRares.length > 0) {
         const card = getUniqueCard(secretRares);
         if (card) return card;
       }
-      // Special Illustration Rare: 10% of upgrades (2% overall)
-      else if (specialRoll < 20 && specialIllustrationRares.length > 0) {
-        const card = getUniqueCard(specialIllustrationRares);
-        if (card) return card;
-      }
-      // Ultra Rare: 20% of upgrades (4% overall)
-      else if (specialRoll < 40 && ultraRares.length > 0) {
-        const card = getUniqueCard(ultraRares);
-        if (card) return card;
-      }
-      // Rainbow Rare: 20% of upgrades (4% overall) - SAME AS ULTRA RARE
-      else if (specialRoll < 60 && rainbowRares.length > 0) {
+      // Rainbow Rare: 5% of upgrades
+      else if (specialRoll < 10 && rainbowRares.length > 0) {
         const card = getUniqueCard(rainbowRares);
         if (card) return card;
       }
-      // Illustration Rare: 20% of upgrades (4% overall)
-      else if (specialRoll < 80 && illustrationRares.length > 0) {
-        const card = getUniqueCard(illustrationRares);
+      // Ultra Rare: 15% of upgrades
+      else if (specialRoll < 25 && ultraRares.length > 0) {
+        const card = getUniqueCard(ultraRares);
         if (card) return card;
       }
-      // Double Rare: 20% of upgrades (4% overall)
+      // Illustration Rare / Special Illustration Rare: 15% of upgrades
+      else if (specialRoll < 40 && (illustrationRares.length > 0 || specialIllustrationRares.length > 0)) {
+        const illustrationPool = [...illustrationRares, ...specialIllustrationRares];
+        const card = getUniqueCard(illustrationPool);
+        if (card) return card;
+      }
+      // Shiny Rare: 15% of upgrades
+      else if (specialRoll < 55 && shinyRares.length > 0) {
+        const card = getUniqueCard(shinyRares);
+        if (card) return card;
+      }
+      // Double Rare / Rare Holo EX: 45% of upgrades
       else if (specialRoll < 100 && doubleRares.length > 0) {
         const card = getUniqueCard(doubleRares);
         if (card) return card;
