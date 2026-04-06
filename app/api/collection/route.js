@@ -4,7 +4,7 @@ import { connectDB } from '@/lib/mongodb';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function slimCard(card) {
+function slimCard(card, favoriteCardIds = []) {
   return {
     id: card?.id,
     name: card?.name,
@@ -18,6 +18,7 @@ function slimCard(card) {
     pulledAt: card?.pulledAt || null,
     viewed: !!card?.viewed,
     packNumber: card?.packNumber || 1,
+    favorite: favoriteCardIds.includes(card?.id),
   };
 }
 
@@ -34,8 +35,8 @@ export async function GET(request) {
     }
 
     const projection = limit
-      ? { collection: { $slice: [offset, limit] } }
-      : { collection: 1 };
+      ? { collection: { $slice: [offset, limit] }, favoriteCardIds: 1 }
+      : { collection: 1, favoriteCardIds: 1 };
 
     const database = await connectDB();
     const user = await database.collection('users').findOne(
@@ -48,7 +49,8 @@ export async function GET(request) {
     }
 
     const rawCollection = Array.isArray(user.collection) ? user.collection : [];
-    const collection = rawCollection.map(slimCard);
+    const favoriteCardIds = Array.isArray(user.favoriteCardIds) ? user.favoriteCardIds : [];
+    const collection = rawCollection.map(card => slimCard(card, favoriteCardIds));
 
     return NextResponse.json({
       collection,

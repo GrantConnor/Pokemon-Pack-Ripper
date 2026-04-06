@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sparkles, Package, Library, LogOut, Coins, Search, Clock, Eye, Users, Send, X, Check } from 'lucide-react';
+import { Sparkles, Package, Library, LogOut, Coins, Search, Clock, Eye, Users, Send, X, Check, Star } from 'lucide-react';
 import Link from 'next/link';
 
 
@@ -297,6 +297,9 @@ export default function App() {
       const key = card.id;
       if (cardMap.has(key)) {
         cardMap.get(key).count++;
+        if (card.favorite) {
+          cardMap.get(key).favorite = true;
+        }
         // Keep the earliest pulled card for "newest" logic
         if (new Date(card.pulledAt) > new Date(cardMap.get(key).pulledAt)) {
           cardMap.get(key).pulledAt = card.pulledAt;
@@ -320,6 +323,11 @@ export default function App() {
         const typeA = getCardType(a);
         const typeB = getCardType(b);
         return typeA.localeCompare(typeB);
+      });
+    } else if (sortBy === 'favorites') {
+      grouped.sort((a, b) => {
+        if (!!b.favorite !== !!a.favorite) return Number(b.favorite) - Number(a.favorite);
+        return new Date(b.pulledAt) - new Date(a.pulledAt);
       });
     } else if (sortBy === 'rarity') {
       // Rarity order from LEAST rare to MOST rare
@@ -1255,6 +1263,39 @@ export default function App() {
     }
   };
 
+
+  const handleToggleFavorite = async (card, event) => {
+    event.stopPropagation();
+    if (!user) return;
+
+    const nextFavorite = !card.favorite;
+    const updatedCollection = collection.map(existingCard => (
+      existingCard.id === card.id ? { ...existingCard, favorite: nextFavorite } : existingCard
+    ));
+
+    setCollection(updatedCollection);
+    updateCollectionCache(updatedCollection);
+
+    try {
+      const response = await fetch('/api/collection/favorite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, cardId: card.id, favorite: nextFavorite })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update favorite');
+      }
+    } catch (error) {
+      const revertedCollection = collection.map(existingCard => (
+        existingCard.id === card.id ? { ...existingCard, favorite: card.favorite } : existingCard
+      ));
+      setCollection(revertedCollection);
+      updateCollectionCache(revertedCollection);
+      console.error('Error updating favorite:', error);
+    }
+  };
+
   const getRarityColor = (rarity) => {
     if (!rarity) return 'bg-gray-500';
     if (rarity === 'Common') return 'bg-gray-500';
@@ -1712,6 +1753,7 @@ export default function App() {
                     <SelectItem value="set">Set</SelectItem>
                     <SelectItem value="type">Type</SelectItem>
                     <SelectItem value="rarity">Rarity</SelectItem>
+                    <SelectItem value="favorites">Favorites First</SelectItem>
                     <SelectItem value="none">No Sort</SelectItem>
                   </SelectContent>
                 </Select>
@@ -1833,7 +1875,7 @@ export default function App() {
                     return (
                       <Card 
                         key={card.id} 
-                        className={`overflow-visible hover:scale-110 hover:z-50 transition-transform bg-slate-800/50 backdrop-blur-sm border-2 ${
+                        className={`group overflow-visible hover:scale-110 hover:z-50 transition-transform bg-slate-800/50 backdrop-blur-sm border-2 ${
                           isSelectedForBreakdown 
                             ? 'border-4 border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.8)]' 
                             : 'border-cyan-500/30 hover:border-cyan-500 hover:shadow-[0_0_25px_rgba(6,182,212,0.5)]'
@@ -1846,6 +1888,16 @@ export default function App() {
                             alt={card.name}
                             className="w-full h-auto rounded-t"
                           />
+                          {!breakdownMode && (
+                            <button
+                              type="button"
+                              aria-label={card.favorite ? 'Remove favorite' : 'Add favorite'}
+                              className={`absolute top-2 right-2 z-20 rounded-full border border-yellow-300/70 bg-slate-900/80 p-1.5 transition-all ${card.favorite ? 'opacity-100 shadow-[0_0_15px_rgba(250,204,21,0.7)]' : 'opacity-0 group-hover:opacity-100 hover:opacity-100'}`}
+                              onClick={(event) => handleToggleFavorite(card, event)}
+                            >
+                              <Star className={`h-4 w-4 ${card.favorite ? 'fill-yellow-300 text-yellow-300' : 'text-yellow-200'}`} />
+                            </button>
+                          )}
                           {/* Breakdown Selected Indicator */}
                           {isSelectedForBreakdown && (
                             <div className="absolute inset-0 bg-red-500/30 flex items-center justify-center">
@@ -1865,7 +1917,7 @@ export default function App() {
                             </Badge>
                           )}
                           {!breakdownMode && card.isReverseHolo && (
-                            <Badge className="absolute top-2 right-2 bg-gradient-to-r from-cyan-400 to-blue-500 text-white border border-cyan-300 text-xs shadow-[0_0_10px_rgba(6,182,212,0.5)]">
+                            <Badge className="absolute top-12 right-2 bg-gradient-to-r from-cyan-400 to-blue-500 text-white border border-cyan-300 text-xs shadow-[0_0_10px_rgba(6,182,212,0.5)]">
                               Reverse
                             </Badge>
                           )}
