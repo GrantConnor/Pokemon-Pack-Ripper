@@ -367,45 +367,53 @@ export default function App() {
 
     let grouped = Array.from(cardMap.values());
 
-    // Sort
-    if (sortBy === 'newest') {
-      grouped.sort((a, b) => new Date(b.pulledAt) - new Date(a.pulledAt));
-    } else if (sortBy === 'name') {
-      grouped.sort((a, b) => a.name.localeCompare(b.name));
-    } else if (sortBy === 'set') {
-      grouped.sort((a, b) => (a.set?.name || '').localeCompare(b.set?.name || ''));
-    } else if (sortBy === 'type') {
+    const rarityOrder = { 
+      'Common': 1, 
+      'Uncommon': 2, 
+      'Rare': 3, 
+      'Rare Holo': 4,
+      'Rare Holo EX': 5,
+      'Double Rare': 6,
+      'Illustration Rare': 7,
+      'Special Illustration Rare': 8,
+      'Ultra Rare': 9,
+      'Rare Ultra': 10,
+      'Rare Rainbow': 11,
+      'Hyper Rare': 12,
+      'Secret Rare': 13,
+      'Rare Secret': 14,
+      'Amazing Rare': 15,
+      'Rare BREAK': 16,
+      'Rare Prism Star': 17,
+      'ACE SPEC Rare': 18,
+      'Shiny Rare': 19,
+      'Radiant Rare': 20,
+      'LEGEND': 21,
+    };
+
+    const selectedSorts = Array.isArray(sortBy) ? sortBy : (sortBy && sortBy !== 'none' ? [sortBy] : []);
+    if (selectedSorts.length > 0) {
       grouped.sort((a, b) => {
-        const typeA = getCardType(a);
-        const typeB = getCardType(b);
-        return typeA.localeCompare(typeB);
-      });
-    } else if (sortBy === 'favorites') {
-      grouped.sort((a, b) => {
-        if (!!b.favorite !== !!a.favorite) return Number(b.favorite) - Number(a.favorite);
-        return new Date(b.pulledAt) - new Date(a.pulledAt);
-      });
-    } else if (sortBy === 'rarity') {
-      // Rarity order from LEAST rare to MOST rare
-      const rarityOrder = { 
-        'Common': 1, 
-        'Uncommon': 2, 
-        'Rare': 3, 
-        'Rare Holo': 4,
-        'Double Rare': 5,
-        'Illustration Rare': 6,
-        'Ultra Rare': 7,
-        'Rare Ultra': 7,
-        'Rare Rainbow': 7,
-        'Special Illustration Rare': 8,
-        'Hyper Rare': 9,
-        'Rare Secret': 9,
-        'Secret Rare': 9
-      };
-      grouped.sort((a, b) => {
-        const orderA = rarityOrder[a.rarity] || 999;
-        const orderB = rarityOrder[b.rarity] || 999;
-        return orderA - orderB;
+        for (const sort of selectedSorts) {
+          let result = 0;
+          if (sort === 'favorites') {
+            if (!!b.favorite !== !!a.favorite) {
+              result = Number(b.favorite) - Number(a.favorite);
+            }
+          } else if (sort === 'newest') {
+            result = new Date(b.pulledAt) - new Date(a.pulledAt);
+          } else if (sort === 'name') {
+            result = a.name.localeCompare(b.name);
+          } else if (sort === 'set') {
+            result = (a.set?.name || '').localeCompare(b.set?.name || '');
+          } else if (sort === 'type') {
+            result = getCardType(a).localeCompare(getCardType(b));
+          } else if (sort === 'rarity') {
+            result = (rarityOrder[a.rarity] || 999) - (rarityOrder[b.rarity] || 999);
+          }
+          if (result !== 0) return result;
+        }
+        return 0;
       });
     }
 
@@ -1892,11 +1900,11 @@ export default function App() {
                 </div>
 
                 {/* Sort */}
-                <details className="relative z-[120] overflow-visible">
+                <details className="relative z-40">
                   <summary className="list-none cursor-pointer rounded-md border-2 border-cyan-500/30 bg-slate-700/50 px-3 py-2 text-white font-medium">
                     {sortBy.length === 0 ? 'No Sort' : sortBy.length === 1 ? (SORT_OPTIONS.find(option => option.value === sortBy[0])?.label || 'Sort By') : `${sortBy.length} Sorts Selected`}
                   </summary>
-                  <div className="absolute left-0 top-full z-[500] mt-2 w-72 rounded-md border border-cyan-500/30 bg-slate-800 p-3 shadow-2xl">
+                  <div className="absolute z-[200] mt-2 w-72 rounded-md border border-cyan-500/30 bg-slate-800 p-3 shadow-lg">
                     <div className="mb-2 flex justify-between text-xs">
                       <button type="button" className="text-cyan-400" onClick={() => setSortBy(['newest'])}>Default</button>
                     </div>
