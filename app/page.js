@@ -10,8 +10,71 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sparkles, Package, Library, LogOut, Coins, Search, Clock, Eye, Users, Send, X, Check } from 'lucide-react';
+import { Sparkles, Package, Library, LogOut, Coins, Search, Clock, Eye, Users, Send, X, Check, Star } from 'lucide-react';
 import Link from 'next/link';
+
+
+const ALL_KNOWN_RARITIES = [
+  'Common',
+  'Uncommon',
+  'Rare',
+  'Rare Holo',
+  'Rare Holo EX',
+  'Double Rare',
+  'Illustration Rare',
+  'Special Illustration Rare',
+  'Ultra Rare',
+  'Rare Ultra',
+  'Rare Rainbow',
+  'Hyper Rare',
+  'Secret Rare',
+  'Rare Secret',
+  'Amazing Rare',
+  'Rare BREAK',
+  'Rare Prism Star',
+  'ACE SPEC Rare',
+  'Shiny Rare',
+  'Radiant Rare',
+  'LEGEND',
+];
+
+const CACHE_TTL = {
+  sets: 24 * 60 * 60 * 1000,
+  collection: 5 * 60 * 1000,
+  friends: 2 * 60 * 1000,
+  previewCards: 24 * 60 * 60 * 1000,
+};
+
+function readLocalCache(key, maxAgeMs) {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (!parsed.savedAt || (Date.now() - parsed.savedAt) > maxAgeMs) return null;
+    return parsed.value;
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalCache(key, value) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, JSON.stringify({ value, savedAt: Date.now() }));
+  } catch {}
+}
+
+function clearLocalCache(key) {
+  if (typeof window === 'undefined') return;
+  try { localStorage.removeItem(key); } catch {}
+}
+
+function setsCacheKey() { return 'cache:sets:v1'; }
+function collectionCacheKey(userId) { return `cache:collection:${userId}:v1`; }
+function friendsCacheKey(userId) { return `cache:friends:${userId}:v1`; }
+function previewCardsCacheKey(setId) { return `cache:preview-cards:${setId}:v1`; }
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -23,6 +86,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [openingPack, setOpeningPack] = useState(false);
   const [pulledCards, setPulledCards] = useState([]);
+  const [pendingRevealId, setPendingRevealId] = useState(null);
   const [showPackAnimation, setShowPackAnimation] = useState(false);
   const [selectedSet, setSelectedSet] = useState(null);
   const [activeTab, setActiveTab] = useState('packs');
@@ -75,9 +139,14 @@ export default function App() {
           if (data.authenticated) {
             setUser(data.user);
             setCountdown(data.user.nextPointsIn || 0);
+          } else if (data.transient) {
+            console.error('Transient session error on home page:', data.error);
           } else {
             localStorage.removeItem('userId');
           }
+        })
+        .catch(err => {
+          console.error('Session fetch failed on home page:', err);
         });
     }
   }, []);
@@ -96,6 +165,11 @@ export default function App() {
                   setUser(data.user);
                   return data.user.nextPointsIn || 0;
                 }
+                return prev;
+              })
+              .catch(err => {
+                console.error('Countdown session refresh failed:', err);
+                return prev;
               });
             return 0;
           }
@@ -116,15 +190,42 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (user) {
-      loadSets();
-      loadCollection();
-      loadFriends();
-      if (user.username === 'Spheal') {
-        loadAllUsers();
+    if (!user) return;
+
+    let cancelled = false;
+
+    const bootstrapUserData = async () => {
+      try {
+        await loadSets();
+        if (cancelled) return;
+
+        await loadCollection();
+        if (cancelled) return;
+
+        await loadFriends();
+        if (cancelled) return;
+
+        await recoverPendingPackReveal(user.id);
+        if (cancelled) return;
+
+        if (user.username === 'Spheal') {
+          await loadAllUsers();
+        }
+      } catch (error) {
+        console.error('[BOOTSTRAP] Failed loading post-login data', {
+          userId: user.id,
+          username: user.username,
+          message: error?.message,
+        });
       }
-    }
-  }, [user]);
+    };
+
+    bootstrapUserData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.username]);
 
   // Filtered collection based on search and filters
   const filteredCollection = useMemo(() => {
@@ -196,6 +297,9 @@ export default function App() {
       const key = card.id;
       if (cardMap.has(key)) {
         cardMap.get(key).count++;
+        if (card.favorite) {
+          cardMap.get(key).favorite = true;
+        }
         // Keep the earliest pulled card for "newest" logic
         if (new Date(card.pulledAt) > new Date(cardMap.get(key).pulledAt)) {
           cardMap.get(key).pulledAt = card.pulledAt;
@@ -219,6 +323,11 @@ export default function App() {
         const typeA = getCardType(a);
         const typeB = getCardType(b);
         return typeA.localeCompare(typeB);
+      });
+    } else if (sortBy === 'favorites') {
+      grouped.sort((a, b) => {
+        if (!!b.favorite !== !!a.favorite) return Number(b.favorite) - Number(a.favorite);
+        return new Date(b.pulledAt) - new Date(a.pulledAt);
       });
     } else if (sortBy === 'rarity') {
       // Rarity order from LEAST rare to MOST rare
@@ -249,8 +358,14 @@ export default function App() {
 
   // Get unique rarities and sets from collection
   const uniqueRarities = useMemo(() => {
-    const rarities = new Set(collection.map(card => card.rarity).filter(Boolean));
-    return Array.from(rarities).sort();
+    const merged = new Set([...ALL_KNOWN_RARITIES, ...collection.map(card => card.rarity).filter(Boolean)]);
+    const order = new Map(ALL_KNOWN_RARITIES.map((rarity, index) => [rarity, index]));
+    return Array.from(merged).sort((a, b) => {
+      const orderA = order.has(a) ? order.get(a) : Number.MAX_SAFE_INTEGER;
+      const orderB = order.has(b) ? order.get(b) : Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.localeCompare(b);
+    });
   }, [collection]);
 
   const uniqueSets = useMemo(() => {
@@ -272,41 +387,126 @@ export default function App() {
     );
   }, [sets, packSearchQuery]);
 
-  const loadSets = async () => {
+  const loadSets = async (options = {}) => {
+    const { forceRefresh = false } = options;
     try {
+      const cacheKey = setsCacheKey();
+      if (!forceRefresh) {
+        const cachedSets = readLocalCache(cacheKey, CACHE_TTL.sets);
+        if (cachedSets?.length) {
+          setSets(cachedSets);
+          return cachedSets;
+        }
+      }
+
       const response = await fetch('/api/sets');
       const data = await response.json();
-      setSets(data.sets || []);
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load sets');
+      }
+      const nextSets = data.sets || [];
+      setSets(nextSets);
+      writeLocalCache(cacheKey, nextSets);
+      return nextSets;
     } catch (err) {
       console.error('Error loading sets:', err);
+      return [];
     }
   };
 
-  const loadCollection = async () => {
-    if (!user) return;
+  const loadCollection = async (options = {}) => {
+    if (!user) return [];
+    const { forceRefresh = false } = options;
     try {
-      const response = await fetch(`/api/collection?userId=${user.id}`);
-      const data = await response.json();
-      setCollection(data.collection || []);
+      const cacheKey = collectionCacheKey(user.id);
+      if (!forceRefresh) {
+        const cachedCollection = readLocalCache(cacheKey, CACHE_TTL.collection);
+        if (Array.isArray(cachedCollection) && cachedCollection.length >= 0) {
+          setCollection(cachedCollection);
+          return cachedCollection;
+        }
+      }
+
+      const pageSize = 200;
+      let offset = 0;
+      let allCards = [];
+      let hasMore = true;
+
+      while (hasMore) {
+        const response = await fetch(`/api/collection?userId=${user.id}&offset=${offset}&limit=${pageSize}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to load collection');
+        }
+
+        const cards = data.collection || [];
+        allCards = [...allCards, ...cards];
+        hasMore = !!data.hasMore;
+        offset += cards.length;
+
+        if (cards.length === 0) break;
+      }
+
+      setCollection(allCards);
+      writeLocalCache(cacheKey, allCards);
+      return allCards;
     } catch (err) {
       console.error('Error loading collection:', err);
+      return [];
     }
   };
 
-  const loadFriends = async () => {
-    if (!user) return;
+  const loadFriends = async (options = {}) => {
+    if (!user) return null;
+    const { forceRefresh = false } = options;
     try {
+      const cacheKey = friendsCacheKey(user.id);
+      if (!forceRefresh) {
+        const cachedFriends = readLocalCache(cacheKey, CACHE_TTL.friends);
+        if (cachedFriends) {
+          setFriends(cachedFriends.friends || []);
+          setPendingRequests(cachedFriends.pendingRequests || []);
+          setSentRequests(cachedFriends.sentRequests || []);
+          setTradeRequests(cachedFriends.tradeRequests || []);
+          return cachedFriends;
+        }
+      }
+
       const response = await fetch(`/api/friends?userId=${user.id}`);
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load friends');
+      }
       setFriends(data.friends || []);
       setPendingRequests(data.pendingRequests || []);
       setSentRequests(data.sentRequests || []);
       setTradeRequests(data.tradeRequests || []);
+      writeLocalCache(cacheKey, {
+        friends: data.friends || [],
+        pendingRequests: data.pendingRequests || [],
+        sentRequests: data.sentRequests || [],
+        tradeRequests: data.tradeRequests || [],
+      });
+      return data;
     } catch (err) {
       console.error('Error loading friends:', err);
+      return null;
     }
   };
 
+
+  const invalidateCollectionCache = (targetUserId = user?.id) => {
+    if (targetUserId) clearLocalCache(collectionCacheKey(targetUserId));
+  };
+
+  const invalidateFriendsCache = (targetUserId = user?.id) => {
+    if (targetUserId) clearLocalCache(friendsCacheKey(targetUserId));
+  };
+
+  const updateCollectionCache = (cards, targetUserId = user?.id) => {
+    if (targetUserId) writeLocalCache(collectionCacheKey(targetUserId), cards);
+  };
   const loadAllUsers = async () => {
     try {
       const response = await fetch('/api/admin/users');
@@ -333,7 +533,8 @@ export default function App() {
       if (response.ok) {
         setFriendMessage(`✅ ${data.message}`);
         setFriendUsername('');
-        loadFriends();
+        invalidateFriendsCache();
+        loadFriends({ forceRefresh: true });
       } else {
         setFriendMessage(`❌ ${data.error}`);
       }
@@ -349,7 +550,8 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, friendId })
       });
-      loadFriends();
+      invalidateFriendsCache();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error accepting friend:', err);
     }
@@ -362,7 +564,8 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, friendId })
       });
-      loadFriends();
+      invalidateFriendsCache();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error declining friend:', err);
     }
@@ -434,8 +637,10 @@ export default function App() {
         setSelectedResponseCards([]);
         setTradeSearchWant('');
         setTradeSearchOffer('');
-        loadFriends();
-        loadCollection();
+        invalidateFriendsCache();
+        invalidateCollectionCache();
+        loadFriends({ forceRefresh: true });
+        loadCollection({ forceRefresh: true });
       } else {
         alert(data.error);
       }
@@ -463,8 +668,10 @@ export default function App() {
       if (response.ok) {
         alert(data.message);
         setActiveTrade(null);
-        loadFriends();
-        loadCollection();
+        invalidateFriendsCache();
+        invalidateCollectionCache();
+        loadFriends({ forceRefresh: true });
+        loadCollection({ forceRefresh: true });
       } else {
         alert(data.error);
       }
@@ -481,7 +688,8 @@ export default function App() {
         body: JSON.stringify({ userId: user.id, tradeId })
       });
       setActiveTrade(null);
-      loadFriends();
+      invalidateFriendsCache();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error declining trade:', err);
     }
@@ -769,6 +977,10 @@ export default function App() {
   };
 
   const handleSignOut = () => {
+    if (user?.id) {
+      clearLocalCache(collectionCacheKey(user.id));
+      clearLocalCache(friendsCacheKey(user.id));
+    }
     localStorage.removeItem('userId');
     setUser(null);
     setCollection([]);
@@ -894,6 +1106,54 @@ export default function App() {
   };
 
 
+
+  const hydrateRevealIntoUi = (revealData) => {
+    if (!revealData) return;
+
+    const ownedCardIds = new Set(collection.map(c => c.id));
+
+    if (revealData.isBulk && revealData.packs) {
+      const packsWithNewFlags = revealData.packs.map(pack => ({
+        ...pack,
+        cards: pack.cards.map(card => ({
+          ...card,
+          isNewCard: !ownedCardIds.has(card.id)
+        }))
+      }));
+      setPulledCards(packsWithNewFlags);
+    } else {
+      const cardsWithNewFlag = (revealData.cards || []).map(card => ({
+        ...card,
+        isNewCard: !ownedCardIds.has(card.id)
+      }));
+      setPulledCards([{ packNumber: 1, cards: cardsWithNewFlag }]);
+    }
+
+    setPendingRevealId(revealData.revealId || revealData.id || null);
+    if (revealData.pointsRemaining !== undefined) {
+      setUser(prev => prev ? ({ ...prev, points: revealData.pointsRemaining }) : prev);
+    }
+  };
+
+  const recoverPendingPackReveal = async (targetUserId = user?.id) => {
+    if (!targetUserId) return false;
+
+    try {
+      const response = await fetch(`/api/packs/pending?userId=${targetUserId}`);
+      const data = await response.json();
+
+      if (response.ok && data.reveal) {
+        hydrateRevealIntoUi(data.reveal);
+        setShowPackAnimation(false);
+        return true;
+      }
+    } catch (error) {
+      console.error('Failed to recover pending pack reveal:', error);
+    }
+
+    return false;
+  };
+
   const handleOpenPack = async (set, bulk = false) => {
     setSelectedSet(set);
     setOpeningPack(true);
@@ -911,30 +1171,8 @@ export default function App() {
       if (response.ok) {
         // Simulate pack opening animation
         setTimeout(() => {
-          // Mark cards as new if not already owned
-          const ownedCardIds = new Set(collection.map(c => c.id));
-          
-          if (data.isBulk && data.packs) {
-            // For bulk openings, store individual packs
-            const packsWithNewFlags = data.packs.map(pack => ({
-              ...pack,
-              cards: pack.cards.map(card => ({
-                ...card,
-                isNewCard: !ownedCardIds.has(card.id)
-              }))
-            }));
-            setPulledCards(packsWithNewFlags); // Store array of packs
-          } else {
-            // For single pack, mark cards as new
-            const cardsWithNewFlag = data.cards.map(card => ({
-              ...card,
-              isNewCard: !ownedCardIds.has(card.id)
-            }));
-            setPulledCards([{ packNumber: 1, cards: cardsWithNewFlag }]); // Wrap in pack structure
-          }
-          
+          hydrateRevealIntoUi(data);
           setShowPackAnimation(false);
-          setUser(prev => ({ ...prev, points: data.pointsRemaining }));
           
           // Check for achievements
           if (data.achievements) {
@@ -942,36 +1180,62 @@ export default function App() {
             setShowAchievementDialog(true);
           }
           
-          loadCollection();
+          invalidateCollectionCache();
+          loadCollection({ forceRefresh: true });
         }, 2000);
       } else {
         setError(data.error || 'Failed to open pack');
         setShowPackAnimation(false);
       }
     } catch (err) {
-      setError('An error occurred. Please try again.');
-      setShowPackAnimation(false);
+      const recovered = await recoverPendingPackReveal(user?.id);
+      if (!recovered) {
+        setError('An error occurred. Please try again.');
+        setShowPackAnimation(false);
+      }
     } finally {
       setOpeningPack(false);
     }
   };
 
-  const closePackResults = () => {
+  const closePackResults = async () => {
+    const revealIdToClaim = pendingRevealId;
+
     setPulledCards([]);
+    setPendingRevealId(null);
     setSelectedSet(null);
+
+    if (revealIdToClaim && user?.id) {
+      try {
+        await fetch('/api/packs/pending/claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, revealId: revealIdToClaim })
+        });
+      } catch (error) {
+        console.error('Failed to mark pack reveal as claimed:', error);
+      }
+    }
   };
 
   const handlePreviewSet = async (set) => {
     setPreviewSet(set);
     setPreviewCards([]);
-    
+
     try {
+      const cacheKey = previewCardsCacheKey(set.id);
+      const cachedCards = readLocalCache(cacheKey, CACHE_TTL.previewCards);
+      if (cachedCards?.length) {
+        setPreviewCards(cachedCards);
+        return;
+      }
+
       const response = await fetch(`/api/cards?setId=${set.id}`);
       const data = await response.json();
       if (response.ok) {
-        // Filter out energy cards from preview
         const nonEnergyCards = (data.cards || []).filter(card => card.supertype !== 'Energy');
         setPreviewCards(nonEnergyCards);
+        writeLocalCache(cacheKey, nonEnergyCards);
       }
     } catch (err) {
       console.error('Error loading preview:', err);
@@ -995,6 +1259,40 @@ export default function App() {
         return c;
       });
       setCollection(updatedCollection);
+      updateCollectionCache(updatedCollection);
+    }
+  };
+
+
+  const handleToggleFavorite = async (card, event) => {
+    event.stopPropagation();
+    if (!user) return;
+
+    const nextFavorite = !card.favorite;
+    const updatedCollection = collection.map(existingCard => (
+      existingCard.id === card.id ? { ...existingCard, favorite: nextFavorite } : existingCard
+    ));
+
+    setCollection(updatedCollection);
+    updateCollectionCache(updatedCollection);
+
+    try {
+      const response = await fetch('/api/collection/favorite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, cardId: card.id, favorite: nextFavorite })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update favorite');
+      }
+    } catch (error) {
+      const revertedCollection = collection.map(existingCard => (
+        existingCard.id === card.id ? { ...existingCard, favorite: card.favorite } : existingCard
+      ));
+      setCollection(revertedCollection);
+      updateCollectionCache(revertedCollection);
+      console.error('Error updating favorite:', error);
     }
   };
 
@@ -1455,6 +1753,7 @@ export default function App() {
                     <SelectItem value="set">Set</SelectItem>
                     <SelectItem value="type">Type</SelectItem>
                     <SelectItem value="rarity">Rarity</SelectItem>
+                    <SelectItem value="favorites">Favorites First</SelectItem>
                     <SelectItem value="none">No Sort</SelectItem>
                   </SelectContent>
                 </Select>
@@ -1576,7 +1875,7 @@ export default function App() {
                     return (
                       <Card 
                         key={card.id} 
-                        className={`overflow-visible hover:scale-110 hover:z-50 transition-transform bg-slate-800/50 backdrop-blur-sm border-2 ${
+                        className={`group overflow-visible hover:scale-110 hover:z-50 transition-transform bg-slate-800/50 backdrop-blur-sm border-2 ${
                           isSelectedForBreakdown 
                             ? 'border-4 border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.8)]' 
                             : 'border-cyan-500/30 hover:border-cyan-500 hover:shadow-[0_0_25px_rgba(6,182,212,0.5)]'
@@ -1589,6 +1888,16 @@ export default function App() {
                             alt={card.name}
                             className="w-full h-auto rounded-t"
                           />
+                          {!breakdownMode && (
+                            <button
+                              type="button"
+                              aria-label={card.favorite ? 'Remove favorite' : 'Add favorite'}
+                              className={`absolute top-2 right-2 z-20 rounded-full border border-yellow-300/70 bg-slate-900/80 p-1.5 transition-all ${card.favorite ? 'opacity-100 shadow-[0_0_15px_rgba(250,204,21,0.7)]' : 'opacity-0 group-hover:opacity-100 hover:opacity-100'}`}
+                              onClick={(event) => handleToggleFavorite(card, event)}
+                            >
+                              <Star className={`h-4 w-4 ${card.favorite ? 'fill-yellow-300 text-yellow-300' : 'text-yellow-200'}`} />
+                            </button>
+                          )}
                           {/* Breakdown Selected Indicator */}
                           {isSelectedForBreakdown && (
                             <div className="absolute inset-0 bg-red-500/30 flex items-center justify-center">
@@ -1608,7 +1917,7 @@ export default function App() {
                             </Badge>
                           )}
                           {!breakdownMode && card.isReverseHolo && (
-                            <Badge className="absolute top-2 right-2 bg-gradient-to-r from-cyan-400 to-blue-500 text-white border border-cyan-300 text-xs shadow-[0_0_10px_rgba(6,182,212,0.5)]">
+                            <Badge className="absolute top-12 right-2 bg-gradient-to-r from-cyan-400 to-blue-500 text-white border border-cyan-300 text-xs shadow-[0_0_10px_rgba(6,182,212,0.5)]">
                               Reverse
                             </Badge>
                           )}
@@ -1796,7 +2105,7 @@ export default function App() {
       </Dialog>
 
       {/* Pack Results Dialog */}
-      <Dialog open={pulledCards.length > 0} onOpenChange={closePackResults}>
+      <Dialog open={pulledCards.length > 0} onOpenChange={(open) => { if (!open) closePackResults(); }}>
         <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_60px_rgba(6,182,212,0.6)]">
           <DialogHeader>
             <DialogTitle className="text-center text-2xl font-bold text-white bg-gradient-to-r from-cyan-500/20 to-transparent py-3 -mx-6 -mt-6 mb-4 border-b-4 border-cyan-500/50 drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]">

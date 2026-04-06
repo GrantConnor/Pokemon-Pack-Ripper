@@ -72,7 +72,6 @@ export default function PokemonWilds() {
             loadCurrentSpawn();
             loadMyPokemon();
             
-            // Load friends directly with the user data (don't wait for state update)
             fetch(`/api/friends?userId=${data.user.id}`)
               .then(res => res.json())
               .then(friendsData => {
@@ -82,10 +81,15 @@ export default function PokemonWilds() {
                 setTradeRequests(friendsData.tradeRequests || []);
               })
               .catch(err => console.error('Error loading friends:', err));
+          } else if (data.transient) {
+            console.error('Transient session error on wilds page:', data.error);
           } else {
             localStorage.removeItem('userId');
             window.location.href = '/';
           }
+        })
+        .catch(err => {
+          console.error('Session fetch failed on wilds page:', err);
         });
     } else {
       window.location.href = '/';
@@ -1737,7 +1741,7 @@ export default function PokemonWilds() {
                           <Badge className="mb-1 bg-yellow-500 text-xs">✨</Badge>
                         )}
                         <img src={pokemon.sprite} alt={pokemon.displayName} className="w-16 h-16 mx-auto mb-1" />
-                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}</p>
+                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}{pokemon.isShiny ? ' ✨' : ''}</p>
                         <p className="text-gray-400 text-xs text-center">Lv {pokemon.level}</p>
                       </CardContent>
                     </Card>
@@ -1766,7 +1770,7 @@ export default function PokemonWilds() {
                           <Badge className="mb-1 bg-yellow-500 text-xs">✨</Badge>
                         )}
                         <img src={pokemon.sprite} alt={pokemon.displayName} className="w-16 h-16 mx-auto mb-1" />
-                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}</p>
+                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}{pokemon.isShiny ? ' ✨' : ''}</p>
                         <p className="text-gray-400 text-xs text-center">Lv {pokemon.level}</p>
                       </CardContent>
                     </Card>
