@@ -116,15 +116,39 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (user) {
-      loadSets();
-      loadCollection();
-      loadFriends();
-      if (user.username === 'Spheal') {
-        loadAllUsers();
+    if (!user) return;
+
+    let cancelled = false;
+
+    const bootstrapUserData = async () => {
+      try {
+        await loadSets();
+        if (cancelled) return;
+
+        await loadCollection();
+        if (cancelled) return;
+
+        await loadFriends();
+        if (cancelled) return;
+
+        if (user.username === 'Spheal') {
+          await loadAllUsers();
+        }
+      } catch (error) {
+        console.error('[BOOTSTRAP] Failed loading post-login data', {
+          userId: user.id,
+          username: user.username,
+          message: error?.message,
+        });
       }
-    }
-  }, [user]);
+    };
+
+    bootstrapUserData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.username]);
 
   // Filtered collection based on search and filters
   const filteredCollection = useMemo(() => {
@@ -1796,7 +1820,7 @@ export default function App() {
       </Dialog>
 
       {/* Pack Results Dialog */}
-      <Dialog open={pulledCards.length > 0} onOpenChange={closePackResults}>
+      <Dialog open={pulledCards.length > 0} onOpenChange={(open) => { if (!open) closePackResults(); }}>
         <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_60px_rgba(6,182,212,0.6)]">
           <DialogHeader>
             <DialogTitle className="text-center text-2xl font-bold text-white bg-gradient-to-r from-cyan-500/20 to-transparent py-3 -mx-6 -mt-6 mb-4 border-b-4 border-cyan-500/50 drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]">
