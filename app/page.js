@@ -2340,7 +2340,6 @@ export default function App() {
               >
                 Close
               </Button>
-            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -2436,7 +2435,6 @@ export default function App() {
 >
               Close
             </Button>
-            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -2588,7 +2586,6 @@ export default function App() {
                 <Send className="h-4 w-4 mr-2" />
                 Send Trade Request
               </Button>
-            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -2652,7 +2649,6 @@ export default function App() {
               >
                 Send Trade Offer
               </Button>
-            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -2721,7 +2717,6 @@ export default function App() {
               >
                 Accept Trade
               </Button>
-            </div>
           </div>
         </DialogContent>
       </Dialog>
