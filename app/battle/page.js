@@ -31,9 +31,14 @@ function BattlePageContent() {
             setUser(data.user);
             loadMyPokemon(data.user.id);
             loadBattle();
+          } else if (data.transient) {
+            console.error('Transient session error on battle page:', data.error);
           } else {
             window.location.href = '/';
           }
+        })
+        .catch(err => {
+          console.error('Session fetch failed on battle page:', err);
         });
     } else {
       window.location.href = '/';
