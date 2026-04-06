@@ -323,9 +323,28 @@ export default function App() {
   const loadCollection = async () => {
     if (!user) return;
     try {
-      const response = await fetch(`/api/collection?userId=${user.id}`);
-      const data = await response.json();
-      setCollection(data.collection || []);
+      const pageSize = 200;
+      let offset = 0;
+      let allCards = [];
+      let hasMore = true;
+
+      while (hasMore) {
+        const response = await fetch(`/api/collection?userId=${user.id}&offset=${offset}&limit=${pageSize}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to load collection');
+        }
+
+        const cards = data.collection || [];
+        allCards = [...allCards, ...cards];
+        hasMore = !!data.hasMore;
+        offset += cards.length;
+
+        if (cards.length === 0) break;
+      }
+
+      setCollection(allCards);
     } catch (err) {
       console.error('Error loading collection:', err);
     }
@@ -336,6 +355,9 @@ export default function App() {
     try {
       const response = await fetch(`/api/friends?userId=${user.id}`);
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load friends');
+      }
       setFriends(data.friends || []);
       setPendingRequests(data.pendingRequests || []);
       setSentRequests(data.sentRequests || []);

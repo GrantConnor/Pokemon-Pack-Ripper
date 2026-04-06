@@ -12,19 +12,8 @@ function slimCard(card) {
     supertype: card?.supertype,
     subtypes: card?.subtypes || [],
     types: card?.types || [],
-    set: card?.set
-      ? {
-          id: card.set.id,
-          name: card.set.name,
-          series: card.set.series,
-        }
-      : null,
-    images: card?.images
-      ? {
-          small: card.images.small,
-          large: card.images.large,
-        }
-      : null,
+    set: card?.set ? { id: card.set.id, name: card.set.name, series: card.set.series } : null,
+    images: card?.images ? { small: card.images.small, large: card.images.large } : null,
     isReverseHolo: !!card?.isReverseHolo,
     pulledAt: card?.pulledAt || null,
     viewed: !!card?.viewed,
@@ -36,24 +25,37 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
+    const offset = Math.max(0, Number(searchParams.get('offset') || 0));
+    const limitParam = searchParams.get('limit');
+    const limit = limitParam ? Math.max(1, Math.min(500, Number(limitParam))) : null;
 
     if (!userId) {
       return NextResponse.json({ error: 'User ID required' }, { status: 400 });
     }
 
+    const projection = limit
+      ? { collection: { $slice: [offset, limit] } }
+      : { collection: 1 };
+
     const database = await connectDB();
     const user = await database.collection('users').findOne(
       { id: userId },
-      { projection: { collection: 1 } }
+      { projection }
     );
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    const collection = Array.isArray(user.collection) ? user.collection.map(slimCard) : [];
+    const rawCollection = Array.isArray(user.collection) ? user.collection : [];
+    const collection = rawCollection.map(slimCard);
 
-    return NextResponse.json({ collection });
+    return NextResponse.json({
+      collection,
+      offset,
+      limit,
+      hasMore: limit ? rawCollection.length === limit : false,
+    });
   } catch (error) {
     return NextResponse.json({ error: error?.message || 'Failed to load collection' }, { status: 500 });
   }
