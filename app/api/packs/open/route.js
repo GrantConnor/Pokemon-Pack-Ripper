@@ -8,15 +8,17 @@ export const dynamic = 'force-dynamic';
 
 const BULK_PACK_COUNT = 10;
 
-const VINTAGE_SETS = [
+const LEGACY_SETS = [
   'base1', 'base2', 'basep', 'jungle', 'fossil', 'base3',
   'gym1', 'gym2', 'neo1', 'neo2', 'neo3', 'neo4',
-  'base4', 'ecard1', 'ecard2', 'ecard3'
+  'base4', 'ecard1', 'ecard2', 'ecard3',
+  'ex1', 'ex2', 'ex3', 'ex4', 'ex5', 'ex6',
+  'ex7', 'ex8', 'ex9', 'ex10', 'ex11', 'ex12'
 ];
 
 
 function openPack(cards, setId = null) {
-  const nonEnergyCards = cards.filter(c => c.supertype !== 'Energy');
+  const nonEnergyCards = cards.filter(card => card.supertype !== 'Energy');
   if (nonEnergyCards.length < 10) {
     const pulledCards = [];
     for (let i = 0; i < 10; i++) {
@@ -26,66 +28,140 @@ function openPack(cards, setId = null) {
     return pulledCards;
   }
 
-  const commons = nonEnergyCards.filter(c => c.rarity === 'Common');
-  const uncommons = nonEnergyCards.filter(c => c.rarity === 'Uncommon');
-  const rares = nonEnergyCards.filter(c => c.rarity === 'Rare' || c.rarity === 'Rare Holo');
-  const doubleRares = nonEnergyCards.filter(c => c.rarity && (c.rarity.includes('Double Rare') || c.rarity.toLowerCase().includes(' ex')));
-  const illustrationRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Illustration Rare') && !c.rarity.includes('Special'));
-  const ultraRares = nonEnergyCards.filter(c => c.rarity && (c.rarity.includes('Ultra Rare') || c.rarity.includes('Rare Ultra')));
-  const rainbowRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Rare Rainbow'));
-  const specialIllustrationRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Special Illustration Rare'));
-  const hyperRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Hyper Rare'));
-  const secretRares = nonEnergyCards.filter(c => c.rarity && (c.rarity.includes('Rare Secret') || c.rarity.includes('Secret Rare')));
-
   const pulledCards = [];
   const pulledCardIds = new Set();
 
   const getUniqueCard = (pool) => {
     const availableCards = pool.filter(card => !pulledCardIds.has(card.id));
-    if (availableCards.length === 0) return null;
+    if (!availableCards.length) return null;
     const randomIndex = Math.floor(Math.random() * availableCards.length);
     const card = availableCards[randomIndex];
     pulledCardIds.add(card.id);
     return card;
   };
 
-  const selectRareOrBetter = () => {
-    let selectedCard = rares.length > 0 ? getUniqueCard(rares) : getUniqueCard(nonEnergyCards);
-    const upgradeRoll = Math.random() * 100;
-
-    if (upgradeRoll < 20) {
-      const specialRoll = Math.random() * 100;
-      if (specialRoll < 5 && hyperRares.length > 0) return getUniqueCard(hyperRares) || selectedCard;
-      if (specialRoll < 10 && secretRares.length > 0) return getUniqueCard(secretRares) || selectedCard;
-      if (specialRoll < 20 && specialIllustrationRares.length > 0) return getUniqueCard(specialIllustrationRares) || selectedCard;
-      if (specialRoll < 40 && ultraRares.length > 0) return getUniqueCard(ultraRares) || selectedCard;
-      if (specialRoll < 60 && rainbowRares.length > 0) return getUniqueCard(rainbowRares) || selectedCard;
-      if (specialRoll < 80 && illustrationRares.length > 0) return getUniqueCard(illustrationRares) || selectedCard;
-      if (doubleRares.length > 0) return getUniqueCard(doubleRares) || selectedCard;
-    }
-
-    return selectedCard;
+  const rarityValue = (card) => String(card?.rarity || '').toLowerCase();
+  const isStandardRareCard = (card) => {
+    const rarity = rarityValue(card);
+    return rarity === 'rare' || rarity === 'rare holo';
+  };
+  const isSpecialRareCard = (card) => {
+    const rarity = rarityValue(card);
+    return (
+      rarity.includes('double rare') ||
+      (rarity.includes('illustration rare') && !rarity.includes('special')) ||
+      rarity.includes('special illustration rare') ||
+      rarity.includes('ultra rare') ||
+      rarity.includes('rare ultra') ||
+      rarity.includes('rare holo ex') ||
+      rarity.includes('rare rainbow') ||
+      rarity.includes('hyper rare') ||
+      rarity.includes('secret rare') ||
+      rarity.includes('rare secret')
+    );
   };
 
-  for (let i = 0; i < 4; i++) pulledCards.push(getUniqueCard(commons) || getUniqueCard(nonEnergyCards));
-  for (let i = 0; i < 3; i++) pulledCards.push(getUniqueCard(uncommons) || getUniqueCard(nonEnergyCards));
+  const commons = nonEnergyCards.filter(card => rarityValue(card) === 'common');
+  const uncommons = nonEnergyCards.filter(card => rarityValue(card) === 'uncommon');
+  const lowRarityCards = nonEnergyCards.filter(card => !isStandardRareCard(card) && !isSpecialRareCard(card));
+  const standardRares = nonEnergyCards.filter(isStandardRareCard);
 
-  let guaranteedRare;
-  if (setId && VINTAGE_SETS.includes(setId)) {
-    guaranteedRare = (Math.random() * 100 <= 15)
-      ? selectRareOrBetter()
-      : (getUniqueCard(uncommons) || getUniqueCard(nonEnergyCards));
-  } else {
-    guaranteedRare = selectRareOrBetter();
+  const specialPools = {
+    doubleRare: nonEnergyCards.filter(card => rarityValue(card).includes('double rare') || rarityValue(card).includes('rare holo ex')),
+    ultraRare: nonEnergyCards.filter(card => rarityValue(card).includes('ultra rare') || rarityValue(card).includes('rare ultra')),
+    illustrationRare: nonEnergyCards.filter(card => rarityValue(card).includes('illustration rare')),
+    rainbowRare: nonEnergyCards.filter(card => rarityValue(card).includes('rare rainbow')),
+    hyperRare: nonEnergyCards.filter(card => rarityValue(card).includes('hyper rare')),
+    secretRare: nonEnergyCards.filter(card => {
+      const rarity = rarityValue(card);
+      const handled = [
+        'double rare',
+        'rare holo ex',
+        'ultra rare',
+        'rare ultra',
+        'illustration rare',
+        'rare rainbow',
+        'hyper rare',
+        'secret rare',
+        'rare secret'
+      ].some(token => rarity.includes(token));
+      if (rarity.includes('secret rare') || rarity.includes('rare secret')) {
+        return true;
+      }
+      return !handled && rarity.includes('rare');
+    }),
+  };
+
+  const lowPool = lowRarityCards.length ? lowRarityCards : nonEnergyCards;
+
+  for (let i = 0; i < 5; i++) {
+    pulledCards.push(getUniqueCard(commons) || getUniqueCard(lowPool) || getUniqueCard(nonEnergyCards));
   }
-  if (guaranteedRare) pulledCards.push(guaranteedRare);
 
-  const reverseHoloCandidates = nonEnergyCards.filter(c => c.rarity !== 'Rare Secret' && c.rarity !== 'Secret Rare' && c.rarity !== 'Hyper Rare');
-  const reverseHoloCard = getUniqueCard(reverseHoloCandidates) || getUniqueCard(nonEnergyCards);
-  if (reverseHoloCard) pulledCards.push({ ...reverseHoloCard, isReverseHolo: true });
+  for (let i = 0; i < 3; i++) {
+    pulledCards.push(getUniqueCard(uncommons) || getUniqueCard(lowPool) || getUniqueCard(nonEnergyCards));
+  }
 
-  const finalCard = getUniqueCard(nonEnergyCards) || getUniqueCard(rares) || getUniqueCard(uncommons) || getUniqueCard(commons);
-  if (finalCard) pulledCards.push(finalCard);
+  const reverseHoloBase = getUniqueCard(lowPool) || getUniqueCard(nonEnergyCards);
+  if (reverseHoloBase) {
+    pulledCards.push({ ...reverseHoloBase, isReverseHolo: true });
+  }
+
+  const weightedSpecialTable = [
+    { key: 'doubleRare', weight: 60 },
+    { key: 'ultraRare', weight: 15 },
+    { key: 'illustrationRare', weight: 15 },
+    { key: 'rainbowRare', weight: 5 },
+    { key: 'hyperRare', weight: 2.5 },
+    { key: 'secretRare', weight: 2.5 },
+  ];
+  const availableSpecialPoolKeys = weightedSpecialTable.filter(entry => specialPools[entry.key]?.length > 0);
+  const hitSpecialTable = Math.random() < 0.10;
+
+  const pickWeightedSpecialPoolKey = () => {
+    const totalWeight = availableSpecialPoolKeys.reduce((sum, entry) => sum + entry.weight, 0);
+    if (!totalWeight) return null;
+    let roll = Math.random() * totalWeight;
+    for (const entry of availableSpecialPoolKeys) {
+      roll -= entry.weight;
+      if (roll <= 0) return entry.key;
+    }
+    return availableSpecialPoolKeys[availableSpecialPoolKeys.length - 1]?.key || null;
+  };
+
+  const isLegacyPack = setId && LEGACY_SETS.includes(setId);
+  const legacyHitRare = !isLegacyPack || Math.random() < 0.15;
+
+  let rareSlotCard = null;
+  if (legacyHitRare && hitSpecialTable && availableSpecialPoolKeys.length) {
+    const selectedPoolKey = pickWeightedSpecialPoolKey();
+    if (selectedPoolKey) {
+      rareSlotCard = getUniqueCard(specialPools[selectedPoolKey]);
+    }
+  }
+
+  if (legacyHitRare && !rareSlotCard) {
+    rareSlotCard = getUniqueCard(standardRares);
+  }
+
+  if (legacyHitRare && !rareSlotCard && availableSpecialPoolKeys.length) {
+    for (const entry of availableSpecialPoolKeys) {
+      rareSlotCard = getUniqueCard(specialPools[entry.key]);
+      if (rareSlotCard) break;
+    }
+  }
+
+  if (!legacyHitRare) {
+    rareSlotCard = getUniqueCard(uncommons) || getUniqueCard(lowPool);
+  }
+
+  if (!rareSlotCard) {
+    rareSlotCard = getUniqueCard(nonEnergyCards);
+  }
+
+  if (rareSlotCard) {
+    pulledCards.push(rareSlotCard);
+  }
 
   return pulledCards.filter(Boolean).slice(0, 10);
 }

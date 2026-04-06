@@ -13,6 +13,31 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sparkles, Package, Library, LogOut, Coins, Search, Clock, Eye, Users, Send, X, Check } from 'lucide-react';
 import Link from 'next/link';
 
+
+const ALL_KNOWN_RARITIES = [
+  'Common',
+  'Uncommon',
+  'Rare',
+  'Rare Holo',
+  'Rare Holo EX',
+  'Double Rare',
+  'Illustration Rare',
+  'Special Illustration Rare',
+  'Ultra Rare',
+  'Rare Ultra',
+  'Rare Rainbow',
+  'Hyper Rare',
+  'Secret Rare',
+  'Rare Secret',
+  'Amazing Rare',
+  'Rare BREAK',
+  'Rare Prism Star',
+  'ACE SPEC Rare',
+  'Shiny Rare',
+  'Radiant Rare',
+  'LEGEND',
+];
+
 const CACHE_TTL = {
   sets: 24 * 60 * 60 * 1000,
   collection: 5 * 60 * 1000,
@@ -325,8 +350,14 @@ export default function App() {
 
   // Get unique rarities and sets from collection
   const uniqueRarities = useMemo(() => {
-    const rarities = new Set(collection.map(card => card.rarity).filter(Boolean));
-    return Array.from(rarities).sort();
+    const merged = new Set([...ALL_KNOWN_RARITIES, ...collection.map(card => card.rarity).filter(Boolean)]);
+    const order = new Map(ALL_KNOWN_RARITIES.map((rarity, index) => [rarity, index]));
+    return Array.from(merged).sort((a, b) => {
+      const orderA = order.has(a) ? order.get(a) : Number.MAX_SAFE_INTEGER;
+      const orderB = order.has(b) ? order.get(b) : Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.localeCompare(b);
+    });
   }, [collection]);
 
   const uniqueSets = useMemo(() => {
