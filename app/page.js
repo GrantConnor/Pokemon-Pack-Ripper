@@ -2340,6 +2340,7 @@ export default function App() {
               >
                 Close
               </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
