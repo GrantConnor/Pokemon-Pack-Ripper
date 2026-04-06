@@ -1878,8 +1878,8 @@ export default function App() {
             )}
 
             {/* Search and Filters */}
-            <div className="bg-slate-800/50 backdrop-blur-sm border-2 border-cyan-500/30 rounded-lg p-4 mb-6 shadow-[0_0_20px_rgba(6,182,212,0.2)]">
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="relative z-50 overflow-visible bg-slate-800/50 backdrop-blur-sm border-2 border-cyan-500/30 rounded-lg p-4 mb-6 shadow-[0_0_20px_rgba(6,182,212,0.2)]">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 overflow-visible">
                 {/* Search */}
                 <div className="relative">
                   <Search className="absolute left-3 top-3 h-4 w-4 text-cyan-400" />
@@ -1892,11 +1892,11 @@ export default function App() {
                 </div>
 
                 {/* Sort */}
-                <details className="relative z-40">
+                <details className="relative z-[120] overflow-visible">
                   <summary className="list-none cursor-pointer rounded-md border-2 border-cyan-500/30 bg-slate-700/50 px-3 py-2 text-white font-medium">
                     {sortBy.length === 0 ? 'No Sort' : sortBy.length === 1 ? (SORT_OPTIONS.find(option => option.value === sortBy[0])?.label || 'Sort By') : `${sortBy.length} Sorts Selected`}
                   </summary>
-                  <div className="absolute z-[200] mt-2 w-72 rounded-md border border-cyan-500/30 bg-slate-800 p-3 shadow-lg">
+                  <div className="absolute left-0 top-full z-[500] mt-2 w-72 rounded-md border border-cyan-500/30 bg-slate-800 p-3 shadow-2xl">
                     <div className="mb-2 flex justify-between text-xs">
                       <button type="button" className="text-cyan-400" onClick={() => setSortBy(['newest'])}>Default</button>
                     </div>
