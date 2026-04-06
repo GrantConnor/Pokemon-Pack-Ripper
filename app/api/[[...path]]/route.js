@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { MongoClient, ObjectId } from 'mongodb';
+import { ObjectId } from 'mongodb';
+import { connectDB as sharedConnectDB } from '@/lib/mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 
@@ -13,6 +14,18 @@ const PACK_COST = 100; // Default cost
 const BULK_PACK_COUNT = 10;
 const POINTS_REGEN_RATE = 1000; // Points per regeneration
 const POINTS_REGEN_INTERVAL = 7200000; // 2 hours in milliseconds (2 * 60 * 60 * 1000)
+
+const EXTERNAL_API_TIMEOUT = 15000;
+const SETS_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const CARDS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+const externalApiCache = globalThis.__pokemonExternalApiCache || {
+  sets: null,
+  setsFetchedAt: 0,
+  cardsBySet: {},
+};
+
+globalThis.__pokemonExternalApiCache = externalApiCache;
 
 // Set-specific pricing
 const SET_PRICING = {
@@ -134,41 +147,8 @@ const BREAKDOWN_VALUES = {
   'Secret Rare': 500
 };
 
-let client;
-let db;
-
 async function connectDB() {
-  if (db) return db;
-
-  if (!process.env.MONGO_URL) {
-    throw new Error('Missing MONGO_URL');
-  }
-
-  if (!process.env.DB_NAME) {
-    throw new Error('Missing DB_NAME');
-  }
-
-  console.log('Connecting to Mongo...');
-  console.log('DB_NAME:', process.env.DB_NAME);
-  console.log('MONGO_URL exists:', !!process.env.MONGO_URL);
-
-  client = new MongoClient(process.env.MONGO_URL, {
-    serverSelectionTimeoutMS: 10000,
-  });
-  await client.connect();
-
-  console.log('Mongo connected successfully');
-
-  db = client.db(process.env.DB_NAME);
-
-  try {
-    await db.collection('users').createIndex({ normalizedUsername: 1 }, { sparse: true });
-    console.log('Ensured users.normalizedUsername index');
-  } catch (indexError) {
-    console.error('Failed to ensure users.normalizedUsername index:', indexError?.message || indexError);
-  }
-
-  return db;
+  return sharedConnectDB();
 }
 
 // Helper function to normalize usernames consistently
@@ -535,6 +515,47 @@ function openPack(cards, setId = null) {
 
 // ===== POKEMON WILDS HELPER FUNCTIONS =====
 
+
+function buildPokemonSprite(pokemon, pokemonId, isShiny = false) {
+  const officialArtwork = pokemon?.sprites?.other?.['official-artwork'];
+  const homeArtwork = pokemon?.sprites?.other?.home;
+
+  if (isShiny) {
+    return (
+      officialArtwork?.front_shiny ||
+      homeArtwork?.front_shiny ||
+      pokemon?.sprites?.front_shiny ||
+      `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/${pokemonId}.png` ||
+      `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${pokemonId}.png`
+    );
+  }
+
+  return (
+    officialArtwork?.front_default ||
+    homeArtwork?.front_default ||
+    pokemon?.sprites?.front_default ||
+    `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${pokemonId}.png` ||
+    `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemonId}.png`
+  );
+}
+
+function normalizeStoredSprite(pokemonData) {
+  if (!pokemonData?.id) return pokemonData;
+  if (pokemonData.isShiny && (!pokemonData.sprite || !String(pokemonData.sprite).includes('/shiny/'))) {
+    return {
+      ...pokemonData,
+      sprite: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/${pokemonData.id}.png`
+    };
+  }
+  if (!pokemonData.isShiny && !pokemonData.sprite) {
+    return {
+      ...pokemonData,
+      sprite: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${pokemonData.id}.png`
+    };
+  }
+  return pokemonData;
+}
+
 // Fetch Pokemon data from PokéAPI
 async function fetchPokemonData(pokemonId, forceShiny = false) {
   try {
@@ -552,17 +573,11 @@ async function fetchPokemonData(pokemonId, forceShiny = false) {
     // Extract data
     const types = pokemon.types.map(t => t.type.name);
     
-    // Get sprite - DIRECT URL PATTERN
-    let sprite;
+    // Get sprite from PokéAPI artwork fields, with safe fallbacks
+    const sprite = buildPokemonSprite(pokemon, pokemonId, isShiny);
     if (isShiny) {
-      // SHINY: Direct GitHub URL - GUARANTEED SHINY
-      sprite = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${pokemonId}.png`;
       console.log(`✨ SHINY ${forceShiny ? '(FORCED)' : '(NATURAL)'}: ${pokemon.name} #${pokemonId}`);
       console.log(`   Sprite: ${sprite}`);
-    } else {
-      // NORMAL: Use official-artwork for better quality
-      sprite = pokemon.sprites.other?.['official-artwork']?.front_default || 
-               pokemon.sprites.front_default;
     }
     
     // Get all learnable moves with their data
@@ -908,8 +923,11 @@ export async function GET(request) {
         packPrice: getPackCost(set.id, false),
         bulkPrice: getPackCost(set.id, true)
       }));
+
+      externalApiCache.sets = setsWithPricing;
+      externalApiCache.setsFetchedAt = Date.now();
       
-      return NextResponse.json({ sets: setsWithPricing });
+      return NextResponse.json({ sets: setsWithPricing, cached: false });
     }
 
     // Get cards from a specific set
@@ -918,24 +936,40 @@ export async function GET(request) {
       if (!setId) {
         return NextResponse.json({ error: 'Set ID required' }, { status: 400 });
       }
+
+      const cachedCards = externalApiCache.cardsBySet[setId];
+      if (cachedCards && (Date.now() - cachedCards.fetchedAt) < CARDS_CACHE_TTL_MS) {
+        return NextResponse.json({ cards: cachedCards.cards, cached: true });
+      }
       
       let allCards = [];
       
       // If Hidden Fates, merge with Shiny Vault
       if (setId === 'sm115') {
         // Fetch Hidden Fates cards
-        const hiddenFatesResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:sm115&pageSize=250`);
+        const hiddenFatesResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:sm115&pageSize=250`, {
+          timeout: EXTERNAL_API_TIMEOUT,
+        });
         allCards = [...hiddenFatesResponse.data.data];
         
         // Fetch Shiny Vault cards
-        const shinyVaultResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:sma&pageSize=250`);
+        const shinyVaultResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:sma&pageSize=250`, {
+          timeout: EXTERNAL_API_TIMEOUT,
+        });
         allCards = [...allCards, ...shinyVaultResponse.data.data];
       } else {
-        const response = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:${setId}&pageSize=250`);
+        const response = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:${setId}&pageSize=250`, {
+          timeout: EXTERNAL_API_TIMEOUT,
+        });
         allCards = response.data.data;
       }
+
+      externalApiCache.cardsBySet[setId] = {
+        cards: allCards,
+        fetchedAt: Date.now(),
+      };
       
-      return NextResponse.json({ cards: allCards });
+      return NextResponse.json({ cards: allCards, cached: false });
     }
 
     // Get user collection
@@ -1078,7 +1112,8 @@ export async function GET(request) {
         });
       }
       
-      return NextResponse.json({ spawn });
+      const normalizedSpawn = spawn?.pokemon ? { ...spawn, pokemon: normalizeStoredSprite(spawn.pokemon) } : spawn;
+      return NextResponse.json({ spawn: normalizedSpawn });
     }
 
     // Get user's caught Pokemon
@@ -1450,26 +1485,46 @@ if (pathname.includes('/api/auth/signin')) {
         }, { status: 402 });
       }
 
-      // Fetch all cards from the set (with merges for Hidden Fates and Crown Zenith)
+      // Fetch all cards from the set (with cache + merges for Hidden Fates and Crown Zenith)
       let allCards = [];
-      
-      if (setId === 'sm115') {
+      const cachedCards = externalApiCache.cardsBySet[setId];
+
+      if (cachedCards && (Date.now() - cachedCards.fetchedAt) < CARDS_CACHE_TTL_MS) {
+        allCards = cachedCards.cards;
+      } else if (setId === 'sm115') {
         // Merge Hidden Fates + Shiny Vault
-        const hiddenFatesResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:sm115&pageSize=250`);
+        const hiddenFatesResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:sm115&pageSize=250`, {
+          timeout: EXTERNAL_API_TIMEOUT,
+        });
         allCards = [...hiddenFatesResponse.data.data];
-        
-        const shinyVaultResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:sma&pageSize=250`);
+
+        const shinyVaultResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:sma&pageSize=250`, {
+          timeout: EXTERNAL_API_TIMEOUT,
+        });
         allCards = [...allCards, ...shinyVaultResponse.data.data];
       } else if (setId === 'swsh12pt5') {
         // Merge Crown Zenith + Crown Zenith Galarian Gallery
-        const crownZenithResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:swsh12pt5&pageSize=250`);
+        const crownZenithResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:swsh12pt5&pageSize=250`, {
+          timeout: EXTERNAL_API_TIMEOUT,
+        });
         allCards = [...crownZenithResponse.data.data];
-        
-        const gaларianGalleryResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:swsh12pt5gg&pageSize=250`);
-        allCards = [...allCards, ...gaларianGalleryResponse.data.data];
+
+        const galarianGalleryResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:swsh12pt5gg&pageSize=250`, {
+          timeout: EXTERNAL_API_TIMEOUT,
+        });
+        allCards = [...allCards, ...galarianGalleryResponse.data.data];
       } else {
-        const response = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:${setId}&pageSize=250`);
+        const response = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:${setId}&pageSize=250`, {
+          timeout: EXTERNAL_API_TIMEOUT,
+        });
         allCards = response.data.data;
+      }
+
+      if (allCards.length > 0 && (!cachedCards || cachedCards.cards !== allCards)) {
+        externalApiCache.cardsBySet[setId] = {
+          cards: allCards,
+          fetchedAt: Date.now(),
+        };
       }
 
       if (allCards.length === 0) {
@@ -1525,21 +1580,37 @@ if (pathname.includes('/api/auth/signin')) {
         }
       );
 
-      // Grant XP to all owned Pokemon
-      await applyXPToAllPokemon(userId, XP_FROM_PACK_OPEN, database);
+      let achievementResult = null;
+      let pointsRemaining = newPoints;
 
-      // Refresh user data and check achievements for this specific set
-      user = await database.collection('users').findOne({ id: userId });
-      
-      // Get set name from first card (they all have set info)
-      const setName = allPulledCards[0]?.set?.name || 'Unknown Set';
-      const totalCardsInSet = allCards.filter(c => c.supertype !== 'Energy').length;
-      
-      const achievementResult = await checkAchievements(user, database, setId, setName, totalCardsInSet);
+      // Non-critical post-pack tasks should never block the reveal UI.
+      try {
+        await applyXPToAllPokemon(userId, XP_FROM_PACK_OPEN, database);
+      } catch (xpError) {
+        console.error('[PACK_OPEN] XP update failed but pack was already saved:', xpError?.message || xpError);
+      }
 
-      // Refresh user one more time if achievements were earned
-      if (achievementResult.newAchievements.length > 0) {
+      try {
         user = await database.collection('users').findOne({ id: userId });
+
+        if (user) {
+          // Get set name from first card (they all have set info)
+          const setName = allPulledCards[0]?.set?.name || 'Unknown Set';
+          const totalCardsInSet = allCards.filter(c => c.supertype !== 'Energy').length;
+          const rawAchievementResult = await checkAchievements(user, database, setId, setName, totalCardsInSet);
+
+          if (rawAchievementResult?.newAchievements?.length > 0) {
+            achievementResult = rawAchievementResult;
+            const refreshedUser = await database.collection('users').findOne({ id: userId });
+            if (refreshedUser?.points !== undefined) {
+              pointsRemaining = refreshedUser.points;
+            }
+          } else if (user.points !== undefined) {
+            pointsRemaining = user.points;
+          }
+        }
+      } catch (achievementError) {
+        console.error('[PACK_OPEN] Achievement refresh failed but pack was already saved:', achievementError?.message || achievementError);
       }
 
       return NextResponse.json({ 
@@ -1547,8 +1618,8 @@ if (pathname.includes('/api/auth/signin')) {
         cards: cardsWithTimestamp,
         packs: packsWithTimestamps, // Include individual packs for bulk openings
         isBulk: bulk,
-        pointsRemaining: user.points,
-        achievements: achievementResult.newAchievements.length > 0 ? achievementResult : null
+        pointsRemaining,
+        achievements: achievementResult
       });
     }
 
