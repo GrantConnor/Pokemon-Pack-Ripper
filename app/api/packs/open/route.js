@@ -1,47 +1,12 @@
 import { NextResponse } from 'next/server';
-import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { connectDB } from '@/lib/mongodb';
+import { getCardsForSet, getPackCost } from '@/lib/pokemon-tcg';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const POKEMON_TCG_API = 'https://api.pokemontcg.io/v2';
-const PACK_COST = 100;
 const BULK_PACK_COUNT = 10;
-const EXTERNAL_API_TIMEOUT = 15000;
-const CARDS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-
-const SET_PRICING = {
-  'base1': { single: 200, bulk: 2000 },
-  'base2': { single: 200, bulk: 2000 },
-  'basep': { single: 200, bulk: 2000 },
-  'jungle': { single: 200, bulk: 2000 },
-  'fossil': { single: 200, bulk: 2000 },
-  'base3': { single: 200, bulk: 2000 },
-  'gym1': { single: 200, bulk: 2000 },
-  'gym2': { single: 200, bulk: 2000 },
-  'neo1': { single: 200, bulk: 2000 },
-  'neo2': { single: 200, bulk: 2000 },
-  'neo3': { single: 200, bulk: 2000 },
-  'neo4': { single: 200, bulk: 2000 },
-  'base4': { single: 200, bulk: 2000 },
-  'ecard1': { single: 200, bulk: 2000 },
-  'ecard2': { single: 200, bulk: 2000 },
-  'ecard3': { single: 200, bulk: 2000 },
-  'ex1': { single: 150, bulk: 1500 },
-  'ex2': { single: 150, bulk: 1500 },
-  'ex3': { single: 150, bulk: 1500 },
-  'ex4': { single: 150, bulk: 1500 },
-  'ex5': { single: 150, bulk: 1500 },
-  'ex6': { single: 150, bulk: 1500 },
-  'ex7': { single: 150, bulk: 1500 },
-  'ex8': { single: 150, bulk: 1500 },
-  'ex9': { single: 150, bulk: 1500 },
-  'ex10': { single: 150, bulk: 1500 },
-  'ex11': { single: 150, bulk: 1500 },
-  'ex12': { single: 150, bulk: 1500 },
-};
 
 const VINTAGE_SETS = [
   'base1', 'base2', 'basep', 'jungle', 'fossil', 'base3',
@@ -49,47 +14,6 @@ const VINTAGE_SETS = [
   'base4', 'ecard1', 'ecard2', 'ecard3'
 ];
 
-const packCache = globalThis.__pokemonPackOpenCache || { cardsBySet: {} };
-globalThis.__pokemonPackOpenCache = packCache;
-
-function getPackCost(setId, bulk = false) {
-  const pricing = SET_PRICING[setId];
-  if (pricing) return bulk ? pricing.bulk : pricing.single;
-  return bulk ? (PACK_COST * 10) : PACK_COST;
-}
-
-async function getCardsForSet(setId) {
-  const cached = packCache.cardsBySet[setId];
-  if (cached && (Date.now() - cached.fetchedAt) < CARDS_CACHE_TTL_MS) {
-    return cached.cards;
-  }
-
-  let allCards = [];
-
-  if (setId === 'sm115') {
-    const hiddenFatesResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:sm115&pageSize=250`, { timeout: EXTERNAL_API_TIMEOUT });
-    allCards = [...hiddenFatesResponse.data.data];
-
-    const shinyVaultResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:sma&pageSize=250`, { timeout: EXTERNAL_API_TIMEOUT });
-    allCards = [...allCards, ...shinyVaultResponse.data.data];
-  } else if (setId === 'swsh12pt5') {
-    const crownZenithResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:swsh12pt5&pageSize=250`, { timeout: EXTERNAL_API_TIMEOUT });
-    allCards = [...crownZenithResponse.data.data];
-
-    const galarianGalleryResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:swsh12pt5gg&pageSize=250`, { timeout: EXTERNAL_API_TIMEOUT });
-    allCards = [...allCards, ...galarianGalleryResponse.data.data];
-  } else {
-    const response = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:${setId}&pageSize=250`, { timeout: EXTERNAL_API_TIMEOUT });
-    allCards = response.data.data;
-  }
-
-  packCache.cardsBySet[setId] = {
-    cards: allCards,
-    fetchedAt: Date.now(),
-  };
-
-  return allCards;
-}
 
 function openPack(cards, setId = null) {
   const nonEnergyCards = cards.filter(c => c.supertype !== 'Energy');
@@ -195,7 +119,7 @@ export async function POST(request) {
       }, { status: 402 });
     }
 
-    const allCards = await getCardsForSet(setId);
+    const { cards: allCards } = await getCardsForSet(setId);
     if (!allCards.length) {
       return NextResponse.json({ error: 'No cards found for this set' }, { status: 404 });
     }

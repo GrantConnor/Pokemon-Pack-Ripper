@@ -13,6 +13,44 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sparkles, Package, Library, LogOut, Coins, Search, Clock, Eye, Users, Send, X, Check } from 'lucide-react';
 import Link from 'next/link';
 
+const CACHE_TTL = {
+  sets: 24 * 60 * 60 * 1000,
+  collection: 5 * 60 * 1000,
+  friends: 2 * 60 * 1000,
+  previewCards: 24 * 60 * 60 * 1000,
+};
+
+function readLocalCache(key, maxAgeMs) {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (!parsed.savedAt || (Date.now() - parsed.savedAt) > maxAgeMs) return null;
+    return parsed.value;
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalCache(key, value) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, JSON.stringify({ value, savedAt: Date.now() }));
+  } catch {}
+}
+
+function clearLocalCache(key) {
+  if (typeof window === 'undefined') return;
+  try { localStorage.removeItem(key); } catch {}
+}
+
+function setsCacheKey() { return 'cache:sets:v1'; }
+function collectionCacheKey(userId) { return `cache:collection:${userId}:v1`; }
+function friendsCacheKey(userId) { return `cache:friends:${userId}:v1`; }
+function previewCardsCacheKey(setId) { return `cache:preview-cards:${setId}:v1`; }
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -310,19 +348,46 @@ export default function App() {
     );
   }, [sets, packSearchQuery]);
 
-  const loadSets = async () => {
+  const loadSets = async (options = {}) => {
+    const { forceRefresh = false } = options;
     try {
+      const cacheKey = setsCacheKey();
+      if (!forceRefresh) {
+        const cachedSets = readLocalCache(cacheKey, CACHE_TTL.sets);
+        if (cachedSets?.length) {
+          setSets(cachedSets);
+          return cachedSets;
+        }
+      }
+
       const response = await fetch('/api/sets');
       const data = await response.json();
-      setSets(data.sets || []);
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load sets');
+      }
+      const nextSets = data.sets || [];
+      setSets(nextSets);
+      writeLocalCache(cacheKey, nextSets);
+      return nextSets;
     } catch (err) {
       console.error('Error loading sets:', err);
+      return [];
     }
   };
 
-  const loadCollection = async () => {
-    if (!user) return;
+  const loadCollection = async (options = {}) => {
+    if (!user) return [];
+    const { forceRefresh = false } = options;
     try {
+      const cacheKey = collectionCacheKey(user.id);
+      if (!forceRefresh) {
+        const cachedCollection = readLocalCache(cacheKey, CACHE_TTL.collection);
+        if (Array.isArray(cachedCollection) && cachedCollection.length >= 0) {
+          setCollection(cachedCollection);
+          return cachedCollection;
+        }
+      }
+
       const pageSize = 200;
       let offset = 0;
       let allCards = [];
@@ -345,14 +410,30 @@ export default function App() {
       }
 
       setCollection(allCards);
+      writeLocalCache(cacheKey, allCards);
+      return allCards;
     } catch (err) {
       console.error('Error loading collection:', err);
+      return [];
     }
   };
 
-  const loadFriends = async () => {
-    if (!user) return;
+  const loadFriends = async (options = {}) => {
+    if (!user) return null;
+    const { forceRefresh = false } = options;
     try {
+      const cacheKey = friendsCacheKey(user.id);
+      if (!forceRefresh) {
+        const cachedFriends = readLocalCache(cacheKey, CACHE_TTL.friends);
+        if (cachedFriends) {
+          setFriends(cachedFriends.friends || []);
+          setPendingRequests(cachedFriends.pendingRequests || []);
+          setSentRequests(cachedFriends.sentRequests || []);
+          setTradeRequests(cachedFriends.tradeRequests || []);
+          return cachedFriends;
+        }
+      }
+
       const response = await fetch(`/api/friends?userId=${user.id}`);
       const data = await response.json();
       if (!response.ok) {
@@ -362,11 +443,31 @@ export default function App() {
       setPendingRequests(data.pendingRequests || []);
       setSentRequests(data.sentRequests || []);
       setTradeRequests(data.tradeRequests || []);
+      writeLocalCache(cacheKey, {
+        friends: data.friends || [],
+        pendingRequests: data.pendingRequests || [],
+        sentRequests: data.sentRequests || [],
+        tradeRequests: data.tradeRequests || [],
+      });
+      return data;
     } catch (err) {
       console.error('Error loading friends:', err);
+      return null;
     }
   };
 
+
+  const invalidateCollectionCache = (targetUserId = user?.id) => {
+    if (targetUserId) clearLocalCache(collectionCacheKey(targetUserId));
+  };
+
+  const invalidateFriendsCache = (targetUserId = user?.id) => {
+    if (targetUserId) clearLocalCache(friendsCacheKey(targetUserId));
+  };
+
+  const updateCollectionCache = (cards, targetUserId = user?.id) => {
+    if (targetUserId) writeLocalCache(collectionCacheKey(targetUserId), cards);
+  };
   const loadAllUsers = async () => {
     try {
       const response = await fetch('/api/admin/users');
@@ -393,7 +494,8 @@ export default function App() {
       if (response.ok) {
         setFriendMessage(`✅ ${data.message}`);
         setFriendUsername('');
-        loadFriends();
+        invalidateFriendsCache();
+        loadFriends({ forceRefresh: true });
       } else {
         setFriendMessage(`❌ ${data.error}`);
       }
@@ -409,7 +511,8 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, friendId })
       });
-      loadFriends();
+      invalidateFriendsCache();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error accepting friend:', err);
     }
@@ -422,7 +525,8 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, friendId })
       });
-      loadFriends();
+      invalidateFriendsCache();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error declining friend:', err);
     }
@@ -494,8 +598,10 @@ export default function App() {
         setSelectedResponseCards([]);
         setTradeSearchWant('');
         setTradeSearchOffer('');
-        loadFriends();
-        loadCollection();
+        invalidateFriendsCache();
+        invalidateCollectionCache();
+        loadFriends({ forceRefresh: true });
+        loadCollection({ forceRefresh: true });
       } else {
         alert(data.error);
       }
@@ -523,8 +629,10 @@ export default function App() {
       if (response.ok) {
         alert(data.message);
         setActiveTrade(null);
-        loadFriends();
-        loadCollection();
+        invalidateFriendsCache();
+        invalidateCollectionCache();
+        loadFriends({ forceRefresh: true });
+        loadCollection({ forceRefresh: true });
       } else {
         alert(data.error);
       }
@@ -541,7 +649,8 @@ export default function App() {
         body: JSON.stringify({ userId: user.id, tradeId })
       });
       setActiveTrade(null);
-      loadFriends();
+      invalidateFriendsCache();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error declining trade:', err);
     }
@@ -829,6 +938,10 @@ export default function App() {
   };
 
   const handleSignOut = () => {
+    if (user?.id) {
+      clearLocalCache(collectionCacheKey(user.id));
+      clearLocalCache(friendsCacheKey(user.id));
+    }
     localStorage.removeItem('userId');
     setUser(null);
     setCollection([]);
@@ -1028,7 +1141,8 @@ export default function App() {
             setShowAchievementDialog(true);
           }
           
-          loadCollection();
+          invalidateCollectionCache();
+          loadCollection({ forceRefresh: true });
         }, 2000);
       } else {
         setError(data.error || 'Failed to open pack');
@@ -1068,14 +1182,21 @@ export default function App() {
   const handlePreviewSet = async (set) => {
     setPreviewSet(set);
     setPreviewCards([]);
-    
+
     try {
+      const cacheKey = previewCardsCacheKey(set.id);
+      const cachedCards = readLocalCache(cacheKey, CACHE_TTL.previewCards);
+      if (cachedCards?.length) {
+        setPreviewCards(cachedCards);
+        return;
+      }
+
       const response = await fetch(`/api/cards?setId=${set.id}`);
       const data = await response.json();
       if (response.ok) {
-        // Filter out energy cards from preview
         const nonEnergyCards = (data.cards || []).filter(card => card.supertype !== 'Energy');
         setPreviewCards(nonEnergyCards);
+        writeLocalCache(cacheKey, nonEnergyCards);
       }
     } catch (err) {
       console.error('Error loading preview:', err);
@@ -1099,6 +1220,7 @@ export default function App() {
         return c;
       });
       setCollection(updatedCollection);
+      updateCollectionCache(updatedCollection);
     }
   };
 
