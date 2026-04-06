@@ -1212,7 +1212,7 @@ export default function PokemonWilds() {
                               className="w-full bg-purple-700 hover:bg-purple-600 disabled:bg-gray-600 disabled:cursor-not-allowed"
                               size="sm"
                             >
-                              Custom XP
+                              Buy Custom XP
                             </Button>
                           </div>
                         </div>
