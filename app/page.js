@@ -643,6 +643,15 @@ export default function App() {
     setError('');
     setLoading(true);
 
+    const authAttempt = {
+      action: 'signup',
+      username,
+      usernameLength: username.length,
+      passwordLength: password.length,
+      timestamp: new Date().toISOString(),
+    };
+    console.log('[AUTH][CLIENT] Starting signup', authAttempt);
+
     try {
       const response = await fetch('/api/auth/signup', {
         method: 'POST',
@@ -650,7 +659,28 @@ export default function App() {
         body: JSON.stringify({ username, password })
       });
 
-      const data = await response.json();
+      const rawText = await response.text();
+      let data = {};
+
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch (parseError) {
+        console.error('[AUTH][CLIENT] Signup response was not valid JSON', {
+          ...authAttempt,
+          status: response.status,
+          rawText,
+          parseError: parseError?.message,
+        });
+        throw new Error('Server returned a non-JSON response during signup');
+      }
+
+      console.log('[AUTH][CLIENT] Signup response received', {
+        ...authAttempt,
+        status: response.status,
+        ok: response.ok,
+        authTraceId: data.authTraceId || null,
+        error: data.error || null,
+      });
 
       if (response.ok) {
         localStorage.setItem('userId', data.user.id);
@@ -659,10 +689,15 @@ export default function App() {
         setUsername('');
         setPassword('');
       } else {
-        setError(data.error || 'Sign up failed');
+        setError(data.authTraceId ? `${data.error || 'Sign up failed'} (Ref: ${data.authTraceId})` : (data.error || 'Sign up failed'));
       }
     } catch (err) {
-      setError('An error occurred. Please try again.');
+      console.error('[AUTH][CLIENT] Signup failed with exception', {
+        ...authAttempt,
+        message: err?.message,
+        stack: err?.stack,
+      });
+      setError(err?.message || 'An error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -673,6 +708,15 @@ export default function App() {
     setError('');
     setLoading(true);
 
+    const authAttempt = {
+      action: 'signin',
+      username,
+      usernameLength: username.length,
+      passwordLength: password.length,
+      timestamp: new Date().toISOString(),
+    };
+    console.log('[AUTH][CLIENT] Starting signin', authAttempt);
+
     try {
       const response = await fetch('/api/auth/signin', {
         method: 'POST',
@@ -680,7 +724,28 @@ export default function App() {
         body: JSON.stringify({ username, password })
       });
 
-      const data = await response.json();
+      const rawText = await response.text();
+      let data = {};
+
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch (parseError) {
+        console.error('[AUTH][CLIENT] Signin response was not valid JSON', {
+          ...authAttempt,
+          status: response.status,
+          rawText,
+          parseError: parseError?.message,
+        });
+        throw new Error('Server returned a non-JSON response during signin');
+      }
+
+      console.log('[AUTH][CLIENT] Signin response received', {
+        ...authAttempt,
+        status: response.status,
+        ok: response.ok,
+        authTraceId: data.authTraceId || null,
+        error: data.error || null,
+      });
 
       if (response.ok) {
         localStorage.setItem('userId', data.user.id);
@@ -689,10 +754,15 @@ export default function App() {
         setUsername('');
         setPassword('');
       } else {
-        setError(data.error || 'Sign in failed');
+        setError(data.authTraceId ? `${data.error || 'Sign in failed'} (Ref: ${data.authTraceId})` : (data.error || 'Sign in failed'));
       }
     } catch (err) {
-      setError('An error occurred. Please try again.');
+      console.error('[AUTH][CLIENT] Signin failed with exception', {
+        ...authAttempt,
+        message: err?.message,
+        stack: err?.stack,
+      });
+      setError(err?.message || 'An error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
