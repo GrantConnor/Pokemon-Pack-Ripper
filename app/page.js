@@ -116,15 +116,39 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (user) {
-      loadSets();
-      loadCollection();
-      loadFriends();
-      if (user.username === 'Spheal') {
-        loadAllUsers();
+    if (!user) return;
+
+    let cancelled = false;
+
+    const bootstrapUserData = async () => {
+      try {
+        await loadSets();
+        if (cancelled) return;
+
+        await loadCollection();
+        if (cancelled) return;
+
+        await loadFriends();
+        if (cancelled) return;
+
+        if (user.username === 'Spheal') {
+          await loadAllUsers();
+        }
+      } catch (error) {
+        console.error('[BOOTSTRAP] Failed loading post-login data', {
+          userId: user.id,
+          username: user.username,
+          message: error?.message,
+        });
       }
-    }
-  }, [user]);
+    };
+
+    bootstrapUserData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.username]);
 
   // Filtered collection based on search and filters
   const filteredCollection = useMemo(() => {

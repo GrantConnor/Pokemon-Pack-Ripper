@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { MongoClient, ObjectId } from 'mongodb';
+import { ObjectId } from 'mongodb';
+import { connectDB as sharedConnectDB } from '@/lib/mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 
@@ -134,41 +135,8 @@ const BREAKDOWN_VALUES = {
   'Secret Rare': 500
 };
 
-let client;
-let db;
-
 async function connectDB() {
-  if (db) return db;
-
-  if (!process.env.MONGO_URL) {
-    throw new Error('Missing MONGO_URL');
-  }
-
-  if (!process.env.DB_NAME) {
-    throw new Error('Missing DB_NAME');
-  }
-
-  console.log('Connecting to Mongo...');
-  console.log('DB_NAME:', process.env.DB_NAME);
-  console.log('MONGO_URL exists:', !!process.env.MONGO_URL);
-
-  client = new MongoClient(process.env.MONGO_URL, {
-    serverSelectionTimeoutMS: 10000,
-  });
-  await client.connect();
-
-  console.log('Mongo connected successfully');
-
-  db = client.db(process.env.DB_NAME);
-
-  try {
-    await db.collection('users').createIndex({ normalizedUsername: 1 }, { sparse: true });
-    console.log('Ensured users.normalizedUsername index');
-  } catch (indexError) {
-    console.error('Failed to ensure users.normalizedUsername index:', indexError?.message || indexError);
-  }
-
-  return db;
+  return sharedConnectDB();
 }
 
 // Helper function to normalize usernames consistently
