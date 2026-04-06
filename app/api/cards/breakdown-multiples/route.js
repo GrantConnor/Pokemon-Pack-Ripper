@@ -5,19 +5,19 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const BREAKDOWN_VALUES = {
-  'Common': 10,
-  'Uncommon': 20,
-  'Rare': 50,
-  'Rare Holo': 50,
-  'Double Rare': 100,
-  'Illustration Rare': 200,
-  'Ultra Rare': 200,
-  'Rare Ultra': 200,
-  'Rare Rainbow': 200,
-  'Special Illustration Rare': 400,
-  'Hyper Rare': 500,
-  'Rare Secret': 500,
-  'Secret Rare': 500,
+  'Common': 5,
+  'Uncommon': 10,
+  'Rare': 20,
+  'Rare Holo': 20,
+  'Double Rare': 50,
+  'Illustration Rare': 250,
+  'Ultra Rare': 250,
+  'Rare Ultra': 250,
+  'Rare Rainbow': 250,
+  'Special Illustration Rare': 250,
+  'Hyper Rare': 1000,
+  'Rare Secret': 1000,
+  'Secret Rare': 1000,
 };
 
 export async function POST(request) {

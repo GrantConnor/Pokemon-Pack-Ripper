@@ -771,20 +771,20 @@ export default function App() {
 
   const getBreakdownValue = (rarity) => {
     const breakdownValues = {
-      'Common': 10,
-      'Uncommon': 20,
-      'Rare': 50,
-      'Rare Holo': 50,
-      'Double Rare': 100,
-      'Illustration Rare': 200,
-      'Ultra Rare': 200,
-      'Rare Ultra': 200,
-      'Rare Rainbow': 200,
-      'Special Illustration Rare': 400,
-      'Hyper Rare': 500,
-      'Rare Secret': 500,
-      'Secret Rare': 500
-    };
+  'Common': 5,
+  'Uncommon': 10,
+  'Rare': 20,
+  'Rare Holo': 20,
+  'Double Rare': 50,
+  'Illustration Rare': 250,
+  'Ultra Rare': 250,
+  'Rare Ultra': 250,
+  'Rare Rainbow': 250,
+  'Special Illustration Rare': 250,
+  'Hyper Rare': 1000,
+  'Rare Secret': 1000,
+  'Secret Rare': 1000
+};
     return breakdownValues[rarity] || 10;
   };
 
@@ -1346,6 +1346,42 @@ export default function App() {
       setCollection(revertedCollection);
       updateCollectionCache(revertedCollection);
       console.error('Error updating favorite:', error);
+    }
+  };
+
+
+  const handleBreakdownSingleCopy = async () => {
+    if (!selectedCard || !user) return;
+
+    const pointsToGain = getBreakdownValue(selectedCard.rarity);
+    if (!window.confirm(`Break down 1 copy of ${selectedCard.name} for ${pointsToGain} points?${selectedCard.count <= 1 ? ' This will remove your last copy.' : ''}`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/cards/breakdown-single-copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, cardId: selectedCard.id })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to break down card');
+      }
+
+      const updatedCollection = collection.filter((card, index) => {
+        if (card.id !== selectedCard.id) return true;
+        const firstMatchIndex = collection.findIndex(c => c.id === selectedCard.id);
+        return index !== firstMatchIndex;
+      });
+      setCollection(updatedCollection);
+      updateCollectionCache(updatedCollection);
+      setUser(prev => ({ ...prev, points: prev.points + data.pointsAwarded }));
+      setSelectedCard(null);
+      invalidateCollectionCache();
+      loadCollection({ forceRefresh: true });
+    } catch (error) {
+      alert(error.message || 'Error breaking down card');
     }
   };
 
@@ -2288,12 +2324,20 @@ export default function App() {
                 Type: {getCardType(selectedCard)}
               </p>
             </div>
-            <Button 
+            <div className="mt-6 flex gap-3">
+              <Button
+                onClick={handleBreakdownSingleCopy}
+                className="bg-red-600 text-white hover:bg-red-500 border-2 border-red-400 font-bold"
+              >
+                Break Down 1 Copy
+              </Button>
+              <Button 
               onClick={() => setSelectedCard(null)} 
               className="mt-6 bg-cyan-500 text-black hover:bg-cyan-400 border-2 border-cyan-400 font-bold shadow-[0_0_20px_rgba(6,182,212,0.5)] hover:shadow-[0_0_30px_rgba(6,182,212,0.8)] transition-all"
-            >
+>
               Close
             </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -2386,9 +2430,10 @@ export default function App() {
             <Button 
               onClick={closePreview} 
               className="bg-cyan-500 text-black hover:bg-cyan-400 border-2 border-cyan-400 font-bold shadow-[0_0_20px_rgba(6,182,212,0.5)] hover:shadow-[0_0_30px_rgba(6,182,212,0.8)] transition-all"
-            >
+>
               Close
             </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
