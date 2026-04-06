@@ -52,6 +52,8 @@ function openPack(cards, setId = null) {
   };
   const isSpecialRareCard = (card) => {
     const rarity = rarityValue(card);
+    if (!rarity || rarity === 'common' || rarity === 'uncommon') return false;
+    if (rarity === 'rare' || rarity === 'rare holo') return false;
     return (
       rarity.includes('double rare') ||
       rarity.includes('shiny rare') ||
@@ -63,7 +65,10 @@ function openPack(cards, setId = null) {
       rarity.includes('rare rainbow') ||
       rarity.includes('hyper rare') ||
       rarity.includes('secret rare') ||
-      rarity.includes('rare secret')
+      rarity.includes('rare secret') ||
+      rarity.includes('amazing rare') ||
+      rarity.includes('ace spec') ||
+      rarity.includes('rare')
     );
   };
 
@@ -73,31 +78,21 @@ function openPack(cards, setId = null) {
   const standardRares = nonEnergyCards.filter(isStandardRareCard);
 
   const specialPools = {
-    doubleRare: nonEnergyCards.filter(card => rarityValue(card).includes('double rare') || rarityValue(card).includes('rare holo ex')),
-    shinyRare: nonEnergyCards.filter(card => rarityValue(card).includes('shiny rare')),
+    rareHoloEx: nonEnergyCards.filter(card => rarityValue(card).includes('rare holo ex')),
+    doubleRare: nonEnergyCards.filter(card => rarityValue(card).includes('double rare')),
+    illustrationRare: nonEnergyCards.filter(card => rarityValue(card).includes('illustration rare') && !rarityValue(card).includes('special')),
+    specialIllustrationRare: nonEnergyCards.filter(card => rarityValue(card).includes('special illustration rare')),
     ultraRare: nonEnergyCards.filter(card => rarityValue(card).includes('ultra rare') || rarityValue(card).includes('rare ultra')),
-    illustrationRare: nonEnergyCards.filter(card => rarityValue(card).includes('illustration rare')),
+    shinyRare: nonEnergyCards.filter(card => rarityValue(card).includes('shiny rare')),
+    amazingRare: nonEnergyCards.filter(card => rarityValue(card).includes('amazing rare')),
+    radiantRare: nonEnergyCards.filter(card => rarityValue(card).includes('radiant rare')),
+    rarePrismStar: nonEnergyCards.filter(card => rarityValue(card).includes('rare prism star')),
+    aceSpecRare: nonEnergyCards.filter(card => rarityValue(card).includes('ace spec')),
+    rareBreak: nonEnergyCards.filter(card => rarityValue(card).includes('rare break')),
+    legend: nonEnergyCards.filter(card => rarityValue(card).includes('legend')),
     rainbowRare: nonEnergyCards.filter(card => rarityValue(card).includes('rare rainbow')),
     hyperRare: nonEnergyCards.filter(card => rarityValue(card).includes('hyper rare')),
-    secretRare: nonEnergyCards.filter(card => {
-      const rarity = rarityValue(card);
-      const handled = [
-        'double rare',
-        'rare holo ex',
-        'shiny rare',
-        'ultra rare',
-        'rare ultra',
-        'illustration rare',
-        'rare rainbow',
-        'hyper rare',
-        'secret rare',
-        'rare secret'
-      ].some(token => rarity.includes(token));
-      if (rarity.includes('secret rare') || rarity.includes('rare secret')) {
-        return true;
-      }
-      return !handled && rarity.includes('rare');
-    }),
+    secretRare: nonEnergyCards.filter(card => rarityValue(card).includes('secret rare') || rarityValue(card).includes('rare secret')),
   };
 
   const lowPool = lowRarityCards.length ? lowRarityCards : nonEnergyCards;
@@ -126,13 +121,21 @@ function openPack(cards, setId = null) {
   }
 
   const weightedSpecialTable = [
-    { key: 'doubleRare', weight: 45 },
-    { key: 'shinyRare', weight: 15 },
-    { key: 'ultraRare', weight: 15 },
-    { key: 'illustrationRare', weight: 15 },
-    { key: 'rainbowRare', weight: 5 },
-    { key: 'hyperRare', weight: 2.5 },
-    { key: 'secretRare', weight: 2.5 },
+    { key: 'rareHoloEx', weight: 35 },
+    { key: 'doubleRare', weight: 30 },
+    { key: 'illustrationRare', weight: 12 },
+    { key: 'specialIllustrationRare', weight: 3 },
+    { key: 'ultraRare', weight: 10 },
+    { key: 'shinyRare', weight: 5 },
+    { key: 'amazingRare', weight: 3 },
+    { key: 'radiantRare', weight: 3 },
+    { key: 'rarePrismStar', weight: 2 },
+    { key: 'aceSpecRare', weight: 2 },
+    { key: 'rareBreak', weight: 2 },
+    { key: 'legend', weight: 1 },
+    { key: 'rainbowRare', weight: 1 },
+    { key: 'hyperRare', weight: 0.5 },
+    { key: 'secretRare', weight: 1 },
   ];
   const availableSpecialPoolKeys = weightedSpecialTable.filter(entry => specialPools[entry.key]?.length > 0);
   const hitSpecialTable = Math.random() < 0.10;
