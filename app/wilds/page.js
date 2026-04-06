@@ -892,92 +892,90 @@ export default function PokemonWilds() {
       <div className="relative z-10">
         {/* Header */}
         <div className="bg-gradient-to-r from-slate-900/90 to-slate-800/90 border-b-4 border-cyan-500 p-6">
-          <div className="max-w-7xl mx-auto flex justify-between items-center">
-            <div className="flex items-center gap-4">
-              <Link href="/">
-                <Button className="bg-cyan-600 hover:bg-cyan-500">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back to Pack Ripper
-                </Button>
-              </Link>
-              <div>
+          <div className="max-w-7xl mx-auto flex flex-col lg:flex-row lg:justify-between gap-4">
+            <div className="flex-1">
+              <div className="mb-4">
                 <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">
                   Pokemon Wilds
                 </h1>
                 <p className="text-cyan-200">Catch wild Pokemon as they appear!</p>
               </div>
-            </div>
-            <div className="flex gap-4 items-center">
-              {user.username === 'Spheal' && (
-                <>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="1025"
-                    placeholder="Dex # or name"
-                    value={adminSpawnQuery}
-                    onChange={(e) => setAdminSpawnQuery(e.target.value)}
-                    className="w-24 border-2 border-red-400/50 bg-slate-900/70 text-white"
-                  />
-                  <Button 
-                    onClick={handleAdminSpawn}
-                    className="bg-red-600 hover:bg-red-500 border-2 border-red-400 font-bold"
-                  >
-                    ⚡ Spawn Pokemon
+              <div className="flex flex-wrap items-center gap-3">
+                <Link href="/">
+                  <Button className="bg-cyan-600 hover:bg-cyan-500">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Back to Pack Ripper
                   </Button>
-                  <Button 
-                    onClick={handleAdminSpawnShiny}
-                    className="bg-yellow-600 hover:bg-yellow-500 border-2 border-yellow-400 font-bold"
-                  >
-                    ✨ Spawn Shiny
-                  </Button>
-                </>
-              )}
-              <Button
-                onClick={() => {
-                  setShowShopDialog(true);
-                  loadEvolutionShop();
-                }}
-                className="bg-emerald-600 hover:bg-emerald-500"
-              >
-                Shop
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowInventoryDialog(true);
-                  loadInventoryItems();
-                }}
-                className="bg-orange-600 hover:bg-orange-500"
-              >
-                Inventory
-              </Button>
-              <Button 
-                onClick={() => setShowFriendsPanel(true)}
-                className="relative bg-blue-600 hover:bg-blue-500"
-              >
-                <Users className="mr-2 h-4 w-4" />
-                Friends ({friends.length})
-                {unreadSocialCount > 0 && (
-                  <span className="absolute -top-2 -right-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white">
-                    {unreadSocialCount}
-                  </span>
+                </Link>
+                {user.username === 'Spheal' && (
+                  <>
+                    <Input
+                      type="text"
+                      placeholder="Dex # or name"
+                      value={adminSpawnQuery}
+                      onChange={(e) => setAdminSpawnQuery(e.target.value)}
+                      className="w-40 border-2 border-red-400/50 bg-slate-900/70 text-white"
+                    />
+                    <Button 
+                      onClick={handleAdminSpawn}
+                      className="bg-red-600 hover:bg-red-500 border-2 border-red-400 font-bold"
+                    >
+                      ⚡ Spawn Pokemon
+                    </Button>
+                    <Button 
+                      onClick={handleAdminSpawnShiny}
+                      className="bg-yellow-600 hover:bg-yellow-500 border-2 border-yellow-400 font-bold"
+                    >
+                      ✨ Spawn Shiny
+                    </Button>
+                  </>
                 )}
-              </Button>
-              <Button 
-                onClick={() => {
-                  setShowMyPokemon(true);
-                  loadMyPokemon();
-                }}
-                className="bg-purple-600 hover:bg-purple-500"
-              >
-                <Sparkles className="mr-2 h-4 w-4" />
-                My Pokemon ({myPokemon.length})
-              </Button>
-              <div className="text-right">
-                <p className="text-sm text-gray-400">Trainer</p>
-                <p className="text-xl font-bold text-white">{user.username}</p>
-                <p className="text-sm text-yellow-400 font-bold">⭐ {user.points} Points</p>
+                <Button
+                  onClick={() => {
+                    setShowShopDialog(true);
+                    loadEvolutionShop();
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-500"
+                >
+                  Shop
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowInventoryDialog(true);
+                    loadInventoryItems();
+                  }}
+                  className="bg-orange-600 hover:bg-orange-500"
+                >
+                  Inventory
+                </Button>
+                <Button 
+                  onClick={() => setShowFriendsPanel(true)}
+                  className="relative bg-blue-600 hover:bg-blue-500"
+                >
+                  <Users className="mr-2 h-4 w-4" />
+                  Friends ({friends.length})
+                  {unreadSocialCount > 0 && (
+                    <span className="absolute -top-2 -right-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white">
+                      {unreadSocialCount}
+                    </span>
+                  )}
+                </Button>
+                <Button 
+                  onClick={() => {
+                    setShowMyPokemon(true);
+                    loadMyPokemon();
+                  }}
+                  className="bg-purple-600 hover:bg-purple-500"
+                >
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  My Pokemon ({myPokemon.length})
+                </Button>
               </div>
+            </div>
+            <div className="text-right self-start lg:self-center">
+              <p className="text-sm text-gray-400">Trainer</p>
+              <p className="text-xl font-bold text-white">{user.username}</p>
+              <p className="text-sm text-yellow-400 font-bold">⭐ {user.points} Points</p>
             </div>
           </div>
         </div>
