@@ -38,7 +38,9 @@ export default function PokemonWilds() {
   const [viewingFriendPokemon, setViewingFriendPokemon] = useState(null);
   const [friendPokemonList, setFriendPokemonList] = useState([]);
   const [battleRequests, setBattleRequests] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState([]);
   const [tradeRequests, setTradeRequests] = useState([]);
+  const unreadSocialCount = pendingRequests.length + tradeRequests.length;
   const [showTradeDialog, setShowTradeDialog] = useState(false);
   const [tradePartner, setTradePartner] = useState(null);
   const [mySelectedPokemon, setMySelectedPokemon] = useState(null);
@@ -52,6 +54,16 @@ export default function PokemonWilds() {
   const [fetchingEvolutionData, setFetchingEvolutionData] = useState(false);
   const [showEvolveConfirm, setShowEvolveConfirm] = useState(false);
   const [showReleaseConfirm, setShowReleaseConfirm] = useState(false);
+  const [showCustomXPDialog, setShowCustomXPDialog] = useState(false);
+  const [customXPAmount, setCustomXPAmount] = useState('500');
+  const [showShopDialog, setShowShopDialog] = useState(false);
+  const [showInventoryDialog, setShowInventoryDialog] = useState(false);
+  const [showUseItemDialog, setShowUseItemDialog] = useState(false);
+  const [shopItems, setShopItems] = useState([]);
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [selectedInventoryItem, setSelectedInventoryItem] = useState(null);
+  const [compatiblePokemon, setCompatiblePokemon] = useState([]);
+  const [loadingItems, setLoadingItems] = useState(false);
 
   // Battle states
   const [activeBattle, setActiveBattle] = useState(null);
@@ -59,6 +71,7 @@ export default function PokemonWilds() {
   const [selectedForBattle, setSelectedForBattle] = useState([]);
   const [battleOpponent, setBattleOpponent] = useState(null);
   const [showBattleScreen, setShowBattleScreen] = useState(false);
+  const [adminSpawnQuery, setAdminSpawnQuery] = useState('');
 
   useEffect(() => {
     // Check if user is logged in
@@ -72,7 +85,6 @@ export default function PokemonWilds() {
             loadCurrentSpawn();
             loadMyPokemon();
             
-            // Load friends directly with the user data (don't wait for state update)
             fetch(`/api/friends?userId=${data.user.id}`)
               .then(res => res.json())
               .then(friendsData => {
@@ -82,10 +94,15 @@ export default function PokemonWilds() {
                 setTradeRequests(friendsData.tradeRequests || []);
               })
               .catch(err => console.error('Error loading friends:', err));
+          } else if (data.transient) {
+            console.error('Transient session error on wilds page:', data.error);
           } else {
             localStorage.removeItem('userId');
             window.location.href = '/';
           }
+        })
+        .catch(err => {
+          console.error('Session fetch failed on wilds page:', err);
         });
     } else {
       window.location.href = '/';
@@ -173,7 +190,9 @@ export default function PokemonWilds() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          pokemonId: pokemon.id // Pokemon species ID, not database _id
+          pokemonId: pokemon.id,
+          currentLevel: pokemon.level,
+          gender: pokemon.gender
         })
       });
 
@@ -197,10 +216,116 @@ export default function PokemonWilds() {
       console.log('📥 Friends API response:', data);
       console.log('👥 Friends array:', data.friends);
       setFriends(data.friends || []);
+      setPendingRequests(data.pendingRequests || []);
       setBattleRequests(data.battleRequests || []);
       setTradeRequests(data.tradeRequests || []);
     } catch (err) {
       console.error('Error loading friends:', err);
+    }
+  };
+
+
+  const loadEvolutionShop = async () => {
+    if (!user) return;
+    setLoadingItems(true);
+    try {
+      const response = await fetch('/api/wilds/items/catalog', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      });
+      const data = await response.json();
+      if (data.success) setShopItems(data.items || []);
+    } catch (err) {
+      console.error('Error loading evolution shop:', err);
+    } finally {
+      setLoadingItems(false);
+    }
+  };
+
+  const loadInventoryItems = async () => {
+    if (!user) return;
+    setLoadingItems(true);
+    try {
+      const response = await fetch('/api/wilds/items/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      });
+      const data = await response.json();
+      if (data.success) setInventoryItems(data.inventory || []);
+    } catch (err) {
+      console.error('Error loading inventory:', err);
+    } finally {
+      setLoadingItems(false);
+    }
+  };
+
+  const handleBuyEvolutionItem = async (itemName) => {
+    if (!user) return;
+    try {
+      const response = await fetch('/api/wilds/items/buy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, itemName })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setUser({ ...user, points: data.pointsRemaining });
+        await loadInventoryItems();
+        alert(`Bought ${data.item.name}!`);
+      } else {
+        alert(data.error || 'Unable to buy item');
+      }
+    } catch (err) {
+      alert('Unable to buy item');
+    }
+  };
+
+  const handleOpenUseItem = async (item) => {
+    setSelectedInventoryItem(item);
+    setShowUseItemDialog(true);
+    setCompatiblePokemon([]);
+    try {
+      const response = await fetch('/api/wilds/items/compatible', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, itemName: item.itemName })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setCompatiblePokemon(data.pokemon || []);
+      } else {
+        alert(data.error || 'Unable to load compatible Pokemon');
+      }
+    } catch (err) {
+      alert('Unable to load compatible Pokemon');
+    }
+  };
+
+  const handleUseEvolutionItem = async (pokemonId) => {
+    if (!selectedInventoryItem) return;
+    try {
+      const response = await fetch('/api/wilds/items/use', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, itemName: selectedInventoryItem.itemName, pokemonId })
+      });
+      const data = await response.json();
+      if (data.success) {
+        alert(data.message);
+        setShowUseItemDialog(false);
+        setSelectedInventoryItem(null);
+        await loadInventoryItems();
+        await loadMyPokemon();
+        if (selectedPokemon?._id === pokemonId) {
+          setSelectedPokemon(null);
+        }
+      } else {
+        alert(data.error || 'Unable to use item');
+      }
+    } catch (err) {
+      alert('Unable to use item');
     }
   };
 
@@ -487,7 +612,7 @@ export default function PokemonWilds() {
       const response = await fetch('/api/wilds/admin-spawn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId: user.id })
+        body: JSON.stringify({ adminId: user.id, pokemonId: adminSpawnQuery })
       });
 
       const data = await response.json();
@@ -507,7 +632,7 @@ export default function PokemonWilds() {
       const response = await fetch('/api/wilds/admin-spawn-shiny', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId: user.id })
+        body: JSON.stringify({ adminId: user.id, pokemonId: adminSpawnQuery })
       });
 
       const data = await response.json();
@@ -595,16 +720,24 @@ export default function PokemonWilds() {
     return Math.floor(10 + (currentLevel - 1) * 18);
   };
 
-  const handleBuyXP = async () => {
+  const handleBuyXP = async (amount = 50) => {
     if (!selectedPokemon || buyingXP) return;
-    
+
+    const parsedAmount = Number(amount);
+    const xpAmount = Number.isFinite(parsedAmount) ? Math.floor(parsedAmount) : 50;
+
+    if (!Number.isInteger(xpAmount) || xpAmount <= 0) {
+      alert('XP amount must be a positive whole number.');
+      return;
+    }
+
     if (selectedPokemon.level >= 100) {
       alert('Pokemon is already at max level!');
       return;
     }
-    
-    if (user.username !== 'Spheal' && user.points < 50) {
-      alert('Not enough points! Need 50 points.');
+
+    if (user.username !== 'Spheal' && user.points < xpAmount) {
+      alert(`Not enough points! Need ${xpAmount} points.`);
       return;
     }
 
@@ -615,7 +748,8 @@ export default function PokemonWilds() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           userId: user.id,
-          pokemonId: selectedPokemon._id
+          pokemonId: selectedPokemon._id,
+          xpAmount
         })
       });
 
@@ -638,7 +772,8 @@ export default function PokemonWilds() {
         if (data.leveledUp) {
           alert(`🎉 Leveled up to ${data.newLevel}!`);
         } else {
-          alert('XP purchased successfully!');
+          alert(`XP purchased successfully! +${xpAmount} XP`);
+          setShowCustomXPDialog(false);
         }
       } else {
         alert(data.error || 'Error purchasing XP');
@@ -745,7 +880,8 @@ export default function PokemonWilds() {
   }
 
   return (
-    <div 
+    <>
+      <div 
       className="min-h-screen bg-cover bg-center bg-no-repeat relative"
       style={{ backgroundImage: 'url(https://customer-assets.emergentagent.com/job_booster-hub-1/artifacts/3j79tqa6_image.png)' }}
     >
@@ -774,6 +910,15 @@ export default function PokemonWilds() {
             <div className="flex gap-4 items-center">
               {user.username === 'Spheal' && (
                 <>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="1025"
+                    placeholder="Dex # or name"
+                    value={adminSpawnQuery}
+                    onChange={(e) => setAdminSpawnQuery(e.target.value)}
+                    className="w-24 border-2 border-red-400/50 bg-slate-900/70 text-white"
+                  />
                   <Button 
                     onClick={handleAdminSpawn}
                     className="bg-red-600 hover:bg-red-500 border-2 border-red-400 font-bold"
@@ -788,12 +933,35 @@ export default function PokemonWilds() {
                   </Button>
                 </>
               )}
+              <Button
+                onClick={() => {
+                  setShowShopDialog(true);
+                  loadEvolutionShop();
+                }}
+                className="bg-emerald-600 hover:bg-emerald-500"
+              >
+                Shop
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowInventoryDialog(true);
+                  loadInventoryItems();
+                }}
+                className="bg-orange-600 hover:bg-orange-500"
+              >
+                Inventory
+              </Button>
               <Button 
                 onClick={() => setShowFriendsPanel(true)}
-                className="bg-blue-600 hover:bg-blue-500"
+                className="relative bg-blue-600 hover:bg-blue-500"
               >
                 <Users className="mr-2 h-4 w-4" />
                 Friends ({friends.length})
+                {unreadSocialCount > 0 && (
+                  <span className="absolute -top-2 -right-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white">
+                    {unreadSocialCount}
+                  </span>
+                )}
               </Button>
               <Button 
                 onClick={() => {
@@ -820,12 +988,6 @@ export default function PokemonWilds() {
             <div className="text-center">
               {/* Pokemon Display */}
               <div className="mb-8 animate-bounce-slow relative">
-                {spawn.pokemon.isShiny && (
-                  <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                    <div className="text-4xl animate-pulse">✨</div>
-                    <div className="text-yellow-400 font-bold text-sm">SHINY!</div>
-                  </div>
-                )}
                 <img
                   src={spawn.pokemon.sprite}
                   alt={spawn.pokemon.displayName}
@@ -1168,14 +1330,32 @@ export default function PokemonWilds() {
                               }}
                             />
                           </div>
-                          <div className="flex gap-2">
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button
+                                onClick={() => handleBuyXP(50)}
+                                disabled={buyingXP || selectedPokemon.level >= 100 || (user.username !== 'Spheal' && user.points < 50)}
+                                className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                                size="sm"
+                              >
+                                {buyingXP ? 'Buying...' : 'Buy 50 XP (50 Points)'}
+                              </Button>
+                              <Button
+                                onClick={() => handleBuyXP(2500)}
+                                disabled={buyingXP || selectedPokemon.level >= 100 || (user.username !== 'Spheal' && user.points < 2500)}
+                                className="bg-blue-700 hover:bg-blue-600 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                                size="sm"
+                              >
+                                {buyingXP ? 'Buying...' : 'Buy 2500 XP (2500 Points)'}
+                              </Button>
+                            </div>
                             <Button
-                              onClick={handleBuyXP}
-                              disabled={buyingXP || selectedPokemon.level >= 100 || (user.username !== 'Spheal' && user.points < 50)}
-                              className="flex-1 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                              onClick={() => setShowCustomXPDialog(true)}
+                              disabled={buyingXP || selectedPokemon.level >= 100}
+                              className="w-full bg-purple-700 hover:bg-purple-600 disabled:bg-gray-600 disabled:cursor-not-allowed"
                               size="sm"
                             >
-                              {buyingXP ? 'Buying...' : 'Buy 50 XP (50 Points)'}
+                              Buy Custom XP
                             </Button>
                           </div>
                         </div>
@@ -1737,7 +1917,7 @@ export default function PokemonWilds() {
                           <Badge className="mb-1 bg-yellow-500 text-xs">✨</Badge>
                         )}
                         <img src={pokemon.sprite} alt={pokemon.displayName} className="w-16 h-16 mx-auto mb-1" />
-                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}</p>
+                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}{pokemon.isShiny ? ' ✨' : ''}</p>
                         <p className="text-gray-400 text-xs text-center">Lv {pokemon.level}</p>
                       </CardContent>
                     </Card>
@@ -1766,7 +1946,7 @@ export default function PokemonWilds() {
                           <Badge className="mb-1 bg-yellow-500 text-xs">✨</Badge>
                         )}
                         <img src={pokemon.sprite} alt={pokemon.displayName} className="w-16 h-16 mx-auto mb-1" />
-                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}</p>
+                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}{pokemon.isShiny ? ' ✨' : ''}</p>
                         <p className="text-gray-400 text-xs text-center">Lv {pokemon.level}</p>
                       </CardContent>
                     </Card>
@@ -1837,5 +2017,143 @@ export default function PokemonWilds() {
       </Dialog>
 
     </div>
+
+
+      <Dialog open={showShopDialog} onOpenChange={setShowShopDialog}>
+        <DialogContent className="max-w-4xl max-h-[85vh] border-4 border-emerald-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-emerald-400">Evolution Item Shop</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="h-[60vh] pr-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {shopItems.map((item) => (
+                <Card key={item.itemName} className="border-2 border-emerald-500/30 bg-slate-800/70">
+                  <CardContent className="p-4 text-center space-y-3">
+                    {item.sprite ? (
+                      <img src={item.sprite} alt={item.name} className="w-16 h-16 mx-auto" />
+                    ) : (
+                      <div className="w-16 h-16 mx-auto rounded bg-slate-700" />
+                    )}
+                    <div>
+                      <p className="text-white font-bold">{item.name}</p>
+                      <p className="text-emerald-300 text-sm">500 Points</p>
+                    </div>
+                    <Button
+                      onClick={() => handleBuyEvolutionItem(item.itemName)}
+                      disabled={user?.username !== 'Spheal' && (user?.points ?? 0) < 500}
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-600"
+                    >
+                      Buy
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showInventoryDialog} onOpenChange={setShowInventoryDialog}>
+        <DialogContent className="max-w-4xl max-h-[85vh] border-4 border-orange-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-orange-400">Inventory</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="h-[60vh] pr-4">
+            {inventoryItems.length === 0 ? (
+              <p className="text-slate-300">No evolution items yet.</p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {inventoryItems.map((item) => (
+                  <Card key={item.itemName} className="border-2 border-orange-500/30 bg-slate-800/70">
+                    <CardContent className="p-4 text-center space-y-3">
+                      {item.sprite ? (
+                        <img src={item.sprite} alt={item.name} className="w-16 h-16 mx-auto" />
+                      ) : (
+                        <div className="w-16 h-16 mx-auto rounded bg-slate-700" />
+                      )}
+                      <div>
+                        <p className="text-white font-bold">{item.name}</p>
+                        <p className="text-orange-300 text-sm">x{item.count}</p>
+                      </div>
+                      <Button onClick={() => handleOpenUseItem(item)} className="w-full bg-orange-600 hover:bg-orange-500">
+                        Use
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showUseItemDialog} onOpenChange={setShowUseItemDialog}>
+        <DialogContent className="max-w-3xl max-h-[85vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-purple-400">Use {selectedInventoryItem?.name}</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="h-[55vh] pr-4">
+            {compatiblePokemon.length === 0 ? (
+              <p className="text-slate-300">No Pokemon can use this item right now.</p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {compatiblePokemon.map((pokemon) => (
+                  <Card key={pokemon._id} className="border-2 border-purple-500/30 bg-slate-800/70">
+                    <CardContent className="p-4 text-center space-y-3">
+                      <img src={pokemon.sprite} alt={pokemon.displayName} className="w-20 h-20 mx-auto" />
+                      <div>
+                        <p className="text-white font-bold">{pokemon.nickname || pokemon.displayName}</p>
+                        <p className="text-slate-300 text-sm">Lv {pokemon.level}</p>
+                      </div>
+                      <Button onClick={() => handleUseEvolutionItem(pokemon._id)} className="w-full bg-purple-600 hover:bg-purple-500">
+                        Use Item
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showCustomXPDialog} onOpenChange={setShowCustomXPDialog}>
+        <DialogContent className="max-w-md border-4 border-orange-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-orange-400">Custom XP Purchase</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-orange-500/30 bg-slate-800/60 p-3">
+              <p className="text-sm text-orange-200">Current Points</p>
+              <p className="text-2xl font-bold text-white">{user?.username === 'Spheal' ? '999999+' : (user?.points ?? 0)}</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-orange-300">XP to buy</label>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                value={customXPAmount}
+                onChange={(e) => setCustomXPAmount(e.target.value)}
+                className="border-2 border-orange-500/30 bg-slate-800/70 text-white"
+              />
+              <p className="text-xs text-slate-300">Cost: {Number(customXPAmount) > 0 ? Math.floor(Number(customXPAmount)) : 0} points</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setShowCustomXPDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-orange-600 hover:bg-orange-500 disabled:bg-gray-600"
+                disabled={buyingXP || !Number.isFinite(Number(customXPAmount)) || Math.floor(Number(customXPAmount)) <= 0 || (user?.username !== 'Spheal' && (user?.points ?? 0) < Math.floor(Number(customXPAmount)))}
+                onClick={() => handleBuyXP(customXPAmount)}
+              >
+                {buyingXP ? 'Buying...' : 'Buy Custom XP'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

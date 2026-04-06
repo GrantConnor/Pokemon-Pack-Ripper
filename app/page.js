@@ -10,19 +10,84 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sparkles, Package, Library, LogOut, Coins, Search, Clock, Eye, Users, Send, X, Check } from 'lucide-react';
+import { Sparkles, Package, Library, LogOut, Coins, Search, Clock, Eye, Users, Send, X, Check, Star } from 'lucide-react';
 import Link from 'next/link';
+
+
+const ALL_KNOWN_RARITIES = [
+  'Common',
+  'Uncommon',
+  'Rare',
+  'Rare Holo',
+  'Rare Holo EX',
+  'Double Rare',
+  'Illustration Rare',
+  'Special Illustration Rare',
+  'Ultra Rare',
+  'Rare Ultra',
+  'Rare Rainbow',
+  'Hyper Rare',
+  'Secret Rare',
+  'Rare Secret',
+  'Amazing Rare',
+  'Rare BREAK',
+  'Rare Prism Star',
+  'ACE SPEC Rare',
+  'Shiny Rare',
+  'Radiant Rare',
+  'LEGEND',
+];
+
+const CACHE_TTL = {
+  sets: 24 * 60 * 60 * 1000,
+  collection: 5 * 60 * 1000,
+  friends: 2 * 60 * 1000,
+  previewCards: 24 * 60 * 60 * 1000,
+};
+
+function readLocalCache(key, maxAgeMs) {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (!parsed.savedAt || (Date.now() - parsed.savedAt) > maxAgeMs) return null;
+    return parsed.value;
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalCache(key, value) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, JSON.stringify({ value, savedAt: Date.now() }));
+  } catch {}
+}
+
+function clearLocalCache(key) {
+  if (typeof window === 'undefined') return;
+  try { localStorage.removeItem(key); } catch {}
+}
+
+function setsCacheKey() { return 'cache:sets:v1'; }
+function collectionCacheKey(userId) { return `cache:collection:${userId}:v1`; }
+function friendsCacheKey(userId) { return `cache:friends:${userId}:v1`; }
+function previewCardsCacheKey(setId) { return `cache:preview-cards:${setId}:v1`; }
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [wildSpawnAnnouncement, setWildSpawnAnnouncement] = useState(null);
   const [sets, setSets] = useState([]);
   const [collection, setCollection] = useState([]);
   const [loading, setLoading] = useState(false);
   const [openingPack, setOpeningPack] = useState(false);
   const [pulledCards, setPulledCards] = useState([]);
+  const [pendingRevealId, setPendingRevealId] = useState(null);
   const [showPackAnimation, setShowPackAnimation] = useState(false);
   const [selectedSet, setSelectedSet] = useState(null);
   const [activeTab, setActiveTab] = useState('packs');
@@ -39,7 +104,7 @@ export default function App() {
   const [rarityFilter, setRarityFilter] = useState('all');
   const [setFilter, setSetFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('newest'); // Default to newest
+  const [sortBy, setSortBy] = useState(['newest']); // Default to newest
 
   // Friends & Trading state
   const [friends, setFriends] = useState([]);
@@ -59,11 +124,14 @@ export default function App() {
   const [viewingFriend, setViewingFriend] = useState(null);
   const [viewingFriendCollection, setViewingFriendCollection] = useState([]);
   const [breakdownMode, setBreakdownMode] = useState(false);
+  const [breakdownAllMultiples, setBreakdownAllMultiples] = useState(true);
   const [selectedForBreakdown, setSelectedForBreakdown] = useState([]);
   const [showBreakdownQuantityModal, setShowBreakdownQuantityModal] = useState(false);
   const [breakdownQuantityCard, setBreakdownQuantityCard] = useState(null);
   const [breakdownQuantity, setBreakdownQuantity] = useState(1);
   const [isDissolving, setIsDissolving] = useState(false);
+
+  const unreadSocialCount = pendingRequests.length + tradeRequests.length;
 
   useEffect(() => {
     // Check if user is logged in
@@ -75,9 +143,14 @@ export default function App() {
           if (data.authenticated) {
             setUser(data.user);
             setCountdown(data.user.nextPointsIn || 0);
+          } else if (data.transient) {
+            console.error('Transient session error on home page:', data.error);
           } else {
             localStorage.removeItem('userId');
           }
+        })
+        .catch(err => {
+          console.error('Session fetch failed on home page:', err);
         });
     }
   }, []);
@@ -96,6 +169,11 @@ export default function App() {
                   setUser(data.user);
                   return data.user.nextPointsIn || 0;
                 }
+                return prev;
+              })
+              .catch(err => {
+                console.error('Countdown session refresh failed:', err);
+                return prev;
               });
             return 0;
           }
@@ -116,15 +194,80 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (user) {
-      loadSets();
-      loadCollection();
-      loadFriends();
-      if (user.username === 'Spheal') {
-        loadAllUsers();
+    if (!user) return;
+
+    let cancelled = false;
+
+    const bootstrapUserData = async () => {
+      try {
+        await loadSets();
+        if (cancelled) return;
+
+        await loadCollection();
+        if (cancelled) return;
+
+        await loadFriends();
+        if (cancelled) return;
+
+        await recoverPendingPackReveal(user.id);
+        if (cancelled) return;
+
+        if (user.username === 'Spheal') {
+          await loadAllUsers();
+        }
+      } catch (error) {
+        console.error('[BOOTSTRAP] Failed loading post-login data', {
+          userId: user.id,
+          username: user.username,
+          message: error?.message,
+        });
       }
-    }
-  }, [user]);
+    };
+
+    bootstrapUserData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.username]);
+
+
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+
+    const checkWildSpawnAnnouncement = async () => {
+      try {
+        const response = await fetch('/api/wilds/current');
+        const data = await response.json();
+        if (!response.ok || !data.spawn || cancelled) return;
+
+        const spawnKey = `${data.spawn.spawnedAt}:${data.spawn.pokemon.id}`;
+        const seenKey = 'site:lastWildSpawnSeen';
+        const lastSeen = localStorage.getItem(seenKey);
+
+        if (lastSeen && lastSeen !== spawnKey) {
+          setWildSpawnAnnouncement({
+            key: spawnKey,
+            name: data.spawn.pokemon.displayName,
+            id: data.spawn.pokemon.id,
+          });
+        }
+
+        localStorage.setItem(seenKey, spawnKey);
+      } catch (error) {
+        console.error('Failed checking wild spawn announcement:', error);
+      }
+    };
+
+    checkWildSpawnAnnouncement();
+    const interval = setInterval(checkWildSpawnAnnouncement, 60000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [user?.id]);
 
   // Filtered collection based on search and filters
   const filteredCollection = useMemo(() => {
@@ -149,17 +292,7 @@ export default function App() {
 
     // Filter by type (illustration, full art, reverse holo)
     if (typeFilter !== 'all') {
-      if (typeFilter === 'reverse') {
-        filtered = filtered.filter(card => card.isReverseHolo);
-      } else if (typeFilter === 'full-art') {
-        filtered = filtered.filter(card => 
-          card.rarity && (card.rarity.includes('Full Art') || card.subtypes?.includes('Full Art'))
-        );
-      } else if (typeFilter === 'illustration') {
-        filtered = filtered.filter(card => 
-          card.rarity && card.rarity.includes('Illustration')
-        );
-      }
+      filtered = filtered.filter(card => Array.isArray(card.types) && card.types.includes(typeFilter));
     }
 
     return filtered;
@@ -189,6 +322,30 @@ export default function App() {
   };
 
   // Group duplicates and sort
+
+  const SORT_OPTIONS = [
+    { value: 'newest', label: 'Newest' },
+    { value: 'name', label: 'Name (A-Z)' },
+    { value: 'set', label: 'Set' },
+    { value: 'type', label: 'Type' },
+    { value: 'rarity', label: 'Rarity' },
+    { value: 'favorites', label: 'Favorites First' },
+  ];
+
+  const toggleSortOption = (value) => {
+    if (value === 'none') {
+      setSortBy([]);
+      return;
+    }
+    setSortBy((prev) => {
+      const next = prev.includes(value)
+        ? prev.filter(item => item !== value)
+        : [...prev, value];
+      const order = new Map(SORT_OPTIONS.map((option, index) => [option.value, index]));
+      return next.sort((a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999));
+    });
+  };
+
   const groupedAndSortedCollection = useMemo(() => {
     // Group by card ID
     const cardMap = new Map();
@@ -196,6 +353,9 @@ export default function App() {
       const key = card.id;
       if (cardMap.has(key)) {
         cardMap.get(key).count++;
+        if (card.favorite) {
+          cardMap.get(key).favorite = true;
+        }
         // Keep the earliest pulled card for "newest" logic
         if (new Date(card.pulledAt) > new Date(cardMap.get(key).pulledAt)) {
           cardMap.get(key).pulledAt = card.pulledAt;
@@ -207,40 +367,53 @@ export default function App() {
 
     let grouped = Array.from(cardMap.values());
 
-    // Sort
-    if (sortBy === 'newest') {
-      grouped.sort((a, b) => new Date(b.pulledAt) - new Date(a.pulledAt));
-    } else if (sortBy === 'name') {
-      grouped.sort((a, b) => a.name.localeCompare(b.name));
-    } else if (sortBy === 'set') {
-      grouped.sort((a, b) => (a.set?.name || '').localeCompare(b.set?.name || ''));
-    } else if (sortBy === 'type') {
+    const rarityOrder = { 
+      'Common': 1, 
+      'Uncommon': 2, 
+      'Rare': 3, 
+      'Rare Holo': 4,
+      'Rare Holo EX': 5,
+      'Double Rare': 6,
+      'Illustration Rare': 7,
+      'Special Illustration Rare': 8,
+      'Ultra Rare': 9,
+      'Rare Ultra': 10,
+      'Rare Rainbow': 11,
+      'Hyper Rare': 12,
+      'Secret Rare': 13,
+      'Rare Secret': 14,
+      'Amazing Rare': 15,
+      'Rare BREAK': 16,
+      'Rare Prism Star': 17,
+      'ACE SPEC Rare': 18,
+      'Shiny Rare': 19,
+      'Radiant Rare': 20,
+      'LEGEND': 21,
+    };
+
+    const selectedSorts = Array.isArray(sortBy) ? sortBy : (sortBy && sortBy !== 'none' ? [sortBy] : []);
+    if (selectedSorts.length > 0) {
       grouped.sort((a, b) => {
-        const typeA = getCardType(a);
-        const typeB = getCardType(b);
-        return typeA.localeCompare(typeB);
-      });
-    } else if (sortBy === 'rarity') {
-      // Rarity order from LEAST rare to MOST rare
-      const rarityOrder = { 
-        'Common': 1, 
-        'Uncommon': 2, 
-        'Rare': 3, 
-        'Rare Holo': 4,
-        'Double Rare': 5,
-        'Illustration Rare': 6,
-        'Ultra Rare': 7,
-        'Rare Ultra': 7,
-        'Rare Rainbow': 7,
-        'Special Illustration Rare': 8,
-        'Hyper Rare': 9,
-        'Rare Secret': 9,
-        'Secret Rare': 9
-      };
-      grouped.sort((a, b) => {
-        const orderA = rarityOrder[a.rarity] || 999;
-        const orderB = rarityOrder[b.rarity] || 999;
-        return orderA - orderB;
+        for (const sort of selectedSorts) {
+          let result = 0;
+          if (sort === 'favorites') {
+            if (!!b.favorite !== !!a.favorite) {
+              result = Number(b.favorite) - Number(a.favorite);
+            }
+          } else if (sort === 'newest') {
+            result = new Date(b.pulledAt) - new Date(a.pulledAt);
+          } else if (sort === 'name') {
+            result = a.name.localeCompare(b.name);
+          } else if (sort === 'set') {
+            result = (a.set?.name || '').localeCompare(b.set?.name || '');
+          } else if (sort === 'type') {
+            result = getCardType(a).localeCompare(getCardType(b));
+          } else if (sort === 'rarity') {
+            result = (rarityOrder[a.rarity] || 999) - (rarityOrder[b.rarity] || 999);
+          }
+          if (result !== 0) return result;
+        }
+        return 0;
       });
     }
 
@@ -249,8 +422,14 @@ export default function App() {
 
   // Get unique rarities and sets from collection
   const uniqueRarities = useMemo(() => {
-    const rarities = new Set(collection.map(card => card.rarity).filter(Boolean));
-    return Array.from(rarities).sort();
+    const merged = new Set([...ALL_KNOWN_RARITIES, ...collection.map(card => card.rarity).filter(Boolean)]);
+    const order = new Map(ALL_KNOWN_RARITIES.map((rarity, index) => [rarity, index]));
+    return Array.from(merged).sort((a, b) => {
+      const orderA = order.has(a) ? order.get(a) : Number.MAX_SAFE_INTEGER;
+      const orderB = order.has(b) ? order.get(b) : Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.localeCompare(b);
+    });
   }, [collection]);
 
   const uniqueSets = useMemo(() => {
@@ -263,6 +442,16 @@ export default function App() {
     return Array.from(sets.entries()).map(([id, name]) => ({ id, name }));
   }, [collection]);
 
+  const uniqueTypes = useMemo(() => {
+    const types = new Set();
+    collection.forEach(card => {
+      (card.types || []).forEach(type => {
+        if (type) types.add(type);
+      });
+    });
+    return Array.from(types).sort((a, b) => a.localeCompare(b));
+  }, [collection]);
+
   // Filtered packs based on search
   const filteredPacks = useMemo(() => {
     if (!packSearchQuery) return sets;
@@ -272,41 +461,126 @@ export default function App() {
     );
   }, [sets, packSearchQuery]);
 
-  const loadSets = async () => {
+  const loadSets = async (options = {}) => {
+    const { forceRefresh = false } = options;
     try {
+      const cacheKey = setsCacheKey();
+      if (!forceRefresh) {
+        const cachedSets = readLocalCache(cacheKey, CACHE_TTL.sets);
+        if (cachedSets?.length) {
+          setSets(cachedSets);
+          return cachedSets;
+        }
+      }
+
       const response = await fetch('/api/sets');
       const data = await response.json();
-      setSets(data.sets || []);
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load sets');
+      }
+      const nextSets = data.sets || [];
+      setSets(nextSets);
+      writeLocalCache(cacheKey, nextSets);
+      return nextSets;
     } catch (err) {
       console.error('Error loading sets:', err);
+      return [];
     }
   };
 
-  const loadCollection = async () => {
-    if (!user) return;
+  const loadCollection = async (options = {}) => {
+    if (!user) return [];
+    const { forceRefresh = false } = options;
     try {
-      const response = await fetch(`/api/collection?userId=${user.id}`);
-      const data = await response.json();
-      setCollection(data.collection || []);
+      const cacheKey = collectionCacheKey(user.id);
+      if (!forceRefresh) {
+        const cachedCollection = readLocalCache(cacheKey, CACHE_TTL.collection);
+        if (Array.isArray(cachedCollection) && cachedCollection.length >= 0) {
+          setCollection(cachedCollection);
+          return cachedCollection;
+        }
+      }
+
+      const pageSize = 200;
+      let offset = 0;
+      let allCards = [];
+      let hasMore = true;
+
+      while (hasMore) {
+        const response = await fetch(`/api/collection?userId=${user.id}&offset=${offset}&limit=${pageSize}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to load collection');
+        }
+
+        const cards = data.collection || [];
+        allCards = [...allCards, ...cards];
+        hasMore = !!data.hasMore;
+        offset += cards.length;
+
+        if (cards.length === 0) break;
+      }
+
+      setCollection(allCards);
+      writeLocalCache(cacheKey, allCards);
+      return allCards;
     } catch (err) {
       console.error('Error loading collection:', err);
+      return [];
     }
   };
 
-  const loadFriends = async () => {
-    if (!user) return;
+  const loadFriends = async (options = {}) => {
+    if (!user) return null;
+    const { forceRefresh = false } = options;
     try {
+      const cacheKey = friendsCacheKey(user.id);
+      if (!forceRefresh) {
+        const cachedFriends = readLocalCache(cacheKey, CACHE_TTL.friends);
+        if (cachedFriends) {
+          setFriends(cachedFriends.friends || []);
+          setPendingRequests(cachedFriends.pendingRequests || []);
+          setSentRequests(cachedFriends.sentRequests || []);
+          setTradeRequests(cachedFriends.tradeRequests || []);
+          return cachedFriends;
+        }
+      }
+
       const response = await fetch(`/api/friends?userId=${user.id}`);
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load friends');
+      }
       setFriends(data.friends || []);
       setPendingRequests(data.pendingRequests || []);
       setSentRequests(data.sentRequests || []);
       setTradeRequests(data.tradeRequests || []);
+      writeLocalCache(cacheKey, {
+        friends: data.friends || [],
+        pendingRequests: data.pendingRequests || [],
+        sentRequests: data.sentRequests || [],
+        tradeRequests: data.tradeRequests || [],
+      });
+      return data;
     } catch (err) {
       console.error('Error loading friends:', err);
+      return null;
     }
   };
 
+
+  const invalidateCollectionCache = (targetUserId = user?.id) => {
+    if (targetUserId) clearLocalCache(collectionCacheKey(targetUserId));
+  };
+
+  const invalidateFriendsCache = (targetUserId = user?.id) => {
+    if (targetUserId) clearLocalCache(friendsCacheKey(targetUserId));
+  };
+
+  const updateCollectionCache = (cards, targetUserId = user?.id) => {
+    if (targetUserId) writeLocalCache(collectionCacheKey(targetUserId), cards);
+  };
   const loadAllUsers = async () => {
     try {
       const response = await fetch('/api/admin/users');
@@ -333,7 +607,8 @@ export default function App() {
       if (response.ok) {
         setFriendMessage(`✅ ${data.message}`);
         setFriendUsername('');
-        loadFriends();
+        invalidateFriendsCache();
+        loadFriends({ forceRefresh: true });
       } else {
         setFriendMessage(`❌ ${data.error}`);
       }
@@ -349,7 +624,8 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, friendId })
       });
-      loadFriends();
+      invalidateFriendsCache();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error accepting friend:', err);
     }
@@ -362,7 +638,8 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, friendId })
       });
-      loadFriends();
+      invalidateFriendsCache();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error declining friend:', err);
     }
@@ -434,8 +711,10 @@ export default function App() {
         setSelectedResponseCards([]);
         setTradeSearchWant('');
         setTradeSearchOffer('');
-        loadFriends();
-        loadCollection();
+        invalidateFriendsCache();
+        invalidateCollectionCache();
+        loadFriends({ forceRefresh: true });
+        loadCollection({ forceRefresh: true });
       } else {
         alert(data.error);
       }
@@ -463,8 +742,10 @@ export default function App() {
       if (response.ok) {
         alert(data.message);
         setActiveTrade(null);
-        loadFriends();
-        loadCollection();
+        invalidateFriendsCache();
+        invalidateCollectionCache();
+        loadFriends({ forceRefresh: true });
+        loadCollection({ forceRefresh: true });
       } else {
         alert(data.error);
       }
@@ -481,7 +762,8 @@ export default function App() {
         body: JSON.stringify({ userId: user.id, tradeId })
       });
       setActiveTrade(null);
-      loadFriends();
+      invalidateFriendsCache();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error declining trade:', err);
     }
@@ -519,60 +801,71 @@ export default function App() {
     }
   };
 
-  const calculateBreakdownPoints = () => {
+  const getBreakdownValue = (rarity) => {
     const breakdownValues = {
-      'Common': 10,
-      'Uncommon': 20,
-      'Rare': 50,
-      'Rare Holo': 50,
-      'Double Rare': 100,
-      'Illustration Rare': 200,
-      'Ultra Rare': 200,
-      'Rare Ultra': 200,
-      'Rare Rainbow': 200,
-      'Special Illustration Rare': 400,
-      'Hyper Rare': 500,
-      'Rare Secret': 500,
-      'Secret Rare': 500
-    };
-    
-    return selectedForBreakdown.reduce((total, card) => {
-      return total + (breakdownValues[card.rarity] || 10);
-    }, 0);
+  'Common': 5,
+  'Uncommon': 10,
+  'Rare': 20,
+  'Rare Holo': 20,
+  'Double Rare': 50,
+  'Illustration Rare': 250,
+  'Ultra Rare': 250,
+  'Rare Ultra': 250,
+  'Rare Rainbow': 250,
+  'Special Illustration Rare': 250,
+  'Hyper Rare': 1000,
+  'Rare Secret': 1000,
+  'Secret Rare': 1000
+};
+    return breakdownValues[rarity] || 10;
+  };
+
+  const calculateMultiplesBreakdownSummary = () => {
+    return groupedAndSortedCollection.reduce((summary, card) => {
+      if (card.count > 1) {
+        const duplicatesToBreakDown = card.count - 1;
+        summary.cards += duplicatesToBreakDown;
+        summary.points += getBreakdownValue(card.rarity) * duplicatesToBreakDown;
+      }
+      return summary;
+    }, { cards: 0, points: 0 });
   };
 
   const handleBreakdownCards = async () => {
-    if (selectedForBreakdown.length === 0) {
-      alert('Please select cards to break down');
+    if (!breakdownAllMultiples) {
+      alert('Check "Break down all multiples" to continue.');
       return;
     }
 
-    const pointsToGain = calculateBreakdownPoints();
-    
-    if (!window.confirm(`Break down ${selectedForBreakdown.length} card(s) for ${pointsToGain} points? This cannot be undone!`)) {
+    const summary = calculateMultiplesBreakdownSummary();
+    if (summary.cards === 0) {
+      alert('You do not have any duplicate cards to break down.');
+      return;
+    }
+
+    if (!window.confirm(`Break down all duplicate cards (${summary.cards} cards) for ${summary.points} points? This will leave 1 copy of each card in your collection.`)) {
       return;
     }
 
     try {
-      const response = await fetch('/api/cards/breakdown', {
+      const response = await fetch('/api/cards/breakdown-multiples', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, cards: selectedForBreakdown })
+        body: JSON.stringify({ userId: user.id })
       });
 
       const data = await response.json();
       if (response.ok) {
-        alert(`Successfully broke down ${data.cardsBreakdown} cards for ${data.pointsAwarded} points!`);
-        setSelectedForBreakdown([]);
+        alert(`Successfully broke down ${data.cardsBreakdown} duplicate cards for ${data.pointsAwarded} points!`);
         setBreakdownMode(false);
-        loadCollection();
-        // Update user points
+        invalidateCollectionCache();
+        loadCollection({ forceRefresh: true });
         setUser(prev => ({ ...prev, points: prev.points + data.pointsAwarded }));
       } else {
         alert(data.error);
       }
     } catch (err) {
-      alert('Error breaking down cards');
+      alert('Error breaking down duplicate cards');
     }
   };
 
@@ -769,6 +1062,10 @@ export default function App() {
   };
 
   const handleSignOut = () => {
+    if (user?.id) {
+      clearLocalCache(collectionCacheKey(user.id));
+      clearLocalCache(friendsCacheKey(user.id));
+    }
     localStorage.removeItem('userId');
     setUser(null);
     setCollection([]);
@@ -894,6 +1191,54 @@ export default function App() {
   };
 
 
+
+  const hydrateRevealIntoUi = (revealData) => {
+    if (!revealData) return;
+
+    const ownedCardIds = new Set(collection.map(c => c.id));
+
+    if (revealData.isBulk && revealData.packs) {
+      const packsWithNewFlags = revealData.packs.map(pack => ({
+        ...pack,
+        cards: pack.cards.map(card => ({
+          ...card,
+          isNewCard: !ownedCardIds.has(card.id)
+        }))
+      }));
+      setPulledCards(packsWithNewFlags);
+    } else {
+      const cardsWithNewFlag = (revealData.cards || []).map(card => ({
+        ...card,
+        isNewCard: !ownedCardIds.has(card.id)
+      }));
+      setPulledCards([{ packNumber: 1, cards: cardsWithNewFlag }]);
+    }
+
+    setPendingRevealId(revealData.revealId || revealData.id || null);
+    if (revealData.pointsRemaining !== undefined) {
+      setUser(prev => prev ? ({ ...prev, points: revealData.pointsRemaining }) : prev);
+    }
+  };
+
+  const recoverPendingPackReveal = async (targetUserId = user?.id) => {
+    if (!targetUserId) return false;
+
+    try {
+      const response = await fetch(`/api/packs/pending?userId=${targetUserId}`);
+      const data = await response.json();
+
+      if (response.ok && data.reveal) {
+        hydrateRevealIntoUi(data.reveal);
+        setShowPackAnimation(false);
+        return true;
+      }
+    } catch (error) {
+      console.error('Failed to recover pending pack reveal:', error);
+    }
+
+    return false;
+  };
+
   const handleOpenPack = async (set, bulk = false) => {
     setSelectedSet(set);
     setOpeningPack(true);
@@ -911,30 +1256,8 @@ export default function App() {
       if (response.ok) {
         // Simulate pack opening animation
         setTimeout(() => {
-          // Mark cards as new if not already owned
-          const ownedCardIds = new Set(collection.map(c => c.id));
-          
-          if (data.isBulk && data.packs) {
-            // For bulk openings, store individual packs
-            const packsWithNewFlags = data.packs.map(pack => ({
-              ...pack,
-              cards: pack.cards.map(card => ({
-                ...card,
-                isNewCard: !ownedCardIds.has(card.id)
-              }))
-            }));
-            setPulledCards(packsWithNewFlags); // Store array of packs
-          } else {
-            // For single pack, mark cards as new
-            const cardsWithNewFlag = data.cards.map(card => ({
-              ...card,
-              isNewCard: !ownedCardIds.has(card.id)
-            }));
-            setPulledCards([{ packNumber: 1, cards: cardsWithNewFlag }]); // Wrap in pack structure
-          }
-          
+          hydrateRevealIntoUi(data);
           setShowPackAnimation(false);
-          setUser(prev => ({ ...prev, points: data.pointsRemaining }));
           
           // Check for achievements
           if (data.achievements) {
@@ -942,36 +1265,62 @@ export default function App() {
             setShowAchievementDialog(true);
           }
           
-          loadCollection();
+          invalidateCollectionCache();
+          loadCollection({ forceRefresh: true });
         }, 2000);
       } else {
         setError(data.error || 'Failed to open pack');
         setShowPackAnimation(false);
       }
     } catch (err) {
-      setError('An error occurred. Please try again.');
-      setShowPackAnimation(false);
+      const recovered = await recoverPendingPackReveal(user?.id);
+      if (!recovered) {
+        setError('An error occurred. Please try again.');
+        setShowPackAnimation(false);
+      }
     } finally {
       setOpeningPack(false);
     }
   };
 
-  const closePackResults = () => {
+  const closePackResults = async () => {
+    const revealIdToClaim = pendingRevealId;
+
     setPulledCards([]);
+    setPendingRevealId(null);
     setSelectedSet(null);
+
+    if (revealIdToClaim && user?.id) {
+      try {
+        await fetch('/api/packs/pending/claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, revealId: revealIdToClaim })
+        });
+      } catch (error) {
+        console.error('Failed to mark pack reveal as claimed:', error);
+      }
+    }
   };
 
   const handlePreviewSet = async (set) => {
     setPreviewSet(set);
     setPreviewCards([]);
-    
+
     try {
+      const cacheKey = previewCardsCacheKey(set.id);
+      const cachedCards = readLocalCache(cacheKey, CACHE_TTL.previewCards);
+      if (cachedCards?.length) {
+        setPreviewCards(cachedCards);
+        return;
+      }
+
       const response = await fetch(`/api/cards?setId=${set.id}`);
       const data = await response.json();
       if (response.ok) {
-        // Filter out energy cards from preview
         const nonEnergyCards = (data.cards || []).filter(card => card.supertype !== 'Energy');
         setPreviewCards(nonEnergyCards);
+        writeLocalCache(cacheKey, nonEnergyCards);
       }
     } catch (err) {
       console.error('Error loading preview:', err);
@@ -995,6 +1344,76 @@ export default function App() {
         return c;
       });
       setCollection(updatedCollection);
+      updateCollectionCache(updatedCollection);
+    }
+  };
+
+
+  const handleToggleFavorite = async (card, event) => {
+    event.stopPropagation();
+    if (!user) return;
+
+    const nextFavorite = !card.favorite;
+    const updatedCollection = collection.map(existingCard => (
+      existingCard.id === card.id ? { ...existingCard, favorite: nextFavorite } : existingCard
+    ));
+
+    setCollection(updatedCollection);
+    updateCollectionCache(updatedCollection);
+
+    try {
+      const response = await fetch('/api/collection/favorite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, cardId: card.id, favorite: nextFavorite })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update favorite');
+      }
+    } catch (error) {
+      const revertedCollection = collection.map(existingCard => (
+        existingCard.id === card.id ? { ...existingCard, favorite: card.favorite } : existingCard
+      ));
+      setCollection(revertedCollection);
+      updateCollectionCache(revertedCollection);
+      console.error('Error updating favorite:', error);
+    }
+  };
+
+
+  const handleBreakdownSingleCopy = async () => {
+    if (!selectedCard || !user) return;
+
+    const pointsToGain = getBreakdownValue(selectedCard.rarity);
+    if (!window.confirm(`Break down 1 copy of ${selectedCard.name} for ${pointsToGain} points?${selectedCard.count <= 1 ? ' This will remove your last copy.' : ''}`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/cards/breakdown-single-copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, cardId: selectedCard.id })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to break down card');
+      }
+
+      const updatedCollection = collection.filter((card, index) => {
+        if (card.id !== selectedCard.id) return true;
+        const firstMatchIndex = collection.findIndex(c => c.id === selectedCard.id);
+        return index !== firstMatchIndex;
+      });
+      setCollection(updatedCollection);
+      updateCollectionCache(updatedCollection);
+      setUser(prev => ({ ...prev, points: prev.points + data.pointsAwarded }));
+      setSelectedCard(null);
+      invalidateCollectionCache();
+      loadCollection({ forceRefresh: true });
+    } catch (error) {
+      alert(error.message || 'Error breaking down card');
     }
   };
 
@@ -1002,8 +1421,13 @@ export default function App() {
     if (!rarity) return 'bg-gray-500';
     if (rarity === 'Common') return 'bg-gray-500';
     if (rarity === 'Uncommon') return 'bg-green-500';
-    if (rarity.includes('Rare') || rarity.includes('Holo')) return 'bg-purple-500';
+    if (rarity.includes('Hyper') || rarity.includes('Secret')) return 'bg-red-500';
+    if (rarity.includes('Rainbow')) return 'bg-pink-500';
     if (rarity.includes('Ultra')) return 'bg-yellow-500';
+    if (rarity.includes('Illustration')) return 'bg-orange-500';
+    if (rarity.includes('Shiny')) return 'bg-emerald-500';
+    if (rarity.includes('Double') || rarity.includes('EX')) return 'bg-blue-500';
+    if (rarity.includes('Rare') || rarity.includes('Holo')) return 'bg-purple-500';
     return 'bg-blue-500';
   };
 
@@ -1250,6 +1674,22 @@ export default function App() {
         </div>
       )}
 
+      {wildSpawnAnnouncement && (
+        <div className="container mx-auto px-4 pt-6 relative z-10">
+          <div className="mx-auto max-w-3xl rounded-xl border-2 border-red-500/40 bg-red-500/10 px-4 py-3 text-white shadow-[0_0_20px_rgba(239,68,68,0.25)]">
+            <div className="flex items-center justify-between gap-4">
+              <div className="font-semibold">🚨 A wild {wildSpawnAnnouncement.name} #{wildSpawnAnnouncement.id} has spawned in Pokémon Wilds!</div>
+              <div className="flex items-center gap-2">
+                <Link href="/wilds">
+                  <Button size="sm" className="bg-red-500 text-white hover:bg-red-400">Go to Wilds</Button>
+                </Link>
+                <Button size="sm" variant="ghost" className="text-white hover:bg-white/10" onClick={() => setWildSpawnAnnouncement(null)}>Dismiss</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Navigation */}
       <div className="container mx-auto px-4 py-6 relative z-10">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -1262,9 +1702,14 @@ export default function App() {
               <Library className="h-4 w-4" />
               My Collection
             </TabsTrigger>
-            <TabsTrigger value="friends" className="flex items-center gap-2 data-[state=active]:bg-cyan-500 data-[state=active]:text-black data-[state=active]:shadow-[0_0_20px_rgba(6,182,212,0.6)] font-bold text-cyan-100 transition-all">
+            <TabsTrigger value="friends" className="relative flex items-center gap-2 data-[state=active]:bg-cyan-500 data-[state=active]:text-black data-[state=active]:shadow-[0_0_20px_rgba(6,182,212,0.6)] font-bold text-cyan-100 transition-all">
               <Users className="h-4 w-4" />
               Friends
+              {unreadSocialCount > 0 && (
+                <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white">
+                  {unreadSocialCount}
+                </span>
+              )}
             </TabsTrigger>
           </TabsList>
 
@@ -1402,6 +1847,7 @@ export default function App() {
                 onClick={() => {
                   setBreakdownMode(!breakdownMode);
                   setSelectedForBreakdown([]);
+                  setBreakdownAllMultiples(true);
                 }}
                 className={breakdownMode ? 'bg-gray-600 hover:bg-gray-500' : 'bg-red-600 hover:bg-red-500 text-white font-bold'}
               >
@@ -1416,23 +1862,32 @@ export default function App() {
                   <div>
                     <p className="text-orange-400 font-bold">Breakdown Mode Active</p>
                     <p className="text-sm text-orange-100/70">
-                      Selected: {selectedForBreakdown.length} cards = {calculateBreakdownPoints()} points
+                      Duplicate cards: {calculateMultiplesBreakdownSummary().cards} = {calculateMultiplesBreakdownSummary().points} points
                     </p>
+                    <label className="mt-2 flex items-center gap-2 text-sm text-white">
+                      <input
+                        type="checkbox"
+                        checked={breakdownAllMultiples}
+                        onChange={(e) => setBreakdownAllMultiples(e.target.checked)}
+                        className="h-4 w-4 accent-red-500"
+                      />
+                      Break down all multiples (leave 1 copy)
+                    </label>
                   </div>
                   <Button
                     onClick={handleBreakdownCards}
-                    disabled={selectedForBreakdown.length === 0}
+                    disabled={!breakdownAllMultiples || calculateMultiplesBreakdownSummary().cards === 0}
                     className="bg-red-500 hover:bg-red-400 text-white font-bold"
                   >
-                    Break Down Cards
+                    Break Down Duplicates
                   </Button>
                 </div>
               </div>
             )}
 
             {/* Search and Filters */}
-            <div className="bg-slate-800/50 backdrop-blur-sm border-2 border-cyan-500/30 rounded-lg p-4 mb-6 shadow-[0_0_20px_rgba(6,182,212,0.2)]">
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="relative z-50 overflow-visible bg-slate-800/50 backdrop-blur-sm border-2 border-cyan-500/30 rounded-lg p-4 mb-6 shadow-[0_0_20px_rgba(6,182,212,0.2)]">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 overflow-visible">
                 {/* Search */}
                 <div className="relative">
                   <Search className="absolute left-3 top-3 h-4 w-4 text-cyan-400" />
@@ -1445,19 +1900,28 @@ export default function App() {
                 </div>
 
                 {/* Sort */}
-                <Select value={sortBy} onValueChange={setSortBy}>
-                  <SelectTrigger className="border-2 border-cyan-500/30 bg-slate-700/50 text-white font-medium focus:border-cyan-500">
-                    <SelectValue placeholder="Sort By" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-slate-800 border-cyan-500/30 text-white">
-                    <SelectItem value="newest">Newest</SelectItem>
-                    <SelectItem value="name">Name (A-Z)</SelectItem>
-                    <SelectItem value="set">Set</SelectItem>
-                    <SelectItem value="type">Type</SelectItem>
-                    <SelectItem value="rarity">Rarity</SelectItem>
-                    <SelectItem value="none">No Sort</SelectItem>
-                  </SelectContent>
-                </Select>
+                <details className="relative z-40">
+                  <summary className="list-none cursor-pointer rounded-md border-2 border-cyan-500/30 bg-slate-700/50 px-3 py-2 text-white font-medium">
+                    {sortBy.length === 0 ? 'No Sort' : sortBy.length === 1 ? (SORT_OPTIONS.find(option => option.value === sortBy[0])?.label || 'Sort By') : `${sortBy.length} Sorts Selected`}
+                  </summary>
+                  <div className="absolute z-[200] mt-2 w-72 rounded-md border border-cyan-500/30 bg-slate-800 p-3 shadow-lg">
+                    <div className="mb-2 flex justify-between text-xs">
+                      <button type="button" className="text-cyan-400" onClick={() => setSortBy(['newest'])}>Default</button>
+                    </div>
+                    <div className="space-y-2 text-sm text-white">
+                      {SORT_OPTIONS.map(option => (
+                        <label key={option.value} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={sortBy.includes(option.value)}
+                            onChange={() => toggleSortOption(option.value)}
+                          />
+                          <span>{option.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </details>
 
                 {/* Rarity Filter */}
                 <Select value={rarityFilter} onValueChange={setRarityFilter}>
@@ -1492,15 +1956,15 @@ export default function App() {
                   </SelectTrigger>
                   <SelectContent className="bg-slate-800 border-cyan-500/30 text-white">
                     <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="reverse">Reverse Holo</SelectItem>
-                    <SelectItem value="full-art">Full Art</SelectItem>
-                    <SelectItem value="illustration">Illustration Rare</SelectItem>
+                    {uniqueTypes.map(type => (
+                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
 
               {/* Active Filters Display */}
-              {(searchQuery || rarityFilter !== 'all' || setFilter !== 'all' || typeFilter !== 'all' || sortBy !== 'none') && (
+              {(searchQuery || rarityFilter !== 'all' || setFilter !== 'all' || typeFilter !== 'all' || sortBy.length > 0) && (
                 <div className="mt-3 flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-bold text-cyan-400">Active:</span>
                   {searchQuery && (
@@ -1508,11 +1972,11 @@ export default function App() {
                       Search: {searchQuery}
                     </Badge>
                   )}
-                  {sortBy !== 'none' && (
-                    <Badge className="bg-cyan-500 text-black border border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
-                      Sort: {sortBy}
+                  {sortBy.map((sort) => (
+                    <Badge key={`sort-${sort}`} className="bg-cyan-500 text-black border border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
+                      Sort: {SORT_OPTIONS.find(option => option.value === sort)?.label || sort}
                     </Badge>
-                  )}
+                  ))}
                   {rarityFilter !== 'all' && (
                     <Badge className="bg-cyan-500 text-black border border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
                       Rarity: {rarityFilter}
@@ -1536,7 +2000,7 @@ export default function App() {
                       setRarityFilter('all');
                       setSetFilter('all');
                       setTypeFilter('all');
-                      setSortBy('newest');
+                      setSortBy(['newest']);
                     }}
                     className="h-6 text-xs border-cyan-500/30 bg-slate-700/50 text-cyan-400 hover:bg-cyan-500 hover:text-black hover:shadow-[0_0_10px_rgba(6,182,212,0.4)]"
                   >
@@ -1558,7 +2022,7 @@ export default function App() {
                         setRarityFilter('all');
                         setSetFilter('all');
                         setTypeFilter('all');
-                        setSortBy('newest');
+                        setSortBy(['newest']);
                       }}
                       className="mt-4 bg-cyan-500 text-black hover:bg-cyan-400 border-2 border-cyan-400 font-bold shadow-[0_0_15px_rgba(6,182,212,0.5)] hover:shadow-[0_0_25px_rgba(6,182,212,0.8)]"
                     >
@@ -1572,16 +2036,16 @@ export default function App() {
                   </div>
                 ) : (
                   groupedAndSortedCollection.map((card) => {
-                    const isSelectedForBreakdown = breakdownMode && selectedForBreakdown.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
+                    const isSelectedForBreakdown = false;
                     return (
                       <Card 
                         key={card.id} 
-                        className={`overflow-visible hover:scale-110 hover:z-50 transition-transform bg-slate-800/50 backdrop-blur-sm border-2 ${
+                        className={`group overflow-visible hover:scale-110 hover:z-50 transition-transform bg-slate-800/50 backdrop-blur-sm border-2 ${
                           isSelectedForBreakdown 
                             ? 'border-4 border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.8)]' 
                             : 'border-cyan-500/30 hover:border-cyan-500 hover:shadow-[0_0_25px_rgba(6,182,212,0.5)]'
                         } cursor-pointer relative`}
-                        onClick={() => breakdownMode ? toggleBreakdownCard(card) : handleCardClick(card)}
+                        onClick={() => handleCardClick(card)}
                       >
                         <div className="relative">
                           <img
@@ -1589,6 +2053,16 @@ export default function App() {
                             alt={card.name}
                             className="w-full h-auto rounded-t"
                           />
+                          {!breakdownMode && (
+                            <button
+                              type="button"
+                              aria-label={card.favorite ? 'Remove favorite' : 'Add favorite'}
+                              className={`absolute top-2 right-2 z-20 rounded-full border border-yellow-300/70 bg-slate-900/80 p-1.5 transition-all ${card.favorite ? 'opacity-100 shadow-[0_0_15px_rgba(250,204,21,0.7)]' : 'opacity-0 group-hover:opacity-100 hover:opacity-100'}`}
+                              onClick={(event) => handleToggleFavorite(card, event)}
+                            >
+                              <Star className={`h-4 w-4 ${card.favorite ? 'fill-yellow-300 text-yellow-300' : 'text-yellow-200'}`} />
+                            </button>
+                          )}
                           {/* Breakdown Selected Indicator */}
                           {isSelectedForBreakdown && (
                             <div className="absolute inset-0 bg-red-500/30 flex items-center justify-center">
@@ -1608,7 +2082,7 @@ export default function App() {
                             </Badge>
                           )}
                           {!breakdownMode && card.isReverseHolo && (
-                            <Badge className="absolute top-2 right-2 bg-gradient-to-r from-cyan-400 to-blue-500 text-white border border-cyan-300 text-xs shadow-[0_0_10px_rgba(6,182,212,0.5)]">
+                            <Badge className="absolute top-12 right-2 bg-gradient-to-r from-cyan-400 to-blue-500 text-white border border-cyan-300 text-xs shadow-[0_0_10px_rgba(6,182,212,0.5)]">
                               Reverse
                             </Badge>
                           )}
@@ -1796,7 +2270,7 @@ export default function App() {
       </Dialog>
 
       {/* Pack Results Dialog */}
-      <Dialog open={pulledCards.length > 0} onOpenChange={closePackResults}>
+      <Dialog open={pulledCards.length > 0} onOpenChange={(open) => { if (!open) closePackResults(); }}>
         <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_60px_rgba(6,182,212,0.6)]">
           <DialogHeader>
             <DialogTitle className="text-center text-2xl font-bold text-white bg-gradient-to-r from-cyan-500/20 to-transparent py-3 -mx-6 -mt-6 mb-4 border-b-4 border-cyan-500/50 drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]">
@@ -1834,7 +2308,7 @@ export default function App() {
                               </Badge>
                             )}
                             <Badge className={`absolute bottom-1 left-1 border border-cyan-500/50 text-xs px-1.5 py-0.5 shadow-[0_0_10px_rgba(0,0,0,0.5)] ${getRarityColor(card.rarity)}`}>
-                              {card.rarity?.split(' ')[0] || 'Common'}
+                              {card.rarity || 'Common'}
                             </Badge>
                           </div>
                         </Card>
@@ -1867,7 +2341,9 @@ export default function App() {
               className="w-full max-w-md h-auto rounded-lg border-4 border-cyan-500/50 shadow-[0_0_30px_rgba(6,182,212,0.5)]"
             />
             <div className="mt-6 text-center space-y-2">
-              <h3 className="text-2xl font-bold text-white drop-shadow-[0_0_10px_rgba(6,182,212,0.5)]">{selectedCard?.name}</h3>
+              <h3 className="text-2xl font-bold text-white drop-shadow-[0_0_10px_rgba(6,182,212,0.5)]">
+                {selectedCard?.name}
+              </h3>
               <div className="flex items-center justify-center gap-2 flex-wrap">
                 <Badge className={`${getRarityColor(selectedCard?.rarity)} border-2 border-cyan-500/50 text-white shadow-[0_0_10px_rgba(6,182,212,0.3)]`}>
                   {selectedCard?.rarity || 'Common'}
@@ -1895,12 +2371,21 @@ export default function App() {
                 Type: {getCardType(selectedCard)}
               </p>
             </div>
-            <Button 
-              onClick={() => setSelectedCard(null)} 
-              className="mt-6 bg-cyan-500 text-black hover:bg-cyan-400 border-2 border-cyan-400 font-bold shadow-[0_0_20px_rgba(6,182,212,0.5)] hover:shadow-[0_0_30px_rgba(6,182,212,0.8)] transition-all"
-            >
-              Close
-            </Button>
+
+            <div className="mt-6 flex gap-3">
+              <Button
+                onClick={handleBreakdownSingleCopy}
+                className="bg-red-600 text-white hover:bg-red-500 border-2 border-red-400 font-bold"
+              >
+                Break Down 1 Copy
+              </Button>
+              <Button
+                onClick={() => setSelectedCard(null)}
+                className="bg-cyan-500 text-black hover:bg-cyan-400 border-2 border-cyan-400 font-bold shadow-[0_0_20px_rgba(6,182,212,0.5)] hover:shadow-[0_0_30px_rgba(6,182,212,0.8)] transition-all"
+              >
+                Close
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -1993,7 +2478,7 @@ export default function App() {
             <Button 
               onClick={closePreview} 
               className="bg-cyan-500 text-black hover:bg-cyan-400 border-2 border-cyan-400 font-bold shadow-[0_0_20px_rgba(6,182,212,0.5)] hover:shadow-[0_0_30px_rgba(6,182,212,0.8)] transition-all"
-            >
+>
               Close
             </Button>
           </div>
@@ -2010,14 +2495,11 @@ export default function App() {
             </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-6">
-            {/* Left: What you WANT from their collection */}
             <div className="space-y-2">
               <h3 className="text-lg font-semibold text-cyan-400">
                 What you want ({selectedResponseCards.length}/10)
               </h3>
               <p className="text-xs text-cyan-100/70">Browse {tradeFriend?.username}'s collection (optional - leave empty for free gift)</p>
-              
-              {/* Search bar for their collection */}
               <div className="relative">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-cyan-400" />
                 <Input
@@ -2047,8 +2529,8 @@ export default function App() {
                             key={index}
                             onClick={() => toggleRequestCard(card)}
                             className={`cursor-pointer transition-all ${
-                              isSelected 
-                                ? 'border-4 border-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.8)]' 
+                              isSelected
+                                ? 'border-4 border-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.8)]'
                                 : 'border-2 border-cyan-500/30 hover:border-cyan-500'
                             }`}
                           >
@@ -2070,16 +2552,76 @@ export default function App() {
               </ScrollArea>
             </div>
 
-            {/* Right: What you're OFFERING from your collection */}
             <div className="space-y-2">
               <h3 className="text-lg font-semibold text-purple-400">
                 What you're offering ({selectedTradeCards.length}/10)
               </h3>
               <p className="text-xs text-purple-100/70">Select from your collection (required)</p>
-              
-              {/* Search bar for your collection */}
               <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-purple-400" />
+                <Input
+                  placeholder="Search your cards..."
+                  value={tradeSearchOffer}
+                  onChange={(e) => setTradeSearchOffer(e.target.value)}
+                  className="pl-8 border-2 border-purple-500/30 bg-slate-700/50 text-white text-sm"
+                />
+              </div>
 
+              <ScrollArea className="h-96 border-2 border-purple-500/30 rounded p-2 bg-slate-800/30">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {groupedAndSortedCollection
+                    .filter(card => !tradeSearchOffer || card.name.toLowerCase().includes(tradeSearchOffer.toLowerCase()))
+                    .map((card, index) => {
+                      const isSelected = selectedTradeCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
+                      return (
+                        <Card
+                          key={index}
+                          onClick={() => toggleTradeCard(card)}
+                          className={`cursor-pointer transition-all ${
+                            isSelected
+                              ? 'border-4 border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.8)]'
+                              : 'border-2 border-purple-500/30 hover:border-purple-500'
+                          }`}
+                        >
+                          <div className="relative">
+                            <img src={card.images?.small} alt={card.name} className="w-full" />
+                            {isSelected && (
+                              <div className="absolute top-1 right-1 bg-purple-500 rounded-full p-1">
+                                <Check className="h-4 w-4 text-white" />
+                              </div>
+                            )}
+                          </div>
+                        </Card>
+                      );
+                    })}
+                </div>
+              </ScrollArea>
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center pt-4 border-t border-purple-500/30">
+            <p className="text-sm text-cyan-100/70">
+              {selectedResponseCards.length === 0 ? (
+                <span className="text-yellow-400">FREE GIFT: Giving {selectedTradeCards.length} card(s) for nothing</span>
+              ) : (
+                `Trading ${selectedTradeCards.length} cards for ${selectedResponseCards.length} cards`
+              )}
+            </p>
+            <div className="flex gap-2">
+              <Button onClick={() => setShowTradeModal(false)} variant="outline">
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSendTrade}
+                disabled={selectedTradeCards.length === 0}
+                className="bg-purple-500 text-white hover:bg-purple-400"
+              >
+                Send Trade Offer
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Friend Profile Modal */}
       <Dialog open={!!viewingFriend} onOpenChange={() => setViewingFriend(null)}>
@@ -2090,9 +2632,8 @@ export default function App() {
               {viewingFriend?.username}'s Profile
             </DialogTitle>
           </DialogHeader>
-          
+
           <div className="space-y-4">
-            {/* Stats */}
             <div className="grid grid-cols-2 gap-4">
               <Card className="border-2 border-cyan-500/30 bg-slate-800/50">
                 <CardContent className="pt-6 text-center">
@@ -2108,7 +2649,6 @@ export default function App() {
               </Card>
             </div>
 
-            {/* Collection */}
             <div>
               <h3 className="text-lg font-semibold text-cyan-400 mb-2">Collection</h3>
               <ScrollArea className="h-96 border-2 border-cyan-500/30 rounded p-4 bg-slate-800/30">
@@ -2129,15 +2669,11 @@ export default function App() {
               </ScrollArea>
             </div>
 
-            {/* Actions */}
             <div className="flex justify-between items-center pt-4 border-t border-cyan-500/30">
-              <Button 
-                onClick={() => setViewingFriend(null)}
-                variant="outline"
-              >
+              <Button onClick={() => setViewingFriend(null)} variant="outline">
                 Close
               </Button>
-              <Button 
+              <Button
                 onClick={() => {
                   handleOpenTradeModal(viewingFriend);
                   setViewingFriend(null);
@@ -2153,70 +2689,6 @@ export default function App() {
       </Dialog>
 
       {/* Trade View Modal - Accept/Decline Trade */}
-                <Input
-                  placeholder="Search your cards..."
-                  value={tradeSearchOffer}
-                  onChange={(e) => setTradeSearchOffer(e.target.value)}
-                  className="pl-8 border-2 border-purple-500/30 bg-slate-700/50 text-white text-sm"
-                />
-              </div>
-
-              <ScrollArea className="h-96 border-2 border-purple-500/30 rounded p-2 bg-slate-800/30">
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {groupedAndSortedCollection
-                    .filter(card => !tradeSearchOffer || card.name.toLowerCase().includes(tradeSearchOffer.toLowerCase()))
-                    .map((card, index) => {
-                      const isSelected = selectedTradeCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
-                      return (
-                        <Card
-                          key={index}
-                          onClick={() => toggleTradeCard(card)}
-                          className={`cursor-pointer transition-all ${
-                            isSelected 
-                              ? 'border-4 border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.8)]' 
-                              : 'border-2 border-purple-500/30 hover:border-purple-500'
-                          }`}
-                        >
-                          <div className="relative">
-                            <img src={card.images?.small} alt={card.name} className="w-full" />
-                            {isSelected && (
-                              <div className="absolute top-1 right-1 bg-purple-500 rounded-full p-1">
-                                <Check className="h-4 w-4 text-white" />
-                              </div>
-                            )}
-                          </div>
-                        </Card>
-                      );
-                    })}
-                </div>
-              </ScrollArea>
-            </div>
-          </div>
-          <div className="flex justify-between items-center pt-4 border-t border-purple-500/30">
-            <p className="text-sm text-cyan-100/70">
-              {selectedResponseCards.length === 0 ? (
-                <span className="text-yellow-400">FREE GIFT: Giving {selectedTradeCards.length} card(s) for nothing</span>
-              ) : (
-                `Trading ${selectedTradeCards.length} cards for ${selectedResponseCards.length} cards`
-              )}
-            </p>
-            <div className="flex gap-2">
-              <Button onClick={() => setShowTradeModal(false)} variant="outline">
-                Cancel
-              </Button>
-              <Button 
-                onClick={handleSendTrade}
-                disabled={selectedTradeCards.length === 0}
-                className="bg-purple-500 text-white hover:bg-purple-400"
-              >
-                Send Trade Offer
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Trade View Modal - Accept/Decline Trade */}
       <Dialog open={!!activeTrade} onOpenChange={() => setActiveTrade(null)}>
         <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
           <DialogHeader>
@@ -2225,14 +2697,13 @@ export default function App() {
             </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-6">
-            {/* Left: What they're offering you */}
             <div className="space-y-2">
               <h3 className="text-lg font-semibold text-green-400">
                 They're giving you: ({activeTrade?.offeredCards?.length || 0} cards)
               </h3>
               <ScrollArea className="h-96 border-2 border-green-500/30 rounded p-2 bg-slate-800/30">
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {activeTrade?.offeredCards.map((card, index) => (
+                  {activeTrade?.offeredCards?.map((card, index) => (
                     <Card key={index} className="border-2 border-green-500/30">
                       <img src={card.images?.small} alt={card.name} className="w-full" />
                       <p className="text-xs text-center text-white p-1 bg-slate-900/50">{card.name}</p>
@@ -2242,14 +2713,13 @@ export default function App() {
               </ScrollArea>
             </div>
 
-            {/* Right: What they want from you */}
             <div className="space-y-2">
               <h3 className="text-lg font-semibold text-red-400">
                 They want from you: ({activeTrade?.requestedCards?.length || 0} cards)
               </h3>
               <ScrollArea className="h-96 border-2 border-red-500/30 rounded p-2 bg-slate-800/30">
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {activeTrade?.requestedCards.map((card, index) => (
+                  {activeTrade?.requestedCards?.map((card, index) => (
                     <Card key={index} className="border-2 border-red-500/30">
                       <img src={card.images?.small} alt={card.name} className="w-full" />
                       <p className="text-xs text-center text-white p-1 bg-slate-900/50">{card.name}</p>
@@ -2259,6 +2729,7 @@ export default function App() {
               </ScrollArea>
             </div>
           </div>
+
           <div className="flex justify-between items-center pt-4 border-t border-purple-500/30">
             <p className="text-sm text-cyan-100/70">
               {activeTrade?.requestedCards?.length === 0 ? (
@@ -2268,13 +2739,13 @@ export default function App() {
               )}
             </p>
             <div className="flex gap-2">
-              <Button 
+              <Button
                 onClick={() => activeTrade && handleDeclineTrade(activeTrade.id)}
                 className="bg-red-500 text-white hover:bg-red-400"
               >
                 Decline Trade
               </Button>
-              <Button 
+              <Button
                 onClick={handleAcceptTrade}
                 className="bg-green-500 text-white hover:bg-green-400"
               >
@@ -2286,7 +2757,7 @@ export default function App() {
       </Dialog>
 
       {/* Breakdown Quantity Modal */}
-      <Dialog open={showBreakdownQuantityModal} onOpenChange={() => {
+      <Dialog open={false && showBreakdownQuantityModal} onOpenChange={() => {
         if (!isDissolving) {
           setShowBreakdownQuantityModal(false);
           setBreakdownQuantityCard(null);
