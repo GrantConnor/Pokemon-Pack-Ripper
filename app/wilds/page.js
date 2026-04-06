@@ -38,6 +38,7 @@ export default function PokemonWilds() {
   const [viewingFriendPokemon, setViewingFriendPokemon] = useState(null);
   const [friendPokemonList, setFriendPokemonList] = useState([]);
   const [battleRequests, setBattleRequests] = useState([]);
+  const unreadSocialCount = pendingRequests.length + tradeRequests.length;
   const [tradeRequests, setTradeRequests] = useState([]);
   const [showTradeDialog, setShowTradeDialog] = useState(false);
   const [tradePartner, setTradePartner] = useState(null);
@@ -794,10 +795,15 @@ export default function PokemonWilds() {
               )}
               <Button 
                 onClick={() => setShowFriendsPanel(true)}
-                className="bg-blue-600 hover:bg-blue-500"
+                className="relative bg-blue-600 hover:bg-blue-500"
               >
                 <Users className="mr-2 h-4 w-4" />
                 Friends ({friends.length})
+                {unreadSocialCount > 0 && (
+                  <span className="absolute -top-2 -right-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white">
+                    {unreadSocialCount}
+                  </span>
+                )}
               </Button>
               <Button 
                 onClick={() => {
@@ -824,12 +830,6 @@ export default function PokemonWilds() {
             <div className="text-center">
               {/* Pokemon Display */}
               <div className="mb-8 animate-bounce-slow relative">
-                {spawn.pokemon.isShiny && (
-                  <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                    <div className="text-4xl animate-pulse">✨</div>
-                    <div className="text-yellow-400 font-bold text-sm">SHINY!</div>
-                  </div>
-                )}
                 <img
                   src={spawn.pokemon.sprite}
                   alt={spawn.pokemon.displayName}

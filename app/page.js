@@ -81,6 +81,7 @@ export default function App() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [wildSpawnAnnouncement, setWildSpawnAnnouncement] = useState(null);
   const [sets, setSets] = useState([]);
   const [collection, setCollection] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -128,6 +129,8 @@ export default function App() {
   const [breakdownQuantityCard, setBreakdownQuantityCard] = useState(null);
   const [breakdownQuantity, setBreakdownQuantity] = useState(1);
   const [isDissolving, setIsDissolving] = useState(false);
+
+  const unreadSocialCount = pendingRequests.length + tradeRequests.length;
 
   useEffect(() => {
     // Check if user is logged in
@@ -226,6 +229,44 @@ export default function App() {
       cancelled = true;
     };
   }, [user?.id, user?.username]);
+
+
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+
+    const checkWildSpawnAnnouncement = async () => {
+      try {
+        const response = await fetch('/api/wilds/current');
+        const data = await response.json();
+        if (!response.ok || !data.spawn || cancelled) return;
+
+        const spawnKey = `${data.spawn.spawnedAt}:${data.spawn.pokemon.id}`;
+        const seenKey = 'site:lastWildSpawnSeen';
+        const lastSeen = localStorage.getItem(seenKey);
+
+        if (lastSeen && lastSeen !== spawnKey) {
+          setWildSpawnAnnouncement({
+            key: spawnKey,
+            name: data.spawn.pokemon.displayName,
+            id: data.spawn.pokemon.id,
+          });
+        }
+
+        localStorage.setItem(seenKey, spawnKey);
+      } catch (error) {
+        console.error('Failed checking wild spawn announcement:', error);
+      }
+    };
+
+    checkWildSpawnAnnouncement();
+    const interval = setInterval(checkWildSpawnAnnouncement, 60000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [user?.id]);
 
   // Filtered collection based on search and filters
   const filteredCollection = useMemo(() => {
@@ -1548,6 +1589,22 @@ export default function App() {
         </div>
       )}
 
+      {wildSpawnAnnouncement && (
+        <div className="container mx-auto px-4 pt-6 relative z-10">
+          <div className="mx-auto max-w-3xl rounded-xl border-2 border-red-500/40 bg-red-500/10 px-4 py-3 text-white shadow-[0_0_20px_rgba(239,68,68,0.25)]">
+            <div className="flex items-center justify-between gap-4">
+              <div className="font-semibold">🚨 A wild {wildSpawnAnnouncement.name} #{wildSpawnAnnouncement.id} has spawned in Pokémon Wilds!</div>
+              <div className="flex items-center gap-2">
+                <Link href="/wilds">
+                  <Button size="sm" className="bg-red-500 text-white hover:bg-red-400">Go to Wilds</Button>
+                </Link>
+                <Button size="sm" variant="ghost" className="text-white hover:bg-white/10" onClick={() => setWildSpawnAnnouncement(null)}>Dismiss</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Navigation */}
       <div className="container mx-auto px-4 py-6 relative z-10">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -1560,9 +1617,14 @@ export default function App() {
               <Library className="h-4 w-4" />
               My Collection
             </TabsTrigger>
-            <TabsTrigger value="friends" className="flex items-center gap-2 data-[state=active]:bg-cyan-500 data-[state=active]:text-black data-[state=active]:shadow-[0_0_20px_rgba(6,182,212,0.6)] font-bold text-cyan-100 transition-all">
+            <TabsTrigger value="friends" className="relative flex items-center gap-2 data-[state=active]:bg-cyan-500 data-[state=active]:text-black data-[state=active]:shadow-[0_0_20px_rgba(6,182,212,0.6)] font-bold text-cyan-100 transition-all">
               <Users className="h-4 w-4" />
               Friends
+              {unreadSocialCount > 0 && (
+                <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white">
+                  {unreadSocialCount}
+                </span>
+              )}
             </TabsTrigger>
           </TabsList>
 

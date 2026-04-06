@@ -82,7 +82,7 @@ function getPackCost(setId, bulk = false) {
 // Pokemon Wilds constants
 const MAX_POKEMON_ID = 1010; // Gen 1-9 (up to Paldea)
 const MIN_SPAWN_INTERVAL = 5 * 60 * 1000; // 5 minutes
-const MAX_SPAWN_INTERVAL = 20 * 60 * 1000; // 20 minutes
+const MAX_SPAWN_INTERVAL = 10 * 60 * 1000; // 10 minutes
 const MAX_CATCH_ATTEMPTS = 3;
 
 // XP and Leveling constants
@@ -2338,7 +2338,7 @@ if (pathname.includes('/api/auth/signin')) {
           { 
             $set: { 
               caughtBy: userId,
-              nextSpawnTime: Date.now() + nextInterval
+              nextSpawnTime: Date.now() + nextInterval,
             }
           }
         );
