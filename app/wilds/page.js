@@ -1909,5 +1909,44 @@ export default function PokemonWilds() {
       </Dialog>
 
     </div>
+
+      <Dialog open={showCustomXPDialog} onOpenChange={setShowCustomXPDialog}>
+        <DialogContent className="max-w-md border-4 border-orange-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-orange-400">Custom XP Purchase</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-orange-500/30 bg-slate-800/60 p-3">
+              <p className="text-sm text-orange-200">Current Points</p>
+              <p className="text-2xl font-bold text-white">{user?.username === 'Spheal' ? '999999+' : (user?.points ?? 0)}</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-orange-300">XP to buy</label>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                value={customXPAmount}
+                onChange={(e) => setCustomXPAmount(e.target.value)}
+                className="border-2 border-orange-500/30 bg-slate-800/70 text-white"
+              />
+              <p className="text-xs text-slate-300">Cost: {Number(customXPAmount) > 0 ? Math.floor(Number(customXPAmount)) : 0} points</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setShowCustomXPDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-orange-600 hover:bg-orange-500 disabled:bg-gray-600"
+                disabled={buyingXP || !Number.isFinite(Number(customXPAmount)) || Math.floor(Number(customXPAmount)) <= 0 || (user?.username !== 'Spheal' && (user?.points ?? 0) < Math.floor(Number(customXPAmount)))}
+                onClick={() => handleBuyXP(customXPAmount)}
+              >
+                {buyingXP ? 'Buying...' : 'Buy Custom XP'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
   );
 }
