@@ -72,7 +72,6 @@ export default function PokemonWilds() {
             loadCurrentSpawn();
             loadMyPokemon();
             
-            // Load friends directly with the user data (don't wait for state update)
             fetch(`/api/friends?userId=${data.user.id}`)
               .then(res => res.json())
               .then(friendsData => {
@@ -82,10 +81,15 @@ export default function PokemonWilds() {
                 setTradeRequests(friendsData.tradeRequests || []);
               })
               .catch(err => console.error('Error loading friends:', err));
+          } else if (data.transient) {
+            console.error('Transient session error on wilds page:', data.error);
           } else {
             localStorage.removeItem('userId');
             window.location.href = '/';
           }
+        })
+        .catch(err => {
+          console.error('Session fetch failed on wilds page:', err);
         });
     } else {
       window.location.href = '/';

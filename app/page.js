@@ -23,6 +23,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [openingPack, setOpeningPack] = useState(false);
   const [pulledCards, setPulledCards] = useState([]);
+  const [pendingRevealId, setPendingRevealId] = useState(null);
   const [showPackAnimation, setShowPackAnimation] = useState(false);
   const [selectedSet, setSelectedSet] = useState(null);
   const [activeTab, setActiveTab] = useState('packs');
@@ -75,9 +76,14 @@ export default function App() {
           if (data.authenticated) {
             setUser(data.user);
             setCountdown(data.user.nextPointsIn || 0);
+          } else if (data.transient) {
+            console.error('Transient session error on home page:', data.error);
           } else {
             localStorage.removeItem('userId');
           }
+        })
+        .catch(err => {
+          console.error('Session fetch failed on home page:', err);
         });
     }
   }, []);
@@ -96,6 +102,11 @@ export default function App() {
                   setUser(data.user);
                   return data.user.nextPointsIn || 0;
                 }
+                return prev;
+              })
+              .catch(err => {
+                console.error('Countdown session refresh failed:', err);
+                return prev;
               });
             return 0;
           }
@@ -116,15 +127,42 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (user) {
-      loadSets();
-      loadCollection();
-      loadFriends();
-      if (user.username === 'Spheal') {
-        loadAllUsers();
+    if (!user) return;
+
+    let cancelled = false;
+
+    const bootstrapUserData = async () => {
+      try {
+        await loadSets();
+        if (cancelled) return;
+
+        await loadCollection();
+        if (cancelled) return;
+
+        await loadFriends();
+        if (cancelled) return;
+
+        await recoverPendingPackReveal(user.id);
+        if (cancelled) return;
+
+        if (user.username === 'Spheal') {
+          await loadAllUsers();
+        }
+      } catch (error) {
+        console.error('[BOOTSTRAP] Failed loading post-login data', {
+          userId: user.id,
+          username: user.username,
+          message: error?.message,
+        });
       }
-    }
-  }, [user]);
+    };
+
+    bootstrapUserData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.username]);
 
   // Filtered collection based on search and filters
   const filteredCollection = useMemo(() => {
@@ -285,9 +323,28 @@ export default function App() {
   const loadCollection = async () => {
     if (!user) return;
     try {
-      const response = await fetch(`/api/collection?userId=${user.id}`);
-      const data = await response.json();
-      setCollection(data.collection || []);
+      const pageSize = 200;
+      let offset = 0;
+      let allCards = [];
+      let hasMore = true;
+
+      while (hasMore) {
+        const response = await fetch(`/api/collection?userId=${user.id}&offset=${offset}&limit=${pageSize}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to load collection');
+        }
+
+        const cards = data.collection || [];
+        allCards = [...allCards, ...cards];
+        hasMore = !!data.hasMore;
+        offset += cards.length;
+
+        if (cards.length === 0) break;
+      }
+
+      setCollection(allCards);
     } catch (err) {
       console.error('Error loading collection:', err);
     }
@@ -298,6 +355,9 @@ export default function App() {
     try {
       const response = await fetch(`/api/friends?userId=${user.id}`);
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load friends');
+      }
       setFriends(data.friends || []);
       setPendingRequests(data.pendingRequests || []);
       setSentRequests(data.sentRequests || []);
@@ -894,6 +954,54 @@ export default function App() {
   };
 
 
+
+  const hydrateRevealIntoUi = (revealData) => {
+    if (!revealData) return;
+
+    const ownedCardIds = new Set(collection.map(c => c.id));
+
+    if (revealData.isBulk && revealData.packs) {
+      const packsWithNewFlags = revealData.packs.map(pack => ({
+        ...pack,
+        cards: pack.cards.map(card => ({
+          ...card,
+          isNewCard: !ownedCardIds.has(card.id)
+        }))
+      }));
+      setPulledCards(packsWithNewFlags);
+    } else {
+      const cardsWithNewFlag = (revealData.cards || []).map(card => ({
+        ...card,
+        isNewCard: !ownedCardIds.has(card.id)
+      }));
+      setPulledCards([{ packNumber: 1, cards: cardsWithNewFlag }]);
+    }
+
+    setPendingRevealId(revealData.revealId || revealData.id || null);
+    if (revealData.pointsRemaining !== undefined) {
+      setUser(prev => prev ? ({ ...prev, points: revealData.pointsRemaining }) : prev);
+    }
+  };
+
+  const recoverPendingPackReveal = async (targetUserId = user?.id) => {
+    if (!targetUserId) return false;
+
+    try {
+      const response = await fetch(`/api/packs/pending?userId=${targetUserId}`);
+      const data = await response.json();
+
+      if (response.ok && data.reveal) {
+        hydrateRevealIntoUi(data.reveal);
+        setShowPackAnimation(false);
+        return true;
+      }
+    } catch (error) {
+      console.error('Failed to recover pending pack reveal:', error);
+    }
+
+    return false;
+  };
+
   const handleOpenPack = async (set, bulk = false) => {
     setSelectedSet(set);
     setOpeningPack(true);
@@ -911,30 +1019,8 @@ export default function App() {
       if (response.ok) {
         // Simulate pack opening animation
         setTimeout(() => {
-          // Mark cards as new if not already owned
-          const ownedCardIds = new Set(collection.map(c => c.id));
-          
-          if (data.isBulk && data.packs) {
-            // For bulk openings, store individual packs
-            const packsWithNewFlags = data.packs.map(pack => ({
-              ...pack,
-              cards: pack.cards.map(card => ({
-                ...card,
-                isNewCard: !ownedCardIds.has(card.id)
-              }))
-            }));
-            setPulledCards(packsWithNewFlags); // Store array of packs
-          } else {
-            // For single pack, mark cards as new
-            const cardsWithNewFlag = data.cards.map(card => ({
-              ...card,
-              isNewCard: !ownedCardIds.has(card.id)
-            }));
-            setPulledCards([{ packNumber: 1, cards: cardsWithNewFlag }]); // Wrap in pack structure
-          }
-          
+          hydrateRevealIntoUi(data);
           setShowPackAnimation(false);
-          setUser(prev => ({ ...prev, points: data.pointsRemaining }));
           
           // Check for achievements
           if (data.achievements) {
@@ -949,16 +1035,34 @@ export default function App() {
         setShowPackAnimation(false);
       }
     } catch (err) {
-      setError('An error occurred. Please try again.');
-      setShowPackAnimation(false);
+      const recovered = await recoverPendingPackReveal(user?.id);
+      if (!recovered) {
+        setError('An error occurred. Please try again.');
+        setShowPackAnimation(false);
+      }
     } finally {
       setOpeningPack(false);
     }
   };
 
-  const closePackResults = () => {
+  const closePackResults = async () => {
+    const revealIdToClaim = pendingRevealId;
+
     setPulledCards([]);
+    setPendingRevealId(null);
     setSelectedSet(null);
+
+    if (revealIdToClaim && user?.id) {
+      try {
+        await fetch('/api/packs/pending/claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, revealId: revealIdToClaim })
+        });
+      } catch (error) {
+        console.error('Failed to mark pack reveal as claimed:', error);
+      }
+    }
   };
 
   const handlePreviewSet = async (set) => {
@@ -1796,7 +1900,7 @@ export default function App() {
       </Dialog>
 
       {/* Pack Results Dialog */}
-      <Dialog open={pulledCards.length > 0} onOpenChange={closePackResults}>
+      <Dialog open={pulledCards.length > 0} onOpenChange={(open) => { if (!open) closePackResults(); }}>
         <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_60px_rgba(6,182,212,0.6)]">
           <DialogHeader>
             <DialogTitle className="text-center text-2xl font-bold text-white bg-gradient-to-r from-cyan-500/20 to-transparent py-3 -mx-6 -mt-6 mb-4 border-b-4 border-cyan-500/50 drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]">
