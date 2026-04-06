@@ -56,6 +56,14 @@ export default function PokemonWilds() {
   const [showReleaseConfirm, setShowReleaseConfirm] = useState(false);
   const [showCustomXPDialog, setShowCustomXPDialog] = useState(false);
   const [customXPAmount, setCustomXPAmount] = useState('500');
+  const [showShopDialog, setShowShopDialog] = useState(false);
+  const [showInventoryDialog, setShowInventoryDialog] = useState(false);
+  const [showUseItemDialog, setShowUseItemDialog] = useState(false);
+  const [shopItems, setShopItems] = useState([]);
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [selectedInventoryItem, setSelectedInventoryItem] = useState(null);
+  const [compatiblePokemon, setCompatiblePokemon] = useState([]);
+  const [loadingItems, setLoadingItems] = useState(false);
 
   // Battle states
   const [activeBattle, setActiveBattle] = useState(null);
@@ -181,7 +189,9 @@ export default function PokemonWilds() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          pokemonId: pokemon.id // Pokemon species ID, not database _id
+          pokemonId: pokemon.id,
+          currentLevel: pokemon.level,
+          gender: pokemon.gender
         })
       });
 
@@ -210,6 +220,111 @@ export default function PokemonWilds() {
       setTradeRequests(data.tradeRequests || []);
     } catch (err) {
       console.error('Error loading friends:', err);
+    }
+  };
+
+
+  const loadEvolutionShop = async () => {
+    if (!user) return;
+    setLoadingItems(true);
+    try {
+      const response = await fetch('/api/wilds/items/catalog', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      });
+      const data = await response.json();
+      if (data.success) setShopItems(data.items || []);
+    } catch (err) {
+      console.error('Error loading evolution shop:', err);
+    } finally {
+      setLoadingItems(false);
+    }
+  };
+
+  const loadInventoryItems = async () => {
+    if (!user) return;
+    setLoadingItems(true);
+    try {
+      const response = await fetch('/api/wilds/items/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      });
+      const data = await response.json();
+      if (data.success) setInventoryItems(data.inventory || []);
+    } catch (err) {
+      console.error('Error loading inventory:', err);
+    } finally {
+      setLoadingItems(false);
+    }
+  };
+
+  const handleBuyEvolutionItem = async (itemName) => {
+    if (!user) return;
+    try {
+      const response = await fetch('/api/wilds/items/buy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, itemName })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setUser({ ...user, points: data.pointsRemaining });
+        await loadInventoryItems();
+        alert(`Bought ${data.item.name}!`);
+      } else {
+        alert(data.error || 'Unable to buy item');
+      }
+    } catch (err) {
+      alert('Unable to buy item');
+    }
+  };
+
+  const handleOpenUseItem = async (item) => {
+    setSelectedInventoryItem(item);
+    setShowUseItemDialog(true);
+    setCompatiblePokemon([]);
+    try {
+      const response = await fetch('/api/wilds/items/compatible', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, itemName: item.itemName })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setCompatiblePokemon(data.pokemon || []);
+      } else {
+        alert(data.error || 'Unable to load compatible Pokemon');
+      }
+    } catch (err) {
+      alert('Unable to load compatible Pokemon');
+    }
+  };
+
+  const handleUseEvolutionItem = async (pokemonId) => {
+    if (!selectedInventoryItem) return;
+    try {
+      const response = await fetch('/api/wilds/items/use', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, itemName: selectedInventoryItem.itemName, pokemonId })
+      });
+      const data = await response.json();
+      if (data.success) {
+        alert(data.message);
+        setShowUseItemDialog(false);
+        setSelectedInventoryItem(null);
+        await loadInventoryItems();
+        await loadMyPokemon();
+        if (selectedPokemon?._id === pokemonId) {
+          setSelectedPokemon(null);
+        }
+      } else {
+        alert(data.error || 'Unable to use item');
+      }
+    } catch (err) {
+      alert('Unable to use item');
     }
   };
 
@@ -808,6 +923,24 @@ export default function PokemonWilds() {
                   </Button>
                 </>
               )}
+              <Button
+                onClick={() => {
+                  setShowShopDialog(true);
+                  loadEvolutionShop();
+                }}
+                className="bg-emerald-600 hover:bg-emerald-500"
+              >
+                Shop
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowInventoryDialog(true);
+                  loadInventoryItems();
+                }}
+                className="bg-orange-600 hover:bg-orange-500"
+              >
+                Inventory
+              </Button>
               <Button 
                 onClick={() => setShowFriendsPanel(true)}
                 className="relative bg-blue-600 hover:bg-blue-500"
@@ -1874,6 +2007,105 @@ export default function PokemonWilds() {
       </Dialog>
 
     </div>
+
+
+      <Dialog open={showShopDialog} onOpenChange={setShowShopDialog}>
+        <DialogContent className="max-w-4xl max-h-[85vh] border-4 border-emerald-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-emerald-400">Evolution Item Shop</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="h-[60vh] pr-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {shopItems.map((item) => (
+                <Card key={item.itemName} className="border-2 border-emerald-500/30 bg-slate-800/70">
+                  <CardContent className="p-4 text-center space-y-3">
+                    {item.sprite ? (
+                      <img src={item.sprite} alt={item.name} className="w-16 h-16 mx-auto" />
+                    ) : (
+                      <div className="w-16 h-16 mx-auto rounded bg-slate-700" />
+                    )}
+                    <div>
+                      <p className="text-white font-bold">{item.name}</p>
+                      <p className="text-emerald-300 text-sm">500 Points</p>
+                    </div>
+                    <Button
+                      onClick={() => handleBuyEvolutionItem(item.itemName)}
+                      disabled={user?.username !== 'Spheal' && (user?.points ?? 0) < 500}
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-600"
+                    >
+                      Buy
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showInventoryDialog} onOpenChange={setShowInventoryDialog}>
+        <DialogContent className="max-w-4xl max-h-[85vh] border-4 border-orange-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-orange-400">Inventory</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="h-[60vh] pr-4">
+            {inventoryItems.length === 0 ? (
+              <p className="text-slate-300">No evolution items yet.</p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {inventoryItems.map((item) => (
+                  <Card key={item.itemName} className="border-2 border-orange-500/30 bg-slate-800/70">
+                    <CardContent className="p-4 text-center space-y-3">
+                      {item.sprite ? (
+                        <img src={item.sprite} alt={item.name} className="w-16 h-16 mx-auto" />
+                      ) : (
+                        <div className="w-16 h-16 mx-auto rounded bg-slate-700" />
+                      )}
+                      <div>
+                        <p className="text-white font-bold">{item.name}</p>
+                        <p className="text-orange-300 text-sm">x{item.count}</p>
+                      </div>
+                      <Button onClick={() => handleOpenUseItem(item)} className="w-full bg-orange-600 hover:bg-orange-500">
+                        Use
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showUseItemDialog} onOpenChange={setShowUseItemDialog}>
+        <DialogContent className="max-w-3xl max-h-[85vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-purple-400">Use {selectedInventoryItem?.name}</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="h-[55vh] pr-4">
+            {compatiblePokemon.length === 0 ? (
+              <p className="text-slate-300">No Pokemon can use this item right now.</p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {compatiblePokemon.map((pokemon) => (
+                  <Card key={pokemon._id} className="border-2 border-purple-500/30 bg-slate-800/70">
+                    <CardContent className="p-4 text-center space-y-3">
+                      <img src={pokemon.sprite} alt={pokemon.displayName} className="w-20 h-20 mx-auto" />
+                      <div>
+                        <p className="text-white font-bold">{pokemon.nickname || pokemon.displayName}</p>
+                        <p className="text-slate-300 text-sm">Lv {pokemon.level}</p>
+                      </div>
+                      <Button onClick={() => handleUseEvolutionItem(pokemon._id)} className="w-full bg-purple-600 hover:bg-purple-500">
+                        Use Item
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showCustomXPDialog} onOpenChange={setShowCustomXPDialog}>
         <DialogContent className="max-w-md border-4 border-orange-500/50 bg-slate-900/95 backdrop-blur-xl">

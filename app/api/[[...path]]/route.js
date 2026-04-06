@@ -91,6 +91,15 @@ const XP_FROM_CATCH = 10; // XP all Pokemon get when catching a Pokemon
 const XP_PER_PURCHASE = 50; // XP gained per purchase
 const POINTS_PER_XP_PURCHASE = 50; // Points cost per XP purchase
 const MAX_LEVEL = 100;
+const EVOLUTION_ITEM_COST = 500;
+const EVOLUTION_ITEM_NAMES = [
+  'fire-stone','water-stone','thunder-stone','leaf-stone','moon-stone','sun-stone',
+  'dawn-stone','dusk-stone','shiny-stone','ice-stone','oval-stone','kings-rock',
+  'metal-coat','dragon-scale','upgrade','dubious-disc','protector','electirizer',
+  'magmarizer','razor-claw','razor-fang','reaper-cloth','sachet','whipped-dream',
+  'sweet-apple','tart-apple','cracked-pot','chipped-pot','galarica-cuff','galarica-wreath',
+  'black-augurite','peat-block','auspicious-armor','malicious-armor','syrupy-apple','snowball'
+];
 
 // XP calculation with linear scaling: Level 1→2 needs 10 XP, Level 99→100 needs 1800 XP
 function getXPToNextLevel(currentLevel) {
@@ -836,7 +845,123 @@ async function applyXPToAllPokemon(userId, xpAmount, database) {
   }
 }
 
+
+const evolutionItemCache = globalThis.__wildsEvolutionItemCache || { items: null, fetchedAt: 0 };
+globalThis.__wildsEvolutionItemCache = evolutionItemCache;
+
+function formatEvolutionItemName(name) {
+  return String(name || '').split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+}
+
+async function getEvolutionItemsCatalog() {
+  if (evolutionItemCache.items && (Date.now() - evolutionItemCache.fetchedAt) < 24 * 60 * 60 * 1000) {
+    return evolutionItemCache.items;
+  }
+
+  const items = [];
+  for (const itemName of EVOLUTION_ITEM_NAMES) {
+    try {
+      const response = await axios.get(`${POKEAPI_BASE}/item/${itemName}`);
+      items.push({
+        itemName,
+        name: formatEvolutionItemName(itemName),
+        sprite: response.data?.sprites?.default || null,
+        cost: EVOLUTION_ITEM_COST,
+      });
+    } catch (error) {
+      items.push({
+        itemName,
+        name: formatEvolutionItemName(itemName),
+        sprite: null,
+        cost: EVOLUTION_ITEM_COST,
+      });
+    }
+  }
+
+  evolutionItemCache.items = items;
+  evolutionItemCache.fetchedAt = Date.now();
+  return items;
+}
+
+function extractEvolutionRequirement(evolutionDetails = {}) {
+  return {
+    minLevel: evolutionDetails.min_level || null,
+    trigger: evolutionDetails.trigger?.name || null,
+    itemName: evolutionDetails.item?.name || evolutionDetails.held_item?.name || null,
+    requiresTrade: evolutionDetails.trigger?.name === 'trade',
+  };
+}
+
+async function applyEvolutionToStoredPokemon(database, pokemon, evolutionData) {
+  const evolvedData = await fetchPokemonData(evolutionData.evolvesTo, pokemon.isShiny);
+  const updateData = {
+    id: evolvedData.id,
+    name: evolvedData.name,
+    displayName: evolvedData.displayName,
+    sprite: evolvedData.sprite,
+    types: evolvedData.types,
+    baseStats: evolvedData.baseStats,
+    allMoves: evolvedData.allMoves,
+    allMovesData: evolvedData.allMovesData,
+    captureRate: evolvedData.captureRate,
+    isLegendary: evolvedData.isLegendary,
+    isMythical: evolvedData.isMythical,
+    stats: calculateStats(evolvedData.baseStats, pokemon.ivs, pokemon.level),
+    moveset: evolvedData.moveset,
+  };
+
+  await database.collection('caught_pokemon').updateOne(
+    { _id: pokemon._id },
+    { $set: updateData }
+  );
+
+  return evolvedData;
+}
+
+async function autoEvolveTradePokemon(database, pokemon) {
+  const evolutionData = await fetchEvolutionChain(pokemon.id);
+  if (!evolutionData?.canEvolve) return null;
+  if (evolutionData.trigger !== 'trade') return null;
+  if (evolutionData.itemName) return null;
+  return applyEvolutionToStoredPokemon(database, pokemon, evolutionData);
+}
+
 // Fetch evolution chain data from PokeAPI
+
+function getSpecialEvolutionData(pokemon, itemName = null) {
+  if (!pokemon || Number(pokemon.id) !== 133) return null;
+
+  if (itemName === 'fire-stone') {
+    return { canEvolve: true, evolvesTo: 136, trigger: 'use-item', itemName: 'fire-stone' };
+  }
+  if (itemName === 'water-stone') {
+    return { canEvolve: true, evolvesTo: 134, trigger: 'use-item', itemName: 'water-stone' };
+  }
+  if (itemName === 'thunder-stone') {
+    return { canEvolve: true, evolvesTo: 135, trigger: 'use-item', itemName: 'thunder-stone' };
+  }
+  if (itemName === 'leaf-stone') {
+    return { canEvolve: true, evolvesTo: 470, trigger: 'use-item', itemName: 'leaf-stone' };
+  }
+  if (itemName === 'snowball') {
+    return { canEvolve: true, evolvesTo: 471, trigger: 'use-item', itemName: 'snowball' };
+  }
+  if (itemName) return null;
+
+  const level = Number(pokemon.level || 1);
+  const gender = String(pokemon.gender || '').toLowerCase();
+  if (gender === 'female' && level >= 50) {
+    return { canEvolve: true, evolvesTo: 700, trigger: 'level-up', minLevel: 50 };
+  }
+  if (gender === 'female') {
+    return { canEvolve: true, evolvesTo: 196, trigger: 'level-up', minLevel: null };
+  }
+  if (gender === 'male') {
+    return { canEvolve: true, evolvesTo: 197, trigger: 'level-up', minLevel: null };
+  }
+  return { canEvolve: true, evolvesTo: 196, trigger: 'level-up', minLevel: null };
+}
+
 async function fetchEvolutionChain(pokemonId) {
   try {
     const speciesResponse = await axios.get(`${POKEAPI_BASE}/pokemon-species/${pokemonId}`);
@@ -857,11 +982,11 @@ async function fetchEvolutionChain(pokemonId) {
           const urlParts = nextEvolution.species.url.split('/');
           const nextId = parseInt(urlParts[urlParts.length - 2]);
           
+          const requirement = extractEvolutionRequirement(evolutionDetails);
           return {
             canEvolve: true,
             evolvesTo: nextId,
-            minLevel: evolutionDetails.min_level || null,
-            trigger: evolutionDetails.trigger.name
+            ...requirement,
           };
         }
         return { canEvolve: false };
@@ -1862,6 +1987,9 @@ if (pathname.includes('/api/auth/signin')) {
 
       console.log('✓ Pokemon ownership swapped');
 
+      const autoEvolvedReceived = await autoEvolveTradePokemon(database, fromPokemon);
+      const autoEvolvedSent = await autoEvolveTradePokemon(database, toPokemon);
+
       // Remove trade request
       await database.collection('users').updateOne(
         { id: userId },
@@ -1883,9 +2011,10 @@ if (pathname.includes('/api/auth/signin')) {
 
       return NextResponse.json({ 
         success: true,
-        message: `Trade completed! You received ${fromPokemon.displayName}`,
-        receivedPokemon: fromPokemon.displayName,
-        sentPokemon: toPokemon.displayName
+        message: `Trade completed! You received ${autoEvolvedReceived?.displayName || fromPokemon.displayName}`,
+        receivedPokemon: autoEvolvedReceived?.displayName || fromPokemon.displayName,
+        sentPokemon: autoEvolvedSent?.displayName || toPokemon.displayName,
+        autoEvolved: [autoEvolvedReceived?.displayName, autoEvolvedSent?.displayName].filter(Boolean)
       });
     }
 
@@ -2655,6 +2784,94 @@ if (pathname.includes('/api/auth/signin')) {
       });
     }
 
+
+    // Evolution item shop catalog
+    if (pathname.includes('/api/wilds/items/catalog')) {
+      const items = await getEvolutionItemsCatalog();
+      return NextResponse.json({ success: true, items });
+    }
+
+    // Buy evolution item
+    if (pathname.includes('/api/wilds/items/buy')) {
+      const { userId, itemName } = body;
+      if (!userId || !itemName) {
+        return NextResponse.json({ error: 'User ID and item required' }, { status: 400 });
+      }
+      const database = await connectDB();
+      const user = await database.collection('users').findOne({ id: userId });
+      if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      const items = await getEvolutionItemsCatalog();
+      const item = items.find(i => i.itemName === itemName);
+      if (!item) return NextResponse.json({ error: 'Invalid item' }, { status: 400 });
+      if (user.username !== 'Spheal' && user.points < EVOLUTION_ITEM_COST) {
+        return NextResponse.json({ error: 'Insufficient points', pointsNeeded: EVOLUTION_ITEM_COST - user.points }, { status: 400 });
+      }
+      const newPoints = user.username === 'Spheal' ? 999999 : user.points - EVOLUTION_ITEM_COST;
+      await database.collection('users').updateOne(
+        { id: userId },
+        { $set: { points: newPoints }, $inc: { [`inventoryItems.${itemName}`]: 1 } }
+      );
+      return NextResponse.json({ success: true, item, pointsRemaining: newPoints });
+    }
+
+    // Get inventory
+    if (pathname.includes('/api/wilds/items/inventory')) {
+      const { userId } = body;
+      if (!userId) return NextResponse.json({ error: 'User ID required' }, { status: 400 });
+      const database = await connectDB();
+      const user = await database.collection('users').findOne({ id: userId }, { projection: { inventoryItems: 1 } });
+      if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      const items = await getEvolutionItemsCatalog();
+      const inventoryMap = user.inventoryItems || {};
+      const inventory = items.filter(item => (inventoryMap[item.itemName] || 0) > 0).map(item => ({ ...item, count: inventoryMap[item.itemName] || 0 }));
+      return NextResponse.json({ success: true, inventory });
+    }
+
+    // List compatible Pokemon for an item
+    if (pathname.includes('/api/wilds/items/compatible')) {
+      const { userId, itemName } = body;
+      if (!userId || !itemName) return NextResponse.json({ error: 'User ID and item required' }, { status: 400 });
+      const database = await connectDB();
+      const pokemonList = await database.collection('caught_pokemon').find({ userId }).toArray();
+      const compatible = [];
+      for (const pokemon of pokemonList) {
+        const evolutionData = getSpecialEvolutionData(pokemon, itemName) || await fetchEvolutionChain(pokemon.id);
+        if (evolutionData?.canEvolve && evolutionData.itemName === itemName) {
+          compatible.push({
+            _id: pokemon._id,
+            displayName: pokemon.displayName,
+            nickname: pokemon.nickname || '',
+            sprite: pokemon.sprite,
+            level: pokemon.level,
+            evolvesTo: evolutionData.evolvesTo,
+          });
+        }
+      }
+      return NextResponse.json({ success: true, pokemon: compatible });
+    }
+
+    // Use evolution item
+    if (pathname.includes('/api/wilds/items/use')) {
+      const { userId, itemName, pokemonId } = body;
+      if (!userId || !itemName || !pokemonId) return NextResponse.json({ error: 'User ID, item, and Pokemon required' }, { status: 400 });
+      const database = await connectDB();
+      const user = await database.collection('users').findOne({ id: userId }, { projection: { inventoryItems: 1 } });
+      if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      if ((user.inventoryItems?.[itemName] || 0) < 1) {
+        return NextResponse.json({ error: 'Item not in inventory' }, { status: 400 });
+      }
+      const pokemon = await database.collection('caught_pokemon').findOne({ _id: new ObjectId(pokemonId), userId });
+      if (!pokemon) return NextResponse.json({ error: 'Pokemon not found' }, { status: 404 });
+      const evolutionData = getSpecialEvolutionData(pokemon, itemName) || await fetchEvolutionChain(pokemon.id);
+      if (!evolutionData?.canEvolve || evolutionData.itemName !== itemName) {
+        return NextResponse.json({ error: 'This item cannot be used on that Pokemon' }, { status: 400 });
+      }
+      const evolvedData = await applyEvolutionToStoredPokemon(database, pokemon, evolutionData);
+      const newCount = Math.max(0, (user.inventoryItems?.[itemName] || 0) - 1);
+      await database.collection('users').updateOne({ id: userId }, { $set: { [`inventoryItems.${itemName}`]: newCount } });
+      return NextResponse.json({ success: true, evolvedTo: evolvedData.displayName, message: `${pokemon.nickname || pokemon.displayName} evolved into ${evolvedData.displayName}!` });
+    }
+
     // Evolve a Pokemon
     if (pathname.includes('/api/wilds/evolve')) {
       const { userId, pokemonId, xpAmount } = body;
@@ -2681,7 +2898,7 @@ if (pathname.includes('/api/auth/signin')) {
       console.log(`📊 Pokemon found: ${pokemon.displayName} (ID: ${pokemon.id}), Level: ${pokemon.level}`);
 
       // Fetch evolution data
-      const evolutionData = await fetchEvolutionChain(pokemon.id);
+      const evolutionData = getSpecialEvolutionData(pokemon) || await fetchEvolutionChain(pokemon.id);
       
       console.log(`🧬 Evolution data:`, evolutionData);
       
@@ -2784,14 +3001,14 @@ if (pathname.includes('/api/auth/signin')) {
 
     // Check if a Pokemon can evolve (returns evolution data)
     if (pathname.includes('/api/wilds/check-evolution')) {
-      const { pokemonId } = body;
+      const { pokemonId, currentLevel, gender } = body;
       
       if (!pokemonId) {
         return NextResponse.json({ error: 'Pokemon ID required' }, { status: 400 });
       }
 
       // Fetch evolution data
-      const evolutionData = await fetchEvolutionChain(pokemonId);
+      const evolutionData = getSpecialEvolutionData({ id: pokemonId, level: currentLevel, gender }) || await fetchEvolutionChain(pokemonId);
       
       return NextResponse.json(evolutionData);
     }
