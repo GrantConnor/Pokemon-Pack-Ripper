@@ -2296,7 +2296,9 @@ export default function App() {
               className="w-full max-w-md h-auto rounded-lg border-4 border-cyan-500/50 shadow-[0_0_30px_rgba(6,182,212,0.5)]"
             />
             <div className="mt-6 text-center space-y-2">
-              <h3 className="text-2xl font-bold text-white drop-shadow-[0_0_10px_rgba(6,182,212,0.5)]">{selectedCard?.name}</h3>
+              <h3 className="text-2xl font-bold text-white drop-shadow-[0_0_10px_rgba(6,182,212,0.5)]">
+                {selectedCard?.name}
+              </h3>
               <div className="flex items-center justify-center gap-2 flex-wrap">
                 <Badge className={`${getRarityColor(selectedCard?.rarity)} border-2 border-cyan-500/50 text-white shadow-[0_0_10px_rgba(6,182,212,0.3)]`}>
                   {selectedCard?.rarity || 'Common'}
@@ -2324,6 +2326,7 @@ export default function App() {
                 Type: {getCardType(selectedCard)}
               </p>
             </div>
+
             <div className="mt-6 flex gap-3">
               <Button
                 onClick={handleBreakdownSingleCopy}
@@ -2331,12 +2334,12 @@ export default function App() {
               >
                 Break Down 1 Copy
               </Button>
-              <Button 
-              onClick={() => setSelectedCard(null)} 
-              className="mt-6 bg-cyan-500 text-black hover:bg-cyan-400 border-2 border-cyan-400 font-bold shadow-[0_0_20px_rgba(6,182,212,0.5)] hover:shadow-[0_0_30px_rgba(6,182,212,0.8)] transition-all"
->
-              Close
-            </Button>
+              <Button
+                onClick={() => setSelectedCard(null)}
+                className="bg-cyan-500 text-black hover:bg-cyan-400 border-2 border-cyan-400 font-bold shadow-[0_0_20px_rgba(6,182,212,0.5)] hover:shadow-[0_0_30px_rgba(6,182,212,0.8)] transition-all"
+              >
+                Close
+              </Button>
             </div>
           </div>
         </DialogContent>
