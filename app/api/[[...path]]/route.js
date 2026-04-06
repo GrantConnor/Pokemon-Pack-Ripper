@@ -865,6 +865,11 @@ async function applyXPToAllPokemon(userId, xpAmount, database) {
 const evolutionItemCache = globalThis.__wildsEvolutionItemCache || { items: null, fetchedAt: 0 };
 globalThis.__wildsEvolutionItemCache = evolutionItemCache;
 
+
+function getEvolutionItemSpriteUrl(itemName, apiSprite = null) {
+  return apiSprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/${itemName}.png`;
+}
+
 function formatEvolutionItemName(name) {
   return String(name || '').split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
 }
@@ -881,14 +886,14 @@ async function getEvolutionItemsCatalog() {
       items.push({
         itemName,
         name: formatEvolutionItemName(itemName),
-        sprite: response.data?.sprites?.default || null,
+        sprite: getEvolutionItemSpriteUrl(itemName, response.data?.sprites?.default || null),
         cost: EVOLUTION_ITEM_COST,
       });
     } catch (error) {
       items.push({
         itemName,
         name: formatEvolutionItemName(itemName),
-        sprite: null,
+        sprite: getEvolutionItemSpriteUrl(itemName, null),
         cost: EVOLUTION_ITEM_COST,
       });
     }
