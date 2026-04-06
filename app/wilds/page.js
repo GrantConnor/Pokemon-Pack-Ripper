@@ -38,7 +38,9 @@ export default function PokemonWilds() {
   const [viewingFriendPokemon, setViewingFriendPokemon] = useState(null);
   const [friendPokemonList, setFriendPokemonList] = useState([]);
   const [battleRequests, setBattleRequests] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState([]);
   const [tradeRequests, setTradeRequests] = useState([]);
+  const unreadSocialCount = pendingRequests.length + tradeRequests.length;
   const [showTradeDialog, setShowTradeDialog] = useState(false);
   const [tradePartner, setTradePartner] = useState(null);
   const [mySelectedPokemon, setMySelectedPokemon] = useState(null);
@@ -72,7 +74,6 @@ export default function PokemonWilds() {
             loadCurrentSpawn();
             loadMyPokemon();
             
-            // Load friends directly with the user data (don't wait for state update)
             fetch(`/api/friends?userId=${data.user.id}`)
               .then(res => res.json())
               .then(friendsData => {
@@ -82,10 +83,15 @@ export default function PokemonWilds() {
                 setTradeRequests(friendsData.tradeRequests || []);
               })
               .catch(err => console.error('Error loading friends:', err));
+          } else if (data.transient) {
+            console.error('Transient session error on wilds page:', data.error);
           } else {
             localStorage.removeItem('userId');
             window.location.href = '/';
           }
+        })
+        .catch(err => {
+          console.error('Session fetch failed on wilds page:', err);
         });
     } else {
       window.location.href = '/';
@@ -197,6 +203,7 @@ export default function PokemonWilds() {
       console.log('📥 Friends API response:', data);
       console.log('👥 Friends array:', data.friends);
       setFriends(data.friends || []);
+      setPendingRequests(data.pendingRequests || []);
       setBattleRequests(data.battleRequests || []);
       setTradeRequests(data.tradeRequests || []);
     } catch (err) {
@@ -790,10 +797,15 @@ export default function PokemonWilds() {
               )}
               <Button 
                 onClick={() => setShowFriendsPanel(true)}
-                className="bg-blue-600 hover:bg-blue-500"
+                className="relative bg-blue-600 hover:bg-blue-500"
               >
                 <Users className="mr-2 h-4 w-4" />
                 Friends ({friends.length})
+                {unreadSocialCount > 0 && (
+                  <span className="absolute -top-2 -right-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white">
+                    {unreadSocialCount}
+                  </span>
+                )}
               </Button>
               <Button 
                 onClick={() => {
@@ -820,12 +832,6 @@ export default function PokemonWilds() {
             <div className="text-center">
               {/* Pokemon Display */}
               <div className="mb-8 animate-bounce-slow relative">
-                {spawn.pokemon.isShiny && (
-                  <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                    <div className="text-4xl animate-pulse">✨</div>
-                    <div className="text-yellow-400 font-bold text-sm">SHINY!</div>
-                  </div>
-                )}
                 <img
                   src={spawn.pokemon.sprite}
                   alt={spawn.pokemon.displayName}
@@ -1737,7 +1743,7 @@ export default function PokemonWilds() {
                           <Badge className="mb-1 bg-yellow-500 text-xs">✨</Badge>
                         )}
                         <img src={pokemon.sprite} alt={pokemon.displayName} className="w-16 h-16 mx-auto mb-1" />
-                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}</p>
+                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}{pokemon.isShiny ? ' ✨' : ''}</p>
                         <p className="text-gray-400 text-xs text-center">Lv {pokemon.level}</p>
                       </CardContent>
                     </Card>
@@ -1766,7 +1772,7 @@ export default function PokemonWilds() {
                           <Badge className="mb-1 bg-yellow-500 text-xs">✨</Badge>
                         )}
                         <img src={pokemon.sprite} alt={pokemon.displayName} className="w-16 h-16 mx-auto mb-1" />
-                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}</p>
+                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}{pokemon.isShiny ? ' ✨' : ''}</p>
                         <p className="text-gray-400 text-xs text-center">Lv {pokemon.level}</p>
                       </CardContent>
                     </Card>
