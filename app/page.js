@@ -101,10 +101,10 @@ export default function App() {
   
   // Collection filters
   const [searchQuery, setSearchQuery] = useState('');
-  const [rarityFilter, setRarityFilter] = useState([]);
-  const [setFilter, setSetFilter] = useState([]);
-  const [typeFilter, setTypeFilter] = useState([]);
-  const [sortBy, setSortBy] = useState('newest'); // Default to newest
+  const [rarityFilter, setRarityFilter] = useState('all');
+  const [setFilter, setSetFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [sortBy, setSortBy] = useState(['newest']); // Default to newest
 
   // Friends & Trading state
   const [friends, setFriends] = useState([]);
@@ -332,6 +332,30 @@ export default function App() {
   };
 
   // Group duplicates and sort
+
+  const SORT_OPTIONS = [
+    { value: 'newest', label: 'Newest' },
+    { value: 'name', label: 'Name (A-Z)' },
+    { value: 'set', label: 'Set' },
+    { value: 'type', label: 'Type' },
+    { value: 'rarity', label: 'Rarity' },
+    { value: 'favorites', label: 'Favorites First' },
+  ];
+
+  const toggleSortOption = (value) => {
+    if (value === 'none') {
+      setSortBy([]);
+      return;
+    }
+    setSortBy((prev) => {
+      const next = prev.includes(value)
+        ? prev.filter(item => item !== value)
+        : [...prev, value];
+      const order = new Map(SORT_OPTIONS.map((option, index) => [option.value, index]));
+      return next.sort((a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999));
+    });
+  };
+
   const groupedAndSortedCollection = useMemo(() => {
     // Group by card ID
     const cardMap = new Map();
@@ -409,11 +433,6 @@ export default function App() {
       return a.localeCompare(b);
     });
   }, [collection]);
-
-
-  const toggleFilterValue = (setter, value) => {
-    setter((prev) => prev.includes(value) ? prev.filter(item => item !== value) : [...prev, value]);
-  };
 
   const uniqueSets = useMemo(() => {
     const sets = new Map();
@@ -1873,89 +1892,21 @@ export default function App() {
                 </div>
 
                 {/* Sort */}
-                <Select value={sortBy} onValueChange={setSortBy}>
-                  <SelectTrigger className="border-2 border-cyan-500/30 bg-slate-700/50 text-white font-medium focus:border-cyan-500">
-                    <SelectValue placeholder="Sort By" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-slate-800 border-cyan-500/30 text-white">
-                    <SelectItem value="newest">Newest</SelectItem>
-                    <SelectItem value="name">Name (A-Z)</SelectItem>
-                    <SelectItem value="set">Set</SelectItem>
-                    <SelectItem value="type">Type</SelectItem>
-                    <SelectItem value="rarity">Rarity</SelectItem>
-                    <SelectItem value="favorites">Favorites First</SelectItem>
-                    <SelectItem value="none">No Sort</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                {/* Rarity Filter */}
                 <details className="relative">
                   <summary className="list-none cursor-pointer rounded-md border-2 border-cyan-500/30 bg-slate-700/50 px-3 py-2 text-white font-medium">
-                    Rarity {rarityFilter.length > 0 ? `(${rarityFilter.length})` : '(All)'}
+                    {sortBy.length === 0 ? 'No Sort' : sortBy.length === 1 ? (SORT_OPTIONS.find(option => option.value === sortBy[0])?.label || 'Sort By') : `${sortBy.length} Sorts Selected`}
                   </summary>
-                  <div className="absolute z-20 mt-2 w-72 max-h-72 overflow-auto rounded-md border border-cyan-500/30 bg-slate-800 p-3 shadow-lg">
+                  <div className="absolute z-20 mt-2 w-72 rounded-md border border-cyan-500/30 bg-slate-800 p-3 shadow-lg">
                     <div className="mb-2 flex justify-between text-xs">
-                      <button type="button" className="text-cyan-400" onClick={() => setRarityFilter([])}>Clear</button>
-                    </div>
-                    <div className="space-y-2">
-                      {uniqueRarities.map(rarity => (
-                        <label key={rarity} className="flex items-center gap-2 text-sm text-white">
-                          <input
-                            type="checkbox"
-                            checked={rarityFilter.includes(rarity)}
-                            onChange={() => toggleFilterValue(setRarityFilter, rarity)}
-                          />
-                          <span>{rarity}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </details>
-
-                {/* Set Filter */}
-                <details className="relative">
-                  <summary className="list-none cursor-pointer rounded-md border-2 border-cyan-500/30 bg-slate-700/50 px-3 py-2 text-white font-medium">
-                    Set {setFilter.length > 0 ? `(${setFilter.length})` : '(All)'}
-                  </summary>
-                  <div className="absolute z-20 mt-2 w-72 max-h-72 overflow-auto rounded-md border border-cyan-500/30 bg-slate-800 p-3 shadow-lg">
-                    <div className="mb-2 flex justify-between text-xs">
-                      <button type="button" className="text-cyan-400" onClick={() => setSetFilter([])}>Clear</button>
-                    </div>
-                    <div className="space-y-2">
-                      {uniqueSets.map(set => (
-                        <label key={set.id} className="flex items-center gap-2 text-sm text-white">
-                          <input
-                            type="checkbox"
-                            checked={setFilter.includes(set.id)}
-                            onChange={() => toggleFilterValue(setSetFilter, set.id)}
-                          />
-                          <span>{set.name}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </details>
-
-                {/* Type Filter */}
-                <details className="relative">
-                  <summary className="list-none cursor-pointer rounded-md border-2 border-cyan-500/30 bg-slate-700/50 px-3 py-2 text-white font-medium">
-                    Type {typeFilter.length > 0 ? `(${typeFilter.length})` : '(All)'}
-                  </summary>
-                  <div className="absolute z-20 mt-2 w-60 rounded-md border border-cyan-500/30 bg-slate-800 p-3 shadow-lg">
-                    <div className="mb-2 flex justify-between text-xs">
-                      <button type="button" className="text-cyan-400" onClick={() => setTypeFilter([])}>Clear</button>
+                      <button type="button" className="text-cyan-400" onClick={() => setSortBy([])}>Clear</button>
                     </div>
                     <div className="space-y-2 text-sm text-white">
-                      {[
-                        { value: 'reverse', label: 'Reverse Holo' },
-                        { value: 'full-art', label: 'Full Art' },
-                        { value: 'illustration', label: 'Illustration Rare' },
-                      ].map(option => (
+                      {SORT_OPTIONS.map(option => (
                         <label key={option.value} className="flex items-center gap-2">
                           <input
                             type="checkbox"
-                            checked={typeFilter.includes(option.value)}
-                            onChange={() => toggleFilterValue(setTypeFilter, option.value)}
+                            checked={sortBy.includes(option.value)}
+                            onChange={() => toggleSortOption(option.value)}
                           />
                           <span>{option.label}</span>
                         </label>
@@ -1963,10 +1914,49 @@ export default function App() {
                     </div>
                   </div>
                 </details>
+
+                {/* Rarity Filter */}
+                <Select value={rarityFilter} onValueChange={setRarityFilter}>
+                  <SelectTrigger className="border-2 border-cyan-500/30 bg-slate-700/50 text-white font-medium focus:border-cyan-500">
+                    <SelectValue placeholder="Filter by Rarity" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-cyan-500/30 text-white">
+                    <SelectItem value="all">All Rarities</SelectItem>
+                    {uniqueRarities.map(rarity => (
+                      <SelectItem key={rarity} value={rarity}>{rarity}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Set Filter */}
+                <Select value={setFilter} onValueChange={setSetFilter}>
+                  <SelectTrigger className="border-2 border-cyan-500/30 bg-slate-700/50 text-white font-medium focus:border-cyan-500">
+                    <SelectValue placeholder="Filter by Set" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-cyan-500/30 text-white">
+                    <SelectItem value="all">All Sets</SelectItem>
+                    {uniqueSets.map(set => (
+                      <SelectItem key={set.id} value={set.id}>{set.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Type Filter */}
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="border-2 border-cyan-500/30 bg-slate-700/50 text-white font-medium focus:border-cyan-500">
+                    <SelectValue placeholder="Filter by Type" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-cyan-500/30 text-white">
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="reverse">Reverse Holo</SelectItem>
+                    <SelectItem value="full-art">Full Art</SelectItem>
+                    <SelectItem value="illustration">Illustration Rare</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Active Filters Display */}
-              {(searchQuery || rarityFilter.length > 0 || setFilter.length > 0 || typeFilter.length > 0 || sortBy !== 'none') && (
+              {(searchQuery || rarityFilter !== 'all' || setFilter !== 'all' || typeFilter !== 'all' || sortBy.length > 0) && (
                 <div className="mt-3 flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-bold text-cyan-400">Active:</span>
                   {searchQuery && (
@@ -1974,35 +1964,35 @@ export default function App() {
                       Search: {searchQuery}
                     </Badge>
                   )}
-                  {sortBy !== 'none' && (
+                  {sortBy.map((sort) => (
+                    <Badge key={`sort-${sort}`} className="bg-cyan-500 text-black border border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
+                      Sort: {SORT_OPTIONS.find(option => option.value === sort)?.label || sort}
+                    </Badge>
+                  ))}
+                  {rarityFilter !== 'all' && (
                     <Badge className="bg-cyan-500 text-black border border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
-                      Sort: {sortBy}
+                      Rarity: {rarityFilter}
                     </Badge>
                   )}
-                  {rarityFilter.map((rarity) => (
-                    <Badge key={`rarity-${rarity}`} className="bg-cyan-500 text-black border border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
-                      Rarity: {rarity}
+                  {setFilter !== 'all' && (
+                    <Badge className="bg-cyan-500 text-black border border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
+                      Set: {uniqueSets.find(s => s.id === setFilter)?.name}
                     </Badge>
-                  ))}
-                  {setFilter.map((setId) => (
-                    <Badge key={`set-${setId}`} className="bg-cyan-500 text-black border border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
-                      Set: {uniqueSets.find(s => s.id === setId)?.name || setId}
+                  )}
+                  {typeFilter !== 'all' && (
+                    <Badge className="bg-cyan-500 text-black border border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
+                      Type: {typeFilter}
                     </Badge>
-                  ))}
-                  {typeFilter.map((type) => (
-                    <Badge key={`type-${type}`} className="bg-cyan-500 text-black border border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
-                      Type: {type}
-                    </Badge>
-                  ))}
+                  )}
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => {
                       setSearchQuery('');
-                      setRarityFilter([]);
-                      setSetFilter([]);
-                      setTypeFilter([]);
-                      setSortBy('newest');
+                      setRarityFilter('all');
+                      setSetFilter('all');
+                      setTypeFilter('all');
+                      setSortBy(['newest']);
                     }}
                     className="h-6 text-xs border-cyan-500/30 bg-slate-700/50 text-cyan-400 hover:bg-cyan-500 hover:text-black hover:shadow-[0_0_10px_rgba(6,182,212,0.4)]"
                   >
@@ -2021,10 +2011,10 @@ export default function App() {
                     <Button
                       onClick={() => {
                         setSearchQuery('');
-                        setRarityFilter([]);
-                        setSetFilter([]);
-                        setTypeFilter([]);
-                        setSortBy('newest');
+                        setRarityFilter('all');
+                        setSetFilter('all');
+                        setTypeFilter('all');
+                        setSortBy(['newest']);
                       }}
                       className="mt-4 bg-cyan-500 text-black hover:bg-cyan-400 border-2 border-cyan-400 font-bold shadow-[0_0_15px_rgba(6,182,212,0.5)] hover:shadow-[0_0_25px_rgba(6,182,212,0.8)]"
                     >
