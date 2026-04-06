@@ -1187,27 +1187,29 @@ export default function PokemonWilds() {
                               }}
                             />
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                            <Button
-                              onClick={() => handleBuyXP(50)}
-                              disabled={buyingXP || selectedPokemon.level >= 100 || (user.username !== 'Spheal' && user.points < 50)}
-                              className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
-                              size="sm"
-                            >
-                              {buyingXP ? 'Buying...' : 'Buy 50 XP (50 Points)'}
-                            </Button>
-                            <Button
-                              onClick={() => handleBuyXP(2500)}
-                              disabled={buyingXP || selectedPokemon.level >= 100 || (user.username !== 'Spheal' && user.points < 2500)}
-                              className="bg-amber-700 hover:bg-amber-600 disabled:bg-gray-600 disabled:cursor-not-allowed"
-                              size="sm"
-                            >
-                              {buyingXP ? 'Buying...' : 'Buy 2500 XP (2500 Points)'}
-                            </Button>
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button
+                                onClick={() => handleBuyXP(50)}
+                                disabled={buyingXP || selectedPokemon.level >= 100 || (user.username !== 'Spheal' && user.points < 50)}
+                                className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                                size="sm"
+                              >
+                                {buyingXP ? 'Buying...' : 'Buy 50 XP (50 Points)'}
+                              </Button>
+                              <Button
+                                onClick={() => handleBuyXP(2500)}
+                                disabled={buyingXP || selectedPokemon.level >= 100 || (user.username !== 'Spheal' && user.points < 2500)}
+                                className="bg-blue-700 hover:bg-blue-600 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                                size="sm"
+                              >
+                                {buyingXP ? 'Buying...' : 'Buy 2500 XP (2500 Points)'}
+                              </Button>
+                            </div>
                             <Button
                               onClick={() => setShowCustomXPDialog(true)}
                               disabled={buyingXP || selectedPokemon.level >= 100}
-                              className="bg-orange-700 hover:bg-orange-600 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                              className="w-full bg-purple-700 hover:bg-purple-600 disabled:bg-gray-600 disabled:cursor-not-allowed"
                               size="sm"
                             >
                               Custom XP
