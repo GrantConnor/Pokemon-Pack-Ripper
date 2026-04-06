@@ -292,17 +292,7 @@ export default function App() {
 
     // Filter by type (illustration, full art, reverse holo)
     if (typeFilter !== 'all') {
-      if (typeFilter === 'reverse') {
-        filtered = filtered.filter(card => card.isReverseHolo);
-      } else if (typeFilter === 'full-art') {
-        filtered = filtered.filter(card => 
-          card.rarity && (card.rarity.includes('Full Art') || card.subtypes?.includes('Full Art'))
-        );
-      } else if (typeFilter === 'illustration') {
-        filtered = filtered.filter(card => 
-          card.rarity && card.rarity.includes('Illustration')
-        );
-      }
+      filtered = filtered.filter(card => Array.isArray(card.types) && card.types.includes(typeFilter));
     }
 
     return filtered;
@@ -442,6 +432,16 @@ export default function App() {
       }
     });
     return Array.from(sets.entries()).map(([id, name]) => ({ id, name }));
+  }, [collection]);
+
+  const uniqueTypes = useMemo(() => {
+    const types = new Set();
+    collection.forEach(card => {
+      (card.types || []).forEach(type => {
+        if (type) types.add(type);
+      });
+    });
+    return Array.from(types).sort((a, b) => a.localeCompare(b));
   }, [collection]);
 
   // Filtered packs based on search
@@ -1892,13 +1892,13 @@ export default function App() {
                 </div>
 
                 {/* Sort */}
-                <details className="relative">
+                <details className="relative z-40">
                   <summary className="list-none cursor-pointer rounded-md border-2 border-cyan-500/30 bg-slate-700/50 px-3 py-2 text-white font-medium">
                     {sortBy.length === 0 ? 'No Sort' : sortBy.length === 1 ? (SORT_OPTIONS.find(option => option.value === sortBy[0])?.label || 'Sort By') : `${sortBy.length} Sorts Selected`}
                   </summary>
-                  <div className="absolute z-20 mt-2 w-72 rounded-md border border-cyan-500/30 bg-slate-800 p-3 shadow-lg">
+                  <div className="absolute z-[200] mt-2 w-72 rounded-md border border-cyan-500/30 bg-slate-800 p-3 shadow-lg">
                     <div className="mb-2 flex justify-between text-xs">
-                      <button type="button" className="text-cyan-400" onClick={() => setSortBy([])}>Clear</button>
+                      <button type="button" className="text-cyan-400" onClick={() => setSortBy(['newest'])}>Default</button>
                     </div>
                     <div className="space-y-2 text-sm text-white">
                       {SORT_OPTIONS.map(option => (
@@ -1948,9 +1948,9 @@ export default function App() {
                   </SelectTrigger>
                   <SelectContent className="bg-slate-800 border-cyan-500/30 text-white">
                     <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="reverse">Reverse Holo</SelectItem>
-                    <SelectItem value="full-art">Full Art</SelectItem>
-                    <SelectItem value="illustration">Illustration Rare</SelectItem>
+                    {uniqueTypes.map(type => (
+                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
