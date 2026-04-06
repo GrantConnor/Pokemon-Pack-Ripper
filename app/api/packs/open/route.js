@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
+<<<<<<< HEAD
 import { v4 as uuidv4 } from 'uuid';
+=======
+>>>>>>> 509c79ab0205b2347d5ee7747aef1c4f1d66aed6
 import { connectDB } from '@/lib/mongodb';
 
 export const runtime = 'nodejs';
@@ -235,6 +238,7 @@ export async function POST(request) {
       }
     );
 
+<<<<<<< HEAD
     const revealId = uuidv4();
     await database.collection('pack_reveals').insertOne({
       id: revealId,
@@ -250,6 +254,10 @@ export async function POST(request) {
     return NextResponse.json({
       success: true,
       revealId,
+=======
+    return NextResponse.json({
+      success: true,
+>>>>>>> 509c79ab0205b2347d5ee7747aef1c4f1d66aed6
       cards: cardsWithTimestamp,
       packs: packsWithTimestamps,
       isBulk: bulk,

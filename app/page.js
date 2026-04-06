@@ -142,9 +142,12 @@ export default function App() {
         await loadFriends();
         if (cancelled) return;
 
+<<<<<<< HEAD
         await recoverPendingPackReveal(user.id);
         if (cancelled) return;
 
+=======
+>>>>>>> 509c79ab0205b2347d5ee7747aef1c4f1d66aed6
         if (user.username === 'Spheal') {
           await loadAllUsers();
         }
