@@ -28,11 +28,39 @@ export async function POST(request) {
     const db = await connectDB();
     const users = db.collection('users');
 
-    let user = await users.findOne({ normalizedUsername });
+    let user = await users.findOne(
+      { normalizedUsername },
+      {
+        projection: {
+          id: 1,
+          username: 1,
+          normalizedUsername: 1,
+          password: 1,
+          points: 1,
+          lastPointsRefresh: 1,
+          createdAt: 1,
+          setAchievements: 1,
+          tradesCompleted: 1,
+        },
+      }
+    );
     if (!user) {
-      user = await users.findOne({
-        username: { $regex: new RegExp(`^${escapeRegex(trimmedUsername)}$`, 'i') }
-      });
+      user = await users.findOne(
+        { username: { $regex: new RegExp(`^${escapeRegex(trimmedUsername)}$`, 'i') } },
+        {
+          projection: {
+            id: 1,
+            username: 1,
+            normalizedUsername: 1,
+            password: 1,
+            points: 1,
+            lastPointsRefresh: 1,
+            createdAt: 1,
+            setAchievements: 1,
+            tradesCompleted: 1,
+          },
+        }
+      );
 
       if (user && !user.normalizedUsername) {
         await users.updateOne(
