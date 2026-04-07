@@ -17,6 +17,7 @@ const LEGACY_SETS = [
 ];
 
 const HS_SETS = ['hgss1', 'hgss2', 'hgss3', 'hgss4'];
+const HS_SET_NAMES = ['HeartGold & SoulSilver', 'HS—Unleashed', 'HS—Undaunted', 'HS—Triumphant'];
 
 
 function openPack(cards, setId = null) {
@@ -77,6 +78,10 @@ function openPack(cards, setId = null) {
   const commons = nonEnergyCards.filter(card => rarityValue(card) === 'common');
   const uncommons = nonEnergyCards.filter(card => rarityValue(card) === 'uncommon');
   const lowRarityCards = nonEnergyCards.filter(card => !isStandardRareCard(card) && !isSpecialRareCard(card));
+  const hsStandardRares = nonEnergyCards.filter(card => {
+    const rarity = rarityValue(card);
+    return rarity.includes('rare') && !rarity.includes('legend') && !rarity.includes('secret');
+  });
   const standardRares = nonEnergyCards.filter(isStandardRareCard);
 
   const specialPools = {
@@ -122,7 +127,9 @@ function openPack(cards, setId = null) {
     pulledCards.push({ ...reverseHoloBase, isReverseHolo: true });
   }
 
-  const isHsPack = setId && HS_SETS.includes(setId);
+  const setName = cards[0]?.set?.name || '';
+  const setSeries = cards[0]?.set?.series || '';
+  const isHsPack = (setId && HS_SETS.includes(setId)) || HS_SET_NAMES.includes(setName) || setSeries === 'HeartGold & SoulSilver';
   const weightedSpecialTable = isHsPack
     ? [
         { key: 'legend', weight: 4 },
@@ -171,13 +178,22 @@ function openPack(cards, setId = null) {
   }
 
   if (legacyHitRare && !rareSlotCard) {
-    rareSlotCard = getUniqueCard(standardRares);
+    rareSlotCard = isHsPack
+      ? (getUniqueCard(hsStandardRares) || getRandomCard(hsStandardRares))
+      : getUniqueCard(standardRares);
   }
 
   if (legacyHitRare && !rareSlotCard && availableSpecialPoolKeys.length) {
-    for (const entry of availableSpecialPoolKeys) {
-      rareSlotCard = getUniqueCard(specialPools[entry.key]);
-      if (rareSlotCard) break;
+    if (isHsPack) {
+      for (const entry of availableSpecialPoolKeys) {
+        rareSlotCard = getUniqueCard(specialPools[entry.key]) || getRandomCard(specialPools[entry.key]);
+        if (rareSlotCard) break;
+      }
+    } else {
+      for (const entry of availableSpecialPoolKeys) {
+        rareSlotCard = getUniqueCard(specialPools[entry.key]);
+        if (rareSlotCard) break;
+      }
     }
   }
 
