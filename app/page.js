@@ -207,7 +207,7 @@ export default function App() {
     loadFriends({ forceRefresh: true });
     const interval = setInterval(() => {
       loadFriends({ forceRefresh: true });
-    }, 30000);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [user?.id]);
@@ -583,6 +583,10 @@ export default function App() {
       setPendingRequests(data.pendingRequests || []);
       setSentRequests(data.sentRequests || []);
       setTradeRequests(data.tradeRequests || []);
+      if (data.activeBattleId) {
+        window.location.href = `/battle?id=${data.activeBattleId}`;
+        return data;
+      }
       writeLocalCache(cacheKey, {
         friends: data.friends || [],
         pendingRequests: data.pendingRequests || [],

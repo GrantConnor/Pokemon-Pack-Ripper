@@ -744,6 +744,109 @@ function formatMoveName(moveName = '') {
   return moveName.replace(/-/g, ' ');
 }
 
+function clampStage(stage = 0) {
+  return Math.max(-6, Math.min(6, stage));
+}
+
+function defaultStatStages() {
+  return {
+    attack: 0,
+    defense: 0,
+    spAttack: 0,
+    spDefense: 0,
+    speed: 0,
+  };
+}
+
+function getStageMultiplier(stage = 0) {
+  const clamped = clampStage(stage);
+  return clamped >= 0 ? (2 + clamped) / 2 : 2 / (2 - clamped);
+}
+
+function getEffectiveStat(pokemon, statKey) {
+  const stages = pokemon.statStages || defaultStatStages();
+  const statValue = Math.max(1, pokemon.stats?.[statKey] || 1);
+  let effective = statValue * getStageMultiplier(stages[statKey] || 0);
+  if (statKey === 'speed' && pokemon.statusCondition === 'paralysis') {
+    effective *= 0.5;
+  }
+  return Math.max(1, effective);
+}
+
+function formatStatKey(statName = '') {
+  const map = {
+    attack: 'attack',
+    defense: 'defense',
+    speed: 'speed',
+    'special-attack': 'spAttack',
+    'special-defense': 'spDefense',
+    'sp-atk': 'spAttack',
+    'sp-def': 'spDefense',
+    accuracy: null,
+    evasion: null,
+  };
+  return map[statName] ?? null;
+}
+
+function inferStatTarget(move) {
+  const text = `${move.effectEntries || ''}`.toLowerCase();
+  if (text.includes('target') || text.includes('opposing') || text.includes('enemy')) return 'target';
+  if (text.includes('user') || text.includes("the user's") || text.includes('the user')) return 'self';
+  const netChange = (move.statChanges || []).reduce((sum, change) => sum + change.change, 0);
+  return netChange < 0 ? 'target' : 'self';
+}
+
+function getHealingFraction(move) {
+  const text = `${move.effectEntries || ''}`.toLowerCase();
+  if (text.includes('half of its max hp') || text.includes('half its max hp')) return 0.5;
+  if (text.includes("restores the user's hp by 50%")) return 0.5;
+  if (text.includes('restores 50%')) return 0.5;
+  if (text.includes("restores the user's hp by 25%") || text.includes('quarter of its max hp')) return 0.25;
+  const healingMoves = {
+    recover: 0.5,
+    roost: 0.5,
+    'slack-off': 0.5,
+    'soft-boiled': 0.5,
+    'milk-drink': 0.5,
+    synthesis: 0.5,
+    moonlight: 0.5,
+    'morning-sun': 0.5,
+    'heal-order': 0.5,
+    'shore-up': 0.5,
+    'life-dew': 0.25,
+  };
+  return healingMoves[move.name] || 0;
+}
+
+function getRecoilFraction(move) {
+  const text = `${move.effectEntries || ''}`.toLowerCase();
+  if (text.includes('1/4')) return 0.25;
+  if (text.includes('1/3')) return 1 / 3;
+  if (text.includes('1/2')) return 0.5;
+  if (text.includes('recoil') && text.includes('25%')) return 0.25;
+  if (text.includes('recoil') && text.includes('33%')) return 1 / 3;
+  if (text.includes('recoil') && text.includes('50%')) return 0.5;
+  const recoilMoves = {
+    tackle: 0,
+    'double-edge': 1 / 3,
+    'brave-bird': 1 / 3,
+    'flare-blitz': 1 / 3,
+    'volt-tackle': 1 / 3,
+    'wood-hammer': 1 / 3,
+    'head-smash': 0.5,
+    'take-down': 0.25,
+    submission: 0.25,
+    'wild-charge': 0.25,
+  };
+  return recoilMoves[move.name] || (text.includes('recoil') ? 0.25 : 0);
+}
+
+function getAilmentToApply(move) {
+  const ailment = move.ailment;
+  if (['sleep', 'burn', 'poison', 'freeze', 'paralysis'].includes(ailment)) return ailment;
+  return null;
+}
+
 function calculateDamage(attacker, defender, move) {
   if (!move.power || move.damageClass === 'status') {
     return { damage: 0, multiplier: 1, stab: 1, isCritical: false };
@@ -752,8 +855,11 @@ function calculateDamage(attacker, defender, move) {
   const level = attacker.level || 50;
   const power = move.power;
   const isPhysical = move.damageClass === 'physical';
-  const attackStat = Math.max(1, isPhysical ? attacker.stats.attack : attacker.stats.spAttack);
-  const defenseStat = Math.max(1, isPhysical ? defender.stats.defense : defender.stats.spDefense);
+  let attackStat = Math.max(1, getEffectiveStat(attacker, isPhysical ? 'attack' : 'spAttack'));
+  const defenseStat = Math.max(1, getEffectiveStat(defender, isPhysical ? 'defense' : 'spDefense'));
+  if (isPhysical && attacker.statusCondition === 'burn') {
+    attackStat *= 0.5;
+  }
   const typeMultiplier = getTypeMultiplier(move.type, defender.types || []);
   const stab = (attacker.types || []).includes(move.type) ? 1.5 : 1;
   const critical = Math.random() < 0.0625 ? 1.5 : 1;
@@ -769,6 +875,18 @@ function calculateDamage(attacker, defender, move) {
     stab,
     isCritical: critical > 1
   };
+}
+
+function getPlayerStateKey(userId, battle) {
+  return battle.player1.userId === userId ? 'player1' : 'player2';
+}
+
+function getOpponentStateKey(playerKey) {
+  return playerKey === 'player1' ? 'player2' : 'player1';
+}
+
+function buildBattleStateForUpdate(battle) {
+  return JSON.parse(JSON.stringify(battle));
 }
 
 // Initialize or update global spawn
@@ -3213,8 +3331,14 @@ if (pathname.includes('/api/auth/signin')) {
           currentPokemonIndex: 0,
           ready: false
         },
-        currentTurn: request.from.id,
-        status: 'selecting', // selecting -> ready -> active -> finished
+        currentTurn: null,
+        pendingActions: {
+          player1: null,
+          player2: null
+        },
+        awaitingSwitchFor: null,
+        roundNumber: 1,
+        status: 'selecting',
         winner: null,
         battleLog: [],
         createdAt: new Date().toISOString()
@@ -3288,7 +3412,8 @@ if (pathname.includes('/api/auth/signin')) {
         currentHP: p.stats.hp,
         maxHP: p.stats.hp,
         statusCondition: null,
-        sleepTurns: 0
+        sleepTurns: 0,
+        statStages: defaultStatStages()
       }));
 
       // Determine which player and update
@@ -3310,7 +3435,7 @@ if (pathname.includes('/api/auth/signin')) {
       if (updatedBattle.player1.ready && updatedBattle.player2.ready) {
         await database.collection('battles').updateOne(
           { id: battleId },
-          { $set: { status: 'active' } }
+          { $set: { status: 'active', pendingActions: { player1: null, player2: null }, awaitingSwitchFor: null, currentTurn: null } }
         );
       }
 
@@ -3393,7 +3518,7 @@ if (pathname.includes('/api/auth/signin')) {
       return NextResponse.json({ battle });
     }
 
-    // Perform battle action (attack)
+    // Perform battle action (choose move / resolve round)
     if (pathname.includes('/api/battles/attack')) {
       const { battleId, userId, moveIndex } = body;
       
@@ -3412,174 +3537,254 @@ if (pathname.includes('/api/auth/signin')) {
         return NextResponse.json({ error: 'A player must choose their next Pokemon first' }, { status: 400 });
       }
 
-      if (battle.currentTurn !== userId) {
-        return NextResponse.json({ error: 'Not your turn' }, { status: 400 });
+      const playerKey = getPlayerStateKey(userId, battle);
+      const opponentKey = getOpponentStateKey(playerKey);
+      const pendingActions = battle.pendingActions || { player1: null, player2: null };
+
+      if (pendingActions[playerKey]) {
+        return NextResponse.json({ error: 'You already locked in a move for this round' }, { status: 400 });
       }
 
-      const isPlayer1 = battle.player1.userId === userId;
-      const attackerField = isPlayer1 ? 'player1' : 'player2';
-      const defenderField = isPlayer1 ? 'player2' : 'player1';
-      const attacker = isPlayer1 ? battle.player1 : battle.player2;
-      const defender = isPlayer1 ? battle.player2 : battle.player1;
-
-      const attackingPokemon = attacker.pokemon?.[attacker.currentPokemonIndex];
-      const defendingPokemon = defender.pokemon?.[defender.currentPokemonIndex];
-
-      if (!attackingPokemon || !defendingPokemon) {
-        return NextResponse.json({ error: 'Battle Pokemon missing' }, { status: 400 });
+      const player = battle[playerKey];
+      const activePokemon = player.pokemon?.[player.currentPokemonIndex];
+      if (!activePokemon || activePokemon.currentHP <= 0) {
+        return NextResponse.json({ error: 'Your active Pokemon cannot move' }, { status: 400 });
       }
 
-      if (attackingPokemon.currentHP <= 0) {
-        return NextResponse.json({ error: 'Your active Pokemon has fainted' }, { status: 400 });
-      }
-
-      const moveName = attackingPokemon.moveset?.[moveIndex];
-      const moveData = attackingPokemon.allMovesData?.find(m => m.name === moveName);
-
+      const moveName = activePokemon.moveset?.[moveIndex];
+      const moveData = activePokemon.allMovesData?.find(m => m.name === moveName);
       if (!moveData) {
         return NextResponse.json({ error: 'Invalid move' }, { status: 400 });
       }
 
-      const nextTurnUserId = defender.userId;
+      pendingActions[playerKey] = { moveIndex, selectedAt: new Date().toISOString() };
+
+      if (!pendingActions[opponentKey]) {
+        await database.collection('battles').updateOne(
+          { id: battleId },
+          { $set: { pendingActions } }
+        );
+        return NextResponse.json({ success: true, waitingForOpponent: true });
+      }
+
+      const state = buildBattleStateForUpdate(battle);
+      state.pendingActions = pendingActions;
       const battleLogEntries = [];
-      let damage = 0;
-      let fainted = false;
       let battleOver = false;
       let winner = null;
-      let effectiveness = 1;
-      let statusApplied = null;
-      let moveMissed = false;
-      let turnSkipped = false;
-      const updateSet = {};
+      let awaitingSwitchFor = null;
 
-      // Sleep handling
-      if (attackingPokemon.statusCondition === 'sleep') {
-        const remainingSleepTurns = Math.max(0, (attackingPokemon.sleepTurns || 0) - 1);
-        if (remainingSleepTurns > 0) {
-          turnSkipped = true;
-          updateSet[`${attackerField}.pokemon.${attacker.currentPokemonIndex}.sleepTurns`] = remainingSleepTurns;
-          updateSet.currentTurn = nextTurnUserId;
-          battleLogEntries.push({
-            turn: battle.battleLog.length + 1,
+      const speedOrder = ['player1', 'player2'].sort((a, b) => {
+        const pokemonA = state[a].pokemon?.[state[a].currentPokemonIndex];
+        const pokemonB = state[b].pokemon?.[state[b].currentPokemonIndex];
+        const speedA = pokemonA ? getEffectiveStat(pokemonA, 'speed') : 0;
+        const speedB = pokemonB ? getEffectiveStat(pokemonB, 'speed') : 0;
+        if (speedA === speedB) return Math.random() < 0.5 ? -1 : 1;
+        return speedB - speedA;
+      });
+
+      const pushLog = (entry) => {
+        battleLogEntries.push({
+          turn: (state.roundNumber || 1),
+          timestamp: new Date().toISOString(),
+          ...entry,
+        });
+      };
+
+      const getActive = (key) => state[key].pokemon?.[state[key].currentPokemonIndex];
+      const setAwaitingSwitch = (key) => {
+        const hasMore = state[key].pokemon?.some((pokemon, index) => index !== state[key].currentPokemonIndex && pokemon.currentHP > 0);
+        if (!hasMore) {
+          battleOver = true;
+          winner = key === 'player1' ? state.player2.userId : state.player1.userId;
+          state.status = 'finished';
+          state.winner = winner;
+          state.awaitingSwitchFor = null;
+          state.pendingActions = { player1: null, player2: null };
+          return;
+        }
+        awaitingSwitchFor = state[key].userId;
+        state.awaitingSwitchFor = awaitingSwitchFor;
+        state.pendingActions = { player1: null, player2: null };
+      };
+
+      const applyAilment = (targetPokemon, ailment) => {
+        if (!ailment || targetPokemon.statusCondition) return false;
+        targetPokemon.statusCondition = ailment;
+        if (ailment === 'sleep') targetPokemon.sleepTurns = Math.floor(Math.random() * 3) + 1;
+        if (ailment === 'freeze') targetPokemon.sleepTurns = 0;
+        return true;
+      };
+
+      const applyStatChanges = (move, userKey, foeKey) => {
+        if (!move.statChanges?.length) return;
+        const targetMode = inferStatTarget(move);
+        for (const statChange of move.statChanges) {
+          const statKey = formatStatKey(statChange.stat);
+          if (!statKey) continue;
+          const destinationKey = targetMode === 'target' ? foeKey : userKey;
+          const destinationPokemon = getActive(destinationKey);
+          if (!destinationPokemon) continue;
+          destinationPokemon.statStages = destinationPokemon.statStages || defaultStatStages();
+          destinationPokemon.statStages[statKey] = clampStage((destinationPokemon.statStages[statKey] || 0) + statChange.change);
+          const changeWord = statChange.change > 0 ? 'rose' : 'fell';
+          pushLog({ type: 'stat', message: `${destinationPokemon.displayName}'s ${statKey} ${changeWord}!` });
+        }
+      };
+
+      const handlePreTurnStatus = (pokemon, playerName) => {
+        if (!pokemon.statusCondition) return { canMove: true };
+        if (pokemon.statusCondition === 'sleep') {
+          if ((pokemon.sleepTurns || 0) > 1) {
+            pokemon.sleepTurns -= 1;
+            pushLog({ type: 'status', message: `${pokemon.displayName} is fast asleep!` });
+            return { canMove: false };
+          }
+          pokemon.sleepTurns = 0;
+          pokemon.statusCondition = null;
+          pushLog({ type: 'status', message: `${pokemon.displayName} woke up!` });
+          return { canMove: true };
+        }
+        if (pokemon.statusCondition === 'freeze') {
+          if (Math.random() < 0.2) {
+            pokemon.statusCondition = null;
+            pushLog({ type: 'status', message: `${pokemon.displayName} thawed out!` });
+            return { canMove: true };
+          }
+          pushLog({ type: 'status', message: `${pokemon.displayName} is frozen solid!` });
+          return { canMove: false };
+        }
+        if (pokemon.statusCondition === 'paralysis' && Math.random() < 0.25) {
+          pushLog({ type: 'status', message: `${pokemon.displayName} is paralyzed! It can't move!` });
+          return { canMove: false };
+        }
+        return { canMove: true };
+      };
+
+      const handleEndTurnStatus = (key) => {
+        if (battleOver || awaitingSwitchFor) return;
+        const pokemon = getActive(key);
+        if (!pokemon || pokemon.currentHP <= 0) return;
+        if (pokemon.statusCondition === 'burn' || pokemon.statusCondition === 'poison') {
+          const chipDamage = Math.max(1, Math.floor(pokemon.maxHP / 8));
+          pokemon.currentHP = Math.max(0, pokemon.currentHP - chipDamage);
+          pushLog({
             type: 'status',
-            attacker: attacker.username,
-            move: formatMoveName(moveName),
-            message: `${attackingPokemon.displayName} is fast asleep!`,
-            timestamp: new Date().toISOString()
+            message: `${pokemon.displayName} was hurt by ${pokemon.statusCondition}! (-${chipDamage} HP)`
           });
-        } else {
-          updateSet[`${attackerField}.pokemon.${attacker.currentPokemonIndex}.sleepTurns`] = 0;
-          updateSet[`${attackerField}.pokemon.${attacker.currentPokemonIndex}.statusCondition`] = null;
-          battleLogEntries.push({
-            turn: battle.battleLog.length + 1,
-            type: 'status',
-            attacker: attacker.username,
-            move: formatMoveName(moveName),
-            message: `${attackingPokemon.displayName} woke up!`,
-            timestamp: new Date().toISOString()
-          });
+          if (pokemon.currentHP === 0) {
+            pushLog({ type: 'faint', message: `${pokemon.displayName} fainted!` });
+            setAwaitingSwitch(key);
+          }
+        }
+      };
+
+      for (const actingKey of speedOrder) {
+        if (battleOver || awaitingSwitchFor) break;
+
+        const defendingKey = getOpponentStateKey(actingKey);
+        const action = state.pendingActions[actingKey];
+        let actingPokemon = getActive(actingKey);
+        let defendingPokemon = getActive(defendingKey);
+        if (!actingPokemon || !defendingPokemon) continue;
+
+        if (actingPokemon.currentHP <= 0) {
+          pushLog({ type: 'skip', message: `${actingPokemon.displayName} fainted before it could move!` });
+          continue;
+        }
+
+        const statusCheck = handlePreTurnStatus(actingPokemon, state[actingKey].username);
+        if (!statusCheck.canMove) continue;
+
+        const selectedMoveName = actingPokemon.moveset?.[action.moveIndex];
+        const selectedMove = actingPokemon.allMovesData?.find((move) => move.name === selectedMoveName);
+        if (!selectedMove) {
+          pushLog({ type: 'error', message: `${actingPokemon.displayName} had no valid move.` });
+          continue;
+        }
+
+        const healingFraction = getHealingFraction(selectedMove);
+        const recoilFraction = getRecoilFraction(selectedMove);
+        const moveDisplayName = formatMoveName(selectedMoveName);
+
+        if (selectedMove.accuracy && Math.random() * 100 > selectedMove.accuracy) {
+          pushLog({ type: 'miss', message: `${actingPokemon.displayName}'s ${moveDisplayName} missed!` });
+          continue;
+        }
+
+        pushLog({ type: 'move', message: `${state[actingKey].username}'s ${actingPokemon.displayName} used ${moveDisplayName}!` });
+
+        if (healingFraction > 0 && (!selectedMove.power || selectedMove.damageClass === 'status')) {
+          const healed = Math.max(1, Math.floor(actingPokemon.maxHP * healingFraction));
+          const previousHP = actingPokemon.currentHP;
+          actingPokemon.currentHP = Math.min(actingPokemon.maxHP, actingPokemon.currentHP + healed);
+          pushLog({ type: 'heal', message: `${actingPokemon.displayName} restored ${actingPokemon.currentHP - previousHP} HP!` });
+          applyStatChanges(selectedMove, actingKey, defendingKey);
+          continue;
+        }
+
+        const damageResult = calculateDamage(actingPokemon, defendingPokemon, selectedMove);
+        const damage = damageResult.damage;
+        defendingPokemon.currentHP = Math.max(0, defendingPokemon.currentHP - damage);
+
+        const parts = [`It dealt ${damage} damage.`];
+        if (damageResult.isCritical) parts.push('A critical hit!');
+        if (damageResult.multiplier >= 2) parts.push(`It's super effective!`);
+        if (damageResult.multiplier > 0 && damageResult.multiplier < 1) parts.push(`It's not very effective...`);
+        if (damageResult.multiplier === 0) parts.push(`It had no effect.`);
+        pushLog({ type: 'attack', message: parts.join(' ') });
+
+        applyStatChanges(selectedMove, actingKey, defendingKey);
+
+        const ailment = getAilmentToApply(selectedMove);
+        const ailmentChance = selectedMove.ailmentChance || selectedMove.effectChance || 0;
+        if (ailment && ailmentChance > 0 && Math.random() * 100 <= ailmentChance && applyAilment(defendingPokemon, ailment)) {
+          const ailmentLabel = ailment === 'paralysis' ? 'paralyzed' : ailment;
+          pushLog({ type: 'status', message: `${defendingPokemon.displayName} is now ${ailmentLabel}!` });
+        }
+
+        if (recoilFraction > 0 && damage > 0) {
+          const recoilDamage = Math.max(1, Math.floor(damage * recoilFraction));
+          actingPokemon.currentHP = Math.max(0, actingPokemon.currentHP - recoilDamage);
+          pushLog({ type: 'recoil', message: `${actingPokemon.displayName} took ${recoilDamage} recoil damage!` });
+          if (actingPokemon.currentHP === 0) {
+            pushLog({ type: 'faint', message: `${actingPokemon.displayName} fainted from recoil!` });
+            setAwaitingSwitch(actingKey);
+            if (battleOver) break;
+          }
+        }
+
+        if (defendingPokemon.currentHP === 0 && !battleOver) {
+          pushLog({ type: 'faint', message: `${defendingPokemon.displayName} fainted!` });
+          setAwaitingSwitch(defendingKey);
         }
       }
 
-      if (!turnSkipped) {
-        if (moveData.accuracy && Math.random() * 100 > moveData.accuracy) {
-          moveMissed = true;
-          updateSet.currentTurn = nextTurnUserId;
-          battleLogEntries.push({
-            turn: battle.battleLog.length + battleLogEntries.length + 1,
-            type: 'miss',
-            attacker: attacker.username,
-            defender: defender.username,
-            move: formatMoveName(moveName),
-            message: `${attackingPokemon.displayName}'s ${formatMoveName(moveName)} missed!`,
-            timestamp: new Date().toISOString()
-          });
-        } else {
-          const damageResult = calculateDamage(attackingPokemon, defendingPokemon, moveData);
-          damage = damageResult.damage;
-          effectiveness = damageResult.multiplier;
-          const newHP = Math.max(0, defendingPokemon.currentHP - damage);
-          fainted = newHP === 0;
-
-          updateSet[`${defenderField}.pokemon.${defender.currentPokemonIndex}.currentHP`] = newHP;
-
-          const moveMessageParts = [
-            `${attackingPokemon.displayName} used ${formatMoveName(moveName)}!`,
-            `It dealt ${damage} damage.`
-          ];
-          if (damageResult.isCritical) moveMessageParts.push('A critical hit!');
-          if (effectiveness >= 2) moveMessageParts.push(`It's super effective!`);
-          if (effectiveness > 0 && effectiveness < 1) moveMessageParts.push(`It's not very effective...`);
-          if (effectiveness === 0) moveMessageParts.push(`It had no effect.`);
-
-          battleLogEntries.push({
-            turn: battle.battleLog.length + battleLogEntries.length + 1,
-            type: 'attack',
-            attacker: attacker.username,
-            defender: defender.username,
-            move: formatMoveName(moveName),
-            damage,
-            multiplier: effectiveness,
-            message: moveMessageParts.join(' '),
-            timestamp: new Date().toISOString()
-          });
-
-          if (
-            moveData.damageClass !== 'status' &&
-            !defendingPokemon.statusCondition &&
-            moveData.ailment === 'sleep' &&
-            (moveData.ailmentChance || moveData.effectChance || 100) > 0 &&
-            Math.random() * 100 <= (moveData.ailmentChance || moveData.effectChance || 100)
-          ) {
-            const sleepTurns = Math.floor(Math.random() * 3) + 1;
-            updateSet[`${defenderField}.pokemon.${defender.currentPokemonIndex}.statusCondition`] = 'sleep';
-            updateSet[`${defenderField}.pokemon.${defender.currentPokemonIndex}.sleepTurns`] = sleepTurns;
-            statusApplied = 'sleep';
-            battleLogEntries.push({
-              turn: battle.battleLog.length + battleLogEntries.length + 1,
-              type: 'status',
-              attacker: attacker.username,
-              defender: defender.username,
-              move: formatMoveName(moveName),
-              message: `${defendingPokemon.displayName} fell asleep!`,
-              timestamp: new Date().toISOString()
-            });
-          }
-
-          if (fainted) {
-            battleLogEntries.push({
-              turn: battle.battleLog.length + battleLogEntries.length + 1,
-              type: 'faint',
-              attacker: attacker.username,
-              defender: defender.username,
-              move: formatMoveName(moveName),
-              message: `${defendingPokemon.displayName} fainted!`,
-              timestamp: new Date().toISOString()
-            });
-
-            const remainingAliveIndexes = defender.pokemon
-              .map((pokemon, index) => ({ pokemon, index }))
-              .filter(({ pokemon, index }) => index !== defender.currentPokemonIndex && pokemon.currentHP > 0);
-
-            if (remainingAliveIndexes.length === 0) {
-              battleOver = true;
-              winner = userId;
-              updateSet.status = 'finished';
-              updateSet.winner = userId;
-            } else {
-              updateSet.awaitingSwitchFor = defender.userId;
-              updateSet.currentTurn = defender.userId;
-            }
-          } else {
-            updateSet.currentTurn = nextTurnUserId;
-          }
-        }
+      if (!battleOver && !awaitingSwitchFor) {
+        handleEndTurnStatus('player1');
+        handleEndTurnStatus('player2');
       }
+
+      if (!battleOver && !awaitingSwitchFor) {
+        state.roundNumber = (state.roundNumber || 1) + 1;
+      }
+
+      state.pendingActions = { player1: null, player2: null };
+      state.currentTurn = null;
 
       await database.collection('battles').updateOne(
         { id: battleId },
         {
-          $set: updateSet,
+          $set: {
+            player1: state.player1,
+            player2: state.player2,
+            pendingActions: state.pendingActions,
+            awaitingSwitchFor: state.awaitingSwitchFor || null,
+            currentTurn: state.currentTurn,
+            status: state.status,
+            winner: state.winner,
+            roundNumber: state.roundNumber || 1,
+          },
           ...(battleLogEntries.length ? { $push: { battleLog: { $each: battleLogEntries } } } : {})
         }
       );
@@ -3593,15 +3798,10 @@ if (pathname.includes('/api/auth/signin')) {
 
       return NextResponse.json({
         success: true,
-        damage,
-        fainted,
+        waitingForOpponent: false,
         battleOver,
         winner,
-        effectiveness,
-        statusApplied,
-        moveMissed,
-        turnSkipped,
-        awaitingSwitchFor: updateSet.awaitingSwitchFor || null
+        awaitingSwitchFor: state.awaitingSwitchFor || null,
       });
     }
 

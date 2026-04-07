@@ -23,8 +23,14 @@ function PokemonCard({ pokemon, selected, onClick, fainted = false }) {
       }`}
     >
       <CardContent className="p-4">
-        {pokemon.isShiny && <Badge className="mb-2 bg-yellow-500">✨ SHINY</Badge>}
-        {pokemon.statusCondition === 'sleep' && <Badge className="mb-2 ml-2 bg-indigo-500">💤 SLEEP</Badge>}
+        <div className="flex gap-2 flex-wrap mb-2">
+          {pokemon.isShiny && <Badge className="bg-yellow-500">✨ SHINY</Badge>}
+          {pokemon.statusCondition === 'sleep' && <Badge className="bg-indigo-500">💤 Sleep</Badge>}
+          {pokemon.statusCondition === 'burn' && <Badge className="bg-red-500">🔥 Burn</Badge>}
+          {pokemon.statusCondition === 'poison' && <Badge className="bg-purple-500">☠ Poison</Badge>}
+          {pokemon.statusCondition === 'paralysis' && <Badge className="bg-yellow-600">⚡ Paralyzed</Badge>}
+          {pokemon.statusCondition === 'freeze' && <Badge className="bg-cyan-500">🧊 Frozen</Badge>}
+        </div>
         <img src={pokemon.sprite} alt={pokemon.displayName} className="w-full mb-2" />
         <p className="text-white font-bold text-center">{pokemon.nickname || pokemon.displayName}</p>
         <p className="text-gray-400 text-sm text-center">Level {pokemon.level}</p>
@@ -32,6 +38,20 @@ function PokemonCard({ pokemon, selected, onClick, fainted = false }) {
       </CardContent>
     </Card>
   );
+}
+
+function StatusBadge({ status }) {
+  if (!status) return null;
+  const map = {
+    sleep: { label: '💤 Sleep', className: 'bg-indigo-500' },
+    burn: { label: '🔥 Burn', className: 'bg-red-500' },
+    poison: { label: '☠ Poison', className: 'bg-purple-500' },
+    paralysis: { label: '⚡ Paralyzed', className: 'bg-yellow-600' },
+    freeze: { label: '🧊 Frozen', className: 'bg-cyan-500' },
+  };
+  const item = map[status];
+  if (!item) return null;
+  return <Badge className={item.className}>{item.label}</Badge>;
 }
 
 function BattlePageContent() {
@@ -43,9 +63,7 @@ function BattlePageContent() {
   const [myPokemon, setMyPokemon] = useState([]);
   const [selectedPokemon, setSelectedPokemon] = useState([]);
   const [teamSearch, setTeamSearch] = useState('');
-  const [isPlayer1, setIsPlayer1] = useState(false);
-  const [attacking, setAttacking] = useState(false);
-  const [switching, setSwitching] = useState(false);
+  const [actionSubmitting, setActionSubmitting] = useState(false);
 
   useEffect(() => {
     const storedUserId = localStorage.getItem('userId');
@@ -56,31 +74,26 @@ function BattlePageContent() {
 
     fetch(`/api/session?userId=${storedUserId}`)
       .then(res => res.json())
-      .then(data => {
-        if (data.authenticated) {
-          setUser(data.user);
-          loadMyPokemon(data.user.id);
-          loadBattle(data.user.id);
-        } else if (data.transient) {
-          console.error('Transient session error on battle page:', data.error);
-        } else {
+      .then(async (data) => {
+        if (!data.authenticated) {
           window.location.href = '/';
+          return;
         }
+        setUser(data.user);
+        await Promise.all([loadMyPokemon(data.user.id), loadBattle()]);
       })
-      .catch(err => {
-        console.error('Session fetch failed on battle page:', err);
+      .catch(() => {
+        window.location.href = '/';
       });
   }, []);
 
   useEffect(() => {
-    if (!battleId || !user?.id) return;
-
+    if (!battleId) return;
     const interval = setInterval(() => {
-      loadBattle(user.id);
+      loadBattle();
     }, 2000);
-
     return () => clearInterval(interval);
-  }, [battleId, user?.id]);
+  }, [battleId]);
 
   const loadMyPokemon = async (userId) => {
     try {
@@ -92,134 +105,18 @@ function BattlePageContent() {
     }
   };
 
-  const loadBattle = async (userId = user?.id) => {
+  const loadBattle = async () => {
     if (!battleId) return;
-
     try {
       const response = await fetch('/api/battles/state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ battleId })
       });
-
       const data = await response.json();
-      if (data.battle) {
-        setBattle(data.battle);
-        if (userId) {
-          setIsPlayer1(data.battle.player1.userId === userId);
-        }
-      }
+      if (data.battle) setBattle(data.battle);
     } catch (err) {
       console.error('Error loading battle:', err);
-    }
-  };
-
-  const handleSelectPokemon = (pokemon) => {
-    if (selectedPokemon.find(p => p._id === pokemon._id)) {
-      setSelectedPokemon(selectedPokemon.filter(p => p._id !== pokemon._id));
-    } else if (selectedPokemon.length < 6) {
-      setSelectedPokemon([...selectedPokemon, pokemon]);
-    }
-  };
-
-  const handleConfirmSelection = async () => {
-    if (selectedPokemon.length === 0) {
-      alert('Please select at least 1 Pokemon');
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/battles/select-pokemon', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          battleId,
-          userId: user.id,
-          pokemonIds: selectedPokemon.map(p => p._id.toString())
-        })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        await loadBattle(user.id);
-      } else {
-        alert(data.error || 'Error selecting Pokemon');
-      }
-    } catch (err) {
-      alert('Error selecting Pokemon');
-    }
-  };
-
-  const handleAttack = async (moveIndex) => {
-    if (attacking) return;
-
-    setAttacking(true);
-    try {
-      const response = await fetch('/api/battles/attack', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ battleId, userId: user.id, moveIndex })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        if (data.battleOver) {
-          alert(data.winner === user.id ? '🎉 You won the battle!' : '💀 You lost the battle!');
-        } else if (data.turnSkipped) {
-          alert('Your Pokemon is asleep and could not move!');
-        } else if (data.moveMissed) {
-          alert('The move missed!');
-        }
-        await loadBattle(user.id);
-      } else {
-        alert(data.error || 'Error attacking');
-      }
-    } catch (err) {
-      alert('Error attacking');
-    } finally {
-      setAttacking(false);
-    }
-  };
-
-  const handleSwitchPokemon = async (pokemonIndex) => {
-    if (switching) return;
-    setSwitching(true);
-    try {
-      const response = await fetch('/api/battles/switch-pokemon', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ battleId, userId: user.id, pokemonIndex })
-      });
-      const data = await response.json();
-      if (data.success) {
-        await loadBattle(user.id);
-      } else {
-        alert(data.error || 'Error switching Pokemon');
-      }
-    } catch (err) {
-      alert('Error switching Pokemon');
-    } finally {
-      setSwitching(false);
-    }
-  };
-
-  const handleForfeit = async () => {
-    if (!confirm('Are you sure you want to forfeit?')) return;
-
-    try {
-      const response = await fetch('/api/battles/forfeit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ battleId, userId: user.id })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        alert('You forfeit');
-        window.location.href = '/wilds';
-      }
-    } catch (err) {
-      alert('Error forfeiting');
     }
   };
 
@@ -240,13 +137,111 @@ function BattlePageContent() {
     );
   }
 
-  const myPlayer = isPlayer1 ? battle.player1 : battle.player2;
-  const opponentPlayer = isPlayer1 ? battle.player2 : battle.player1;
-  const isMyTurn = battle.currentTurn === user.id;
+  const isPlayer1 = battle.player1.userId === user.id;
+  const myPlayerKey = isPlayer1 ? 'player1' : 'player2';
+  const opponentPlayerKey = isPlayer1 ? 'player2' : 'player1';
+  const myPlayer = battle[myPlayerKey];
+  const opponentPlayer = battle[opponentPlayerKey];
   const myCurrentPokemon = myPlayer.pokemon?.[myPlayer.currentPokemonIndex];
   const opponentCurrentPokemon = opponentPlayer.pokemon?.[opponentPlayer.currentPokemonIndex];
   const awaitingMySwitch = battle.awaitingSwitchFor === user.id;
-  const recentLog = (battle.battleLog || []).slice(-5).reverse();
+  const myMoveLocked = !!battle.pendingActions?.[myPlayerKey];
+  const opponentMoveLocked = !!battle.pendingActions?.[opponentPlayerKey];
+  const battleLog = [...(battle.battleLog || [])].reverse();
+
+  const handleSelectPokemon = (pokemon) => {
+    if (selectedPokemon.find(p => p._id === pokemon._id)) {
+      setSelectedPokemon(selectedPokemon.filter(p => p._id !== pokemon._id));
+    } else if (selectedPokemon.length < 6) {
+      setSelectedPokemon([...selectedPokemon, pokemon]);
+    }
+  };
+
+  const handleConfirmSelection = async () => {
+    if (selectedPokemon.length === 0) {
+      alert('Please select at least 1 Pokemon');
+      return;
+    }
+    try {
+      const response = await fetch('/api/battles/select-pokemon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          battleId,
+          userId: user.id,
+          pokemonIds: selectedPokemon.map(p => p._id.toString())
+        })
+      });
+      const data = await response.json();
+      if (data.success) {
+        await loadBattle();
+      } else {
+        alert(data.error || 'Error selecting Pokemon');
+      }
+    } catch {
+      alert('Error selecting Pokemon');
+    }
+  };
+
+  const handleAttack = async (moveIndex) => {
+    if (actionSubmitting) return;
+    setActionSubmitting(true);
+    try {
+      const response = await fetch('/api/battles/attack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ battleId, userId: user.id, moveIndex })
+      });
+      const data = await response.json();
+      if (!data.success) {
+        alert(data.error || 'Error using move');
+      }
+      await loadBattle();
+    } catch {
+      alert('Error using move');
+    } finally {
+      setActionSubmitting(false);
+    }
+  };
+
+  const handleSwitchPokemon = async (pokemonIndex) => {
+    if (actionSubmitting) return;
+    setActionSubmitting(true);
+    try {
+      const response = await fetch('/api/battles/switch-pokemon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ battleId, userId: user.id, pokemonIndex })
+      });
+      const data = await response.json();
+      if (!data.success) {
+        alert(data.error || 'Error switching Pokemon');
+      }
+      await loadBattle();
+    } catch {
+      alert('Error switching Pokemon');
+    } finally {
+      setActionSubmitting(false);
+    }
+  };
+
+  const handleForfeit = async () => {
+    if (!confirm('Are you sure you want to forfeit?')) return;
+    try {
+      const response = await fetch('/api/battles/forfeit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ battleId, userId: user.id })
+      });
+      const data = await response.json();
+      if (data.success) {
+        alert('you forfeit');
+        window.location.href = '/wilds';
+      }
+    } catch {
+      alert('Error forfeiting');
+    }
+  };
 
   if (battle.status === 'selecting' && !myPlayer.ready) {
     return (
@@ -256,7 +251,7 @@ function BattlePageContent() {
             <Link href="/wilds">
               <Button variant="outline" className="bg-slate-800 border-cyan-500">
                 <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Wilds
+                Back to Pokemon Wilds
               </Button>
             </Link>
             <h1 className="text-3xl font-bold text-white">Select Your Battle Team</h1>
@@ -317,7 +312,7 @@ function BattlePageContent() {
 
   if (battle.status === 'active' || battle.status === 'finished') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-green-900 via-emerald-800 to-green-900 p-6 md:p-8 relative overflow-hidden">
+      <div className="min-h-screen bg-gradient-to-b from-green-900 via-emerald-800 to-green-900 p-4 md:p-6 lg:p-8 relative overflow-hidden">
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-10 left-10 text-6xl">🌿</div>
           <div className="absolute top-40 right-20 text-6xl">🍃</div>
@@ -325,24 +320,24 @@ function BattlePageContent() {
           <div className="absolute bottom-40 right-10 text-6xl">🌳</div>
         </div>
 
-        <div className="max-w-6xl mx-auto relative z-10">
-          <div className="flex justify-between items-center mb-8 gap-4 flex-wrap">
+        <div className="max-w-6xl mx-auto relative z-10 space-y-4">
+          <div className="flex justify-between items-center gap-4 flex-wrap">
             <Link href="/wilds">
               <Button variant="outline" className="bg-slate-800 border-green-500">
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back to Pokemon Wilds
               </Button>
             </Link>
-            <div className="text-center flex-1">
+            <div className="text-center flex-1 min-w-[240px]">
               <h1 className="text-2xl font-bold text-white mb-1">Battle Arena</h1>
               <p className="text-green-300">
                 {battle.status === 'finished'
                   ? `Winner: ${battle.winner === user.id ? 'You!' : opponentPlayer.username}`
                   : awaitingMySwitch
                     ? 'Choose your next Pokemon'
-                    : isMyTurn
-                      ? 'Your Turn!'
-                      : `${opponentPlayer.username}'s Turn`}
+                    : myMoveLocked
+                      ? opponentMoveLocked ? 'Resolving round...' : 'Move locked in — waiting for opponent'
+                      : 'Choose your move'}
               </p>
             </div>
             <Button onClick={handleForfeit} disabled={battle.status === 'finished'} className="bg-red-600 hover:bg-red-500">
@@ -350,11 +345,44 @@ function BattlePageContent() {
             </Button>
           </div>
 
-          <div className="grid lg:grid-cols-[1fr_320px] gap-6">
-            <div className="space-y-8">
+          {battle.status === 'active' && !awaitingMySwitch && (
+            <Card className="border-2 border-green-500/50 bg-slate-800/90">
+              <CardContent className="p-4 space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h2 className="text-xl font-bold text-white">Attack</h2>
+                  <p className="text-sm text-yellow-300">
+                    {myMoveLocked ? 'Your move is locked in.' : 'Pick a move for this round.'}
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {myCurrentPokemon?.moveset?.map((move, index) => {
+                    const moveData = myCurrentPokemon.allMovesData?.find(m => m.name === move);
+                    return (
+                      <Button
+                        key={index}
+                        onClick={() => handleAttack(index)}
+                        disabled={myMoveLocked || actionSubmitting || myCurrentPokemon.currentHP === 0 || battle.status !== 'active'}
+                        className="h-20 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 flex flex-col items-center justify-center"
+                      >
+                        <span className="font-bold">{move.replace(/-/g, ' ').toUpperCase()}</span>
+                        {moveData && (
+                          <span className="text-xs text-center">
+                            {moveData.type} • {moveData.damageClass} • Power: {moveData.power || 'N/A'}
+                          </span>
+                        )}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="grid lg:grid-cols-[1fr_320px] gap-6 items-start">
+            <div className="space-y-6">
               <div className="text-center">
                 <p className="text-white font-bold mb-2">{opponentPlayer.username}'s {opponentCurrentPokemon?.displayName}</p>
-                {opponentCurrentPokemon?.statusCondition === 'sleep' && <Badge className="mb-2 bg-indigo-500">💤 Sleep</Badge>}
+                <div className="flex justify-center mb-2"><StatusBadge status={opponentCurrentPokemon?.statusCondition} /></div>
                 <div className="flex justify-center mb-2">
                   <div className="w-64">
                     <div className="bg-slate-800/80 rounded-full h-4 overflow-hidden border-2 border-white">
@@ -363,7 +391,7 @@ function BattlePageContent() {
                     <p className="text-white text-sm mt-1">HP: {opponentCurrentPokemon?.currentHP}/{opponentCurrentPokemon?.maxHP}</p>
                   </div>
                 </div>
-                {opponentCurrentPokemon && <img src={opponentCurrentPokemon.sprite} alt={opponentCurrentPokemon.displayName} className="w-48 h-48 mx-auto" />}
+                {opponentCurrentPokemon && <img src={opponentCurrentPokemon.sprite} alt={opponentCurrentPokemon.displayName} className="w-40 h-40 md:w-48 md:h-48 mx-auto" />}
                 <p className="text-gray-300">Level {opponentCurrentPokemon?.level}</p>
               </div>
 
@@ -373,8 +401,8 @@ function BattlePageContent() {
 
               <div className="text-center">
                 <p className="text-white font-bold mb-2">Your {myCurrentPokemon?.displayName}</p>
-                {myCurrentPokemon?.statusCondition === 'sleep' && <Badge className="mb-2 bg-indigo-500">💤 Sleep</Badge>}
-                {myCurrentPokemon && <img src={myCurrentPokemon.sprite} alt={myCurrentPokemon.displayName} className="w-48 h-48 mx-auto mb-2" />}
+                <div className="flex justify-center mb-2"><StatusBadge status={myCurrentPokemon?.statusCondition} /></div>
+                {myCurrentPokemon && <img src={myCurrentPokemon.sprite} alt={myCurrentPokemon.displayName} className="w-40 h-40 md:w-48 md:h-48 mx-auto mb-2" />}
                 <div className="flex justify-center mb-2">
                   <div className="w-64">
                     <div className="bg-slate-800/80 rounded-full h-4 overflow-hidden border-2 border-white">
@@ -385,37 +413,6 @@ function BattlePageContent() {
                 </div>
                 <p className="text-gray-300">Level {myCurrentPokemon?.level}</p>
               </div>
-
-              {battle.status === 'active' && !awaitingMySwitch && (
-                <Card className="border-2 border-green-500/50 bg-slate-800/90">
-                  <CardContent className="p-6 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h2 className="text-xl font-bold text-white">Attack</h2>
-                      {!isMyTurn && <p className="text-yellow-400">Waiting for opponent...</p>}
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {myCurrentPokemon?.moveset?.map((move, index) => {
-                        const moveData = myCurrentPokemon.allMovesData?.find(m => m.name === move);
-                        return (
-                          <Button
-                            key={index}
-                            onClick={() => handleAttack(index)}
-                            disabled={!isMyTurn || attacking || myCurrentPokemon.currentHP === 0}
-                            className="h-20 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 flex flex-col items-center justify-center"
-                          >
-                            <span className="font-bold">{move.replace(/-/g, ' ').toUpperCase()}</span>
-                            {moveData && (
-                              <span className="text-xs text-center">
-                                {moveData.type} • {moveData.damageClass} • Power: {moveData.power || 'N/A'}
-                              </span>
-                            )}
-                          </Button>
-                        );
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
 
               {battle.status === 'active' && awaitingMySwitch && (
                 <Card className="border-2 border-yellow-500/50 bg-slate-800/90">
@@ -438,7 +435,7 @@ function BattlePageContent() {
               )}
 
               {battle.status === 'finished' && (
-                <div className="mt-8 text-center">
+                <div className="text-center">
                   <Card className="border-4 border-yellow-500 bg-slate-800/90">
                     <CardContent className="p-8">
                       <p className="text-4xl font-bold text-white mb-4">
@@ -453,15 +450,15 @@ function BattlePageContent() {
               )}
             </div>
 
-            <Card className="border-2 border-slate-600 bg-slate-900/85 h-fit">
+            <Card className="border-2 border-slate-600 bg-slate-900/85 h-fit sticky top-4">
               <CardContent className="p-4">
                 <h2 className="text-white font-bold mb-3">Battle Log</h2>
-                <ScrollArea className="h-[480px] pr-4">
+                <ScrollArea className="h-[420px] pr-4">
                   <div className="space-y-3">
-                    {recentLog.length === 0 && <p className="text-slate-400 text-sm">The battle is about to begin.</p>}
-                    {recentLog.map((entry, index) => (
+                    {battleLog.length === 0 && <p className="text-slate-400 text-sm">The battle is about to begin.</p>}
+                    {battleLog.map((entry, index) => (
                       <div key={`${entry.timestamp}-${index}`} className="rounded-lg bg-slate-800/80 p-3 text-sm text-white">
-                        {entry.message || `${entry.attacker || entry.player} used ${entry.move || 'a move'}`}
+                        {entry.message || `${entry.attacker || entry.player} used a move.`}
                       </div>
                     ))}
                   </div>
