@@ -1234,7 +1234,8 @@ export async function GET(request) {
         pendingRequests: requests,
         sentRequests,
         tradeRequests: user.tradeRequests || [],
-        battleRequests: user.battleRequests || []
+        battleRequests: user.battleRequests || [],
+        activeBattleId: user.activeBattleId || null
       });
     }
 
@@ -3188,6 +3189,12 @@ if (pathname.includes('/api/auth/signin')) {
 
       await database.collection('battles').insertOne(battle);
 
+      // Mark both players as actively entering this battle
+      await database.collection('users').updateMany(
+        { id: { $in: [request.from.id, request.to.id] } },
+        { $set: { activeBattleId: battle.id } }
+      );
+
       // Remove battle request
       await database.collection('users').updateOne(
         { id: userId },
@@ -3544,6 +3551,13 @@ if (pathname.includes('/api/auth/signin')) {
         }
       );
 
+      if (battleOver) {
+        await database.collection('users').updateMany(
+          { id: { $in: [battle.player1.userId, battle.player2.userId] } },
+          { $unset: { activeBattleId: '' } }
+        );
+      }
+
       return NextResponse.json({
         success: true,
         damage,
@@ -3583,6 +3597,11 @@ if (pathname.includes('/api/auth/signin')) {
             winner: winner
           }
         }
+      );
+
+      await database.collection('users').updateMany(
+        { id: { $in: [battle.player1.userId, battle.player2.userId] } },
+        { $unset: { activeBattleId: '' } }
       );
 
       return NextResponse.json({ success: true, winner });

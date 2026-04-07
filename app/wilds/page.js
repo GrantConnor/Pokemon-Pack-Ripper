@@ -92,6 +92,7 @@ export default function PokemonWilds() {
                 setFriends(friendsData.friends || []);
                 setBattleRequests(friendsData.battleRequests || []);
                 setTradeRequests(friendsData.tradeRequests || []);
+                setActiveBattle(friendsData.activeBattleId || null);
               })
               .catch(err => console.error('Error loading friends:', err));
           } else if (data.transient) {
@@ -119,6 +120,23 @@ export default function PokemonWilds() {
 
     return () => clearInterval(interval);
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    loadFriends();
+    const interval = setInterval(() => {
+      loadFriends();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [user]);
+
+  useEffect(() => {
+    if (activeBattle && !showBattleScreen) {
+      window.location.href = `/battle?id=${activeBattle}`;
+    }
+  }, [activeBattle, showBattleScreen]);
 
   // Countdown timer for next spawn
   useEffect(() => {
@@ -219,6 +237,7 @@ export default function PokemonWilds() {
       setPendingRequests(data.pendingRequests || []);
       setBattleRequests(data.battleRequests || []);
       setTradeRequests(data.tradeRequests || []);
+      setActiveBattle(data.activeBattleId || null);
     } catch (err) {
       console.error('Error loading friends:', err);
     }
@@ -449,7 +468,7 @@ export default function PokemonWilds() {
 
       const data = await response.json();
       if (data.success) {
-        // Navigate to battle page
+        setActiveBattle(data.battle.id);
         window.location.href = `/battle?id=${data.battle.id}`;
       } else {
         alert(data.error || 'Error accepting battle');
