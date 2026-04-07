@@ -624,10 +624,22 @@ async function fetchPokemonData(pokemonId, forceShiny = false) {
             pp: moveData.data.pp,
             type: moveData.data.type.name,
             damageClass: moveData.data.damage_class.name,
+            priority: moveData.data.priority ?? 0,
+            target: moveData.data.target?.name || 'selected-pokemon',
             effectChance: moveData.data.effect_chance,
             effectEntries: moveData.data.effect_entries.find(e => e.language.name === 'en')?.short_effect || '',
             ailment: moveData.data.meta?.ailment?.name || null,
             ailmentChance: moveData.data.meta?.ailment_chance || 0,
+            statChance: moveData.data.meta?.stat_chance || 0,
+            flinchChance: moveData.data.meta?.flinch_chance || 0,
+            critRate: moveData.data.meta?.crit_rate || 0,
+            drain: moveData.data.meta?.drain || 0,
+            healing: moveData.data.meta?.healing || 0,
+            minHits: moveData.data.meta?.min_hits || null,
+            maxHits: moveData.data.meta?.max_hits || null,
+            minTurns: moveData.data.meta?.min_turns || null,
+            maxTurns: moveData.data.meta?.max_turns || null,
+            category: moveData.data.meta?.category?.name || null,
             statChanges: moveData.data.stat_changes.map(sc => ({
               stat: sc.stat.name,
               change: sc.change
@@ -638,7 +650,8 @@ async function fetchPokemonData(pokemonId, forceShiny = false) {
         }
       });
     
-    const allMovesData = await Promise.all(movePromises);
+    const fetchedMoves = await Promise.all(movePromises);
+    const allMovesData = fetchedMoves.filter((move) => !isUnsupportedBattleMove(move));
     const allMoveNames = allMovesData.map(m => m.name);
     
     // Generate random IVs (0-31 for each stat)
@@ -928,6 +941,144 @@ function getOpponentStateKey(playerKey) {
 
 function buildBattleStateForUpdate(battle) {
   return JSON.parse(JSON.stringify(battle));
+}
+
+function defaultSideConditions() {
+  return {
+    reflect: 0,
+    lightScreen: 0,
+    auroraVeil: 0,
+    stealthRock: false,
+    spikes: 0,
+    toxicSpikes: 0,
+    stickyWeb: false,
+  };
+}
+
+function defaultFieldState() {
+  return {
+    weather: null,
+    weatherTurns: 0,
+    terrain: null,
+    terrainTurns: 0,
+  };
+}
+
+function ensureBattleRuntimeState(state) {
+  state.fieldState = state.fieldState || defaultFieldState();
+  for (const key of ['player1', 'player2']) {
+    state[key].sideConditions = { ...defaultSideConditions(), ...(state[key].sideConditions || {}) };
+    (state[key].pokemon || []).forEach((pokemon) => {
+      pokemon.statStages = pokemon.statStages || defaultStatStages();
+      pokemon.volatile = pokemon.volatile || {};
+      pokemon.sleepTurns = pokemon.sleepTurns || 0;
+      pokemon.poisonCounter = pokemon.poisonCounter || 0;
+      pokemon.burnCounter = pokemon.burnCounter || 0;
+    });
+  }
+  return state;
+}
+
+function getMoveTargetMode(move) {
+  const target = move?.target || '';
+  if (['user', 'user-or-ally'].includes(target)) return 'self';
+  if (['users-field'].includes(target)) return 'self-side';
+  if (['opponents-field'].includes(target)) return 'opponent-side';
+  if (['entire-field'].includes(target)) return 'field';
+  return 'target';
+}
+
+function isProtectMove(moveName = '') {
+  return ['protect', 'detect'].includes(moveName);
+}
+
+function isScreenMove(moveName = '') {
+  return ['reflect', 'light-screen', 'aurora-veil'].includes(moveName);
+}
+
+function isHazardMove(moveName = '') {
+  return ['stealth-rock', 'spikes', 'toxic-spikes', 'sticky-web'].includes(moveName);
+}
+
+function getWeatherFromMove(moveName = '') {
+  return ({ 'rain-dance': 'rain', 'sunny-day': 'sun', sandstorm: 'sandstorm', hail: 'hail', snow: 'snow' })[moveName] || null;
+}
+
+function getTerrainFromMove(moveName = '') {
+  return ({ 'electric-terrain': 'electric', 'grassy-terrain': 'grassy', 'misty-terrain': 'misty', 'psychic-terrain': 'psychic' })[moveName] || null;
+}
+
+function isForcedSwitchMove(moveName = '') {
+  return ['roar', 'whirlwind', 'dragon-tail', 'circle-throw'].includes(moveName);
+}
+
+
+function isUnsupportedBattleMove(move = {}) {
+  const name = move?.name || '';
+  const unsupportedByName = new Set([
+    'protect', 'detect', 'substitute',
+    'sunny-day', 'rain-dance', 'sandstorm', 'hail', 'snow',
+    'solar-beam', 'solar-blade', 'sky-attack', 'skull-bash', 'fly', 'dig', 'dive', 'bounce',
+    'phantom-force', 'shadow-force', 'razor-wind', 'ice-burn', 'freeze-shock', 'geomancy',
+    'meteor-beam', 'electro-shot', 'hyper-beam', 'giga-impact', 'blast-burn', 'frenzy-plant',
+    'hydro-cannon', 'roar-of-time', 'rock-wrecker', 'prismatic-laser', 'eternabeam'
+  ]);
+  if (unsupportedByName.has(name)) return true;
+  if ((move.minTurns && move.minTurns > 1) || (move.maxTurns && move.maxTurns > 1)) return true;
+  const text = `${move.effectEntries || ''}`.toLowerCase();
+  if (text.includes('first turn') && text.includes('second turn')) return true;
+  if (text.includes('recharge next turn')) return true;
+  return false;
+}
+
+function applyEntryHazards(state, playerKey, pushLog) {
+  const incoming = state[playerKey].pokemon?.[state[playerKey].currentPokemonIndex];
+  if (!incoming || incoming.currentHP <= 0) return;
+  const side = state[playerKey].sideConditions || defaultSideConditions();
+
+  if (side.stealthRock) {
+    const multiplier = getTypeMultiplier('rock', incoming.types || []);
+    const damage = Math.max(1, Math.floor((incoming.maxHP / 8) * multiplier));
+    incoming.currentHP = Math.max(0, incoming.currentHP - damage);
+    pushLog({ type: 'hazard', message: `${incoming.displayName} was hurt by Stealth Rock! (-${damage} HP)` });
+  }
+
+  if (side.spikes > 0 && !(incoming.types || []).includes('flying')) {
+    const layers = side.spikes;
+    const fraction = layers >= 3 ? 0.25 : layers === 2 ? (1/6) : 0.125;
+    const damage = Math.max(1, Math.floor(incoming.maxHP * fraction));
+    incoming.currentHP = Math.max(0, incoming.currentHP - damage);
+    pushLog({ type: 'hazard', message: `${incoming.displayName} was hurt by Spikes! (-${damage} HP)` });
+  }
+
+  if (side.toxicSpikes > 0 && !(incoming.types || []).includes('flying') && !incoming.statusCondition) {
+    incoming.statusCondition = 'poison';
+    incoming.poisonCounter = side.toxicSpikes >= 2 ? 2 : 1;
+    pushLog({ type: 'status', message: `${incoming.displayName} was poisoned by Toxic Spikes!` });
+  }
+
+  if (side.stickyWeb && !(incoming.types || []).includes('flying')) {
+    incoming.statStages = incoming.statStages || defaultStatStages();
+    incoming.statStages.speed = clampStage((incoming.statStages.speed || 0) - 1);
+    pushLog({ type: 'stat', message: `${incoming.displayName}'s speed fell from Sticky Web!` });
+  }
+}
+
+function decrementBattleFieldTimers(state) {
+  for (const key of ['player1', 'player2']) {
+    const side = state[key].sideConditions || defaultSideConditions();
+    for (const cond of ['reflect', 'lightScreen', 'auroraVeil']) {
+      if (side[cond] > 0) side[cond] -= 1;
+    }
+  }
+  if (state.fieldState?.weatherTurns > 0) {
+    state.fieldState.weatherTurns -= 1;
+    if (state.fieldState.weatherTurns <= 0) state.fieldState.weather = null;
+  }
+  if (state.fieldState?.terrainTurns > 0) {
+    state.fieldState.terrainTurns -= 1;
+    if (state.fieldState.terrainTurns <= 0) state.fieldState.terrain = null;
+  }
 }
 
 // Initialize or update global spawn
@@ -3363,14 +3514,16 @@ if (pathname.includes('/api/auth/signin')) {
           username: request.from.username,
           pokemon: [],
           currentPokemonIndex: 0,
-          ready: false
+          ready: false,
+          sideConditions: defaultSideConditions()
         },
         player2: {
           userId: request.to.id,
           username: request.to.username,
           pokemon: [],
           currentPokemonIndex: 0,
-          ready: false
+          ready: false,
+          sideConditions: defaultSideConditions()
         },
         currentTurn: null,
         pendingActions: {
@@ -3382,6 +3535,7 @@ if (pathname.includes('/api/auth/signin')) {
         status: 'selecting',
         winner: null,
         battleLog: [],
+        fieldState: defaultFieldState(),
         createdAt: new Date().toISOString()
       };
 
@@ -3447,17 +3601,29 @@ if (pathname.includes('/api/auth/signin')) {
         })
         .toArray();
 
+      // Preserve the exact order the user selected in the UI
+      const pokemonOrder = new Map(pokemonIds.map((id, index) => [String(id), index]));
+      pokemon.sort((a, b) => (pokemonOrder.get(String(a._id)) ?? 999) - (pokemonOrder.get(String(b._id)) ?? 999));
+
       // Add battle state to each Pokemon (start at max HP)
-      const pokemonWithHP = pokemon.map(p => ({
-        ...p,
-        currentHP: p.stats.hp,
-        maxHP: p.stats.hp,
-        statusCondition: null,
-        sleepTurns: 0,
-        poisonCounter: 0,
-        burnCounter: 0,
-        statStages: defaultStatStages()
-      }));
+      const pokemonWithHP = pokemon.map(p => {
+        const supportedMoves = (p.allMovesData || []).filter((move) => !isUnsupportedBattleMove(move));
+        const supportedMoveNames = supportedMoves.map((move) => move.name);
+        const sanitizedMoveset = (p.moveset || []).filter((moveName) => supportedMoveNames.includes(moveName));
+        return {
+          ...p,
+          allMovesData: supportedMoves,
+          allMoves: supportedMoveNames,
+          moveset: sanitizedMoveset.length ? sanitizedMoveset.slice(0, 4) : supportedMoveNames.slice(0, 4),
+          currentHP: p.stats.hp,
+          maxHP: p.stats.hp,
+          statusCondition: null,
+          sleepTurns: 0,
+          poisonCounter: 0,
+          burnCounter: 0,
+          statStages: defaultStatStages()
+        };
+      });
 
       // Determine which player and update
       const isPlayer1 = battle.player1.userId === userId;
@@ -3610,7 +3776,7 @@ if (pathname.includes('/api/auth/signin')) {
         return NextResponse.json({ success: true, waitingForOpponent: true });
       }
 
-      const state = buildBattleStateForUpdate(battle);
+      const state = ensureBattleRuntimeState(buildBattleStateForUpdate(battle));
       state.pendingActions = pendingActions;
       const battleLogEntries = [];
       let battleOver = false;
@@ -3620,6 +3786,13 @@ if (pathname.includes('/api/auth/signin')) {
       const speedOrder = ['player1', 'player2'].sort((a, b) => {
         const pokemonA = state[a].pokemon?.[state[a].currentPokemonIndex];
         const pokemonB = state[b].pokemon?.[state[b].currentPokemonIndex];
+        const moveNameA = pokemonA?.moveset?.[pendingActions[a]?.moveIndex];
+        const moveNameB = pokemonB?.moveset?.[pendingActions[b]?.moveIndex];
+        const moveA = pokemonA?.allMovesData?.find((move) => move.name === moveNameA);
+        const moveB = pokemonB?.allMovesData?.find((move) => move.name === moveNameB);
+        const priorityA = moveA?.priority || 0;
+        const priorityB = moveB?.priority || 0;
+        if (priorityA !== priorityB) return priorityB - priorityA;
         const speedA = pokemonA ? getEffectiveStat(pokemonA, 'speed') : 0;
         const speedB = pokemonB ? getEffectiveStat(pokemonB, 'speed') : 0;
         if (speedA === speedB) return Math.random() < 0.5 ? -1 : 1;
@@ -3671,7 +3844,7 @@ if (pathname.includes('/api/auth/signin')) {
 
       const applyStatChanges = (move, userKey, foeKey) => {
         if (!move.statChanges?.length) return;
-        const targetMode = inferStatTarget(move);
+        const targetMode = getMoveTargetMode(move) === 'self' ? 'self' : (getMoveTargetMode(move) === 'target' ? 'target' : inferStatTarget(move));
         for (const statChange of move.statChanges) {
           const statKey = formatStatKey(statChange.stat);
           if (!statKey) continue;
@@ -3753,6 +3926,15 @@ if (pathname.includes('/api/auth/signin')) {
         }
       };
 
+      for (const key of ['player1', 'player2']) {
+        const pokemon = getActive(key);
+        if (pokemon) {
+          pokemon.volatile = pokemon.volatile || {};
+          pokemon.volatile.protect = false;
+        }
+      }
+
+
       const firstMover = getActive(speedOrder[0]);
       if (firstMover) {
         pushLog({ type: 'order', message: `${firstMover.displayName} was faster and moved first!` });
@@ -3777,8 +3959,8 @@ if (pathname.includes('/api/auth/signin')) {
 
         const selectedMoveName = actingPokemon.moveset?.[action.moveIndex];
         const selectedMove = actingPokemon.allMovesData?.find((move) => move.name === selectedMoveName);
-        if (!selectedMove) {
-          pushLog({ type: 'error', message: `${actingPokemon.displayName} had no valid move.` });
+        if (!selectedMove || isUnsupportedBattleMove(selectedMove)) {
+          pushLog({ type: 'error', message: `${actingPokemon.displayName} tried to use an unsupported move.` });
           continue;
         }
 
@@ -3792,6 +3974,7 @@ if (pathname.includes('/api/auth/signin')) {
           ? (ailment ? 100 : 0)
           : (selectedMove.ailmentChance || selectedMove.effectChance || 0);
         const moveTypeMultiplier = getTypeMultiplier(selectedMove.type, defendingPokemon.types || []);
+        const targetMode = getMoveTargetMode(selectedMove);
 
         if (selectedMove.accuracy && Math.random() * 100 > selectedMove.accuracy) {
           pushLog({ type: 'miss', message: 'The attack missed.' });
@@ -3799,6 +3982,72 @@ if (pathname.includes('/api/auth/signin')) {
         }
 
         pushLog({ type: 'move', message: `${state[actingKey].username}'s ${actingPokemon.displayName} used ${moveDisplayName}!` });
+
+        if (targetMode === 'target' && defendingPokemon?.volatile?.protect) {
+          pushLog({ type: 'protect', message: `${defendingPokemon.displayName} protected itself!` });
+          continue;
+        }
+
+        if (isProtectMove(selectedMove.name)) {
+          actingPokemon.volatile = actingPokemon.volatile || {};
+          actingPokemon.volatile.protect = true;
+          pushLog({ type: 'protect', message: `${actingPokemon.displayName} protected itself!` });
+          continue;
+        }
+
+        if (selectedMove.name === 'rest') {
+          actingPokemon.currentHP = actingPokemon.maxHP;
+          actingPokemon.statusCondition = 'sleep';
+          actingPokemon.sleepTurns = 2;
+          pushLog({ type: 'heal', message: `${actingPokemon.displayName} restored its HP and fell asleep!` });
+          continue;
+        }
+
+        const weather = getWeatherFromMove(selectedMove.name);
+        if (weather) {
+          state.fieldState.weather = weather;
+          state.fieldState.weatherTurns = 5;
+          pushLog({ type: 'field', message: `The weather changed to ${weather}!` });
+          continue;
+        }
+
+        const terrain = getTerrainFromMove(selectedMove.name);
+        if (terrain) {
+          state.fieldState.terrain = terrain;
+          state.fieldState.terrainTurns = 5;
+          pushLog({ type: 'field', message: `${terrain.charAt(0).toUpperCase() + terrain.slice(1)} Terrain took effect!` });
+          continue;
+        }
+
+        if (isScreenMove(selectedMove.name)) {
+          const side = state[actingKey].sideConditions;
+          if (selectedMove.name === 'reflect') side.reflect = 5;
+          if (selectedMove.name === 'light-screen') side.lightScreen = 5;
+          if (selectedMove.name === 'aurora-veil') side.auroraVeil = 5;
+          pushLog({ type: 'side', message: `${state[actingKey].username}'s side gained ${moveDisplayName}!` });
+          continue;
+        }
+
+        if (isHazardMove(selectedMove.name)) {
+          const side = state[defendingKey].sideConditions;
+          if (selectedMove.name === 'stealth-rock') side.stealthRock = true;
+          if (selectedMove.name === 'spikes') side.spikes = Math.min(3, (side.spikes || 0) + 1);
+          if (selectedMove.name === 'toxic-spikes') side.toxicSpikes = Math.min(2, (side.toxicSpikes || 0) + 1);
+          if (selectedMove.name === 'sticky-web') side.stickyWeb = true;
+          pushLog({ type: 'side', message: `${moveDisplayName} was set on ${state[defendingKey].username}'s side!` });
+          continue;
+        }
+
+        if (isForcedSwitchMove(selectedMove.name)) {
+          const choices = (state[defendingKey].pokemon || []).map((pokemon, index) => ({ pokemon, index })).filter(({ pokemon, index }) => pokemon.currentHP > 0 && index !== state[defendingKey].currentPokemonIndex);
+          if (choices.length) {
+            const chosen = choices[Math.floor(Math.random() * choices.length)];
+            state[defendingKey].currentPokemonIndex = chosen.index;
+            pushLog({ type: 'switch', message: `${chosen.pokemon.displayName} was dragged out!` });
+            applyEntryHazards(state, defendingKey, pushLog);
+          }
+          continue;
+        }
 
         if ((!selectedMove.power || selectedMove.damageClass === 'status') && healingFraction > 0) {
           const healed = Math.max(1, Math.floor(actingPokemon.maxHP * healingFraction));
@@ -3842,7 +4091,16 @@ if (pathname.includes('/api/auth/signin')) {
             pushLog({ type: 'effectiveness', message: `Does not affect ${defendingPokemon.displayName}.` });
             break;
           }
-          const hitDamage = damageResult.damage;
+          let hitDamage = damageResult.damage;
+          const defendSide = state[defendingKey].sideConditions || defaultSideConditions();
+          if (!damageResult.isCritical) {
+            if (selectedMove.damageClass === 'physical' && (defendSide.reflect > 0 || defendSide.auroraVeil > 0)) {
+              hitDamage = Math.max(1, Math.floor(hitDamage / 2));
+            }
+            if (selectedMove.damageClass === 'special' && (defendSide.lightScreen > 0 || defendSide.auroraVeil > 0)) {
+              hitDamage = Math.max(1, Math.floor(hitDamage / 2));
+            }
+          }
           hitDamages.push(hitDamage);
           totalDamage += hitDamage;
           defendingPokemon.currentHP = Math.max(0, defendingPokemon.currentHP - hitDamage);
@@ -3893,6 +4151,7 @@ if (pathname.includes('/api/auth/signin')) {
       }
 
       if (!battleOver && !awaitingSwitchFor) {
+        decrementBattleFieldTimers(state);
         state.roundNumber = (state.roundNumber || 1) + 1;
       }
 
