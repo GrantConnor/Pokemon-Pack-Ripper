@@ -841,9 +841,33 @@ function getRecoilFraction(move) {
   return recoilMoves[move.name] || (text.includes('recoil') ? 0.25 : 0);
 }
 
+function getDrainFraction(move) {
+  const text = `${move.effectEntries || ''}`.toLowerCase();
+  if (text.includes('drain') && text.includes('half')) return 0.5;
+  if (text.includes('drain') && text.includes('50%')) return 0.5;
+  if (text.includes('drain') && text.includes('75%')) return 0.75;
+  const drainMoves = {
+    absorb: 0.5,
+    'mega-drain': 0.5,
+    'giga-drain': 0.5,
+    'draining-kiss': 0.75,
+    'parabolic-charge': 0.5,
+    'dream-eater': 0.5,
+    'horn-leech': 0.5,
+    'leech-life': 0.5,
+  };
+  return drainMoves[move.name] || 0;
+}
+
 function getAilmentToApply(move) {
   const ailment = move.ailment;
   if (['sleep', 'burn', 'poison', 'freeze', 'paralysis'].includes(ailment)) return ailment;
+  const text = `${move.effectEntries || ''}`.toLowerCase();
+  if (text.includes('burn')) return 'burn';
+  if (text.includes('poison')) return 'poison';
+  if (text.includes('freeze')) return 'freeze';
+  if (text.includes('paraly')) return 'paralysis';
+  if (text.includes('sleep')) return 'sleep';
   return null;
 }
 
@@ -3655,7 +3679,7 @@ if (pathname.includes('/api/auth/signin')) {
           return { canMove: false };
         }
         if (pokemon.statusCondition === 'paralysis' && Math.random() < 0.25) {
-          pushLog({ type: 'status', message: `${pokemon.displayName} is paralyzed! It can't move!` });
+          pushLog({ type: 'status', message: `${pokemon.displayName} is paralyzed.` });
           return { canMove: false };
         }
         return { canMove: true };
@@ -3679,6 +3703,11 @@ if (pathname.includes('/api/auth/signin')) {
         }
       };
 
+      const firstMover = getActive(speedOrder[0]);
+      if (firstMover) {
+        pushLog({ type: 'order', message: `${firstMover.displayName} was faster and moved first!` });
+      }
+
       for (const actingKey of speedOrder) {
         if (battleOver || awaitingSwitchFor) break;
 
@@ -3686,7 +3715,7 @@ if (pathname.includes('/api/auth/signin')) {
         const action = state.pendingActions[actingKey];
         let actingPokemon = getActive(actingKey);
         let defendingPokemon = getActive(defendingKey);
-        if (!actingPokemon || !defendingPokemon) continue;
+        if (!actingPokemon || !defendingPokemon || !action) continue;
 
         if (actingPokemon.currentHP <= 0) {
           pushLog({ type: 'skip', message: `${actingPokemon.displayName} fainted before it could move!` });
@@ -3704,40 +3733,60 @@ if (pathname.includes('/api/auth/signin')) {
         }
 
         const healingFraction = getHealingFraction(selectedMove);
+        const drainFraction = getDrainFraction(selectedMove);
         const recoilFraction = getRecoilFraction(selectedMove);
         const moveDisplayName = formatMoveName(selectedMoveName);
+        const ailment = getAilmentToApply(selectedMove);
+        const ailmentChance = selectedMove.damageClass === 'status'
+          ? (ailment ? 100 : 0)
+          : (selectedMove.ailmentChance || selectedMove.effectChance || 0);
 
         if (selectedMove.accuracy && Math.random() * 100 > selectedMove.accuracy) {
-          pushLog({ type: 'miss', message: `${actingPokemon.displayName}'s ${moveDisplayName} missed!` });
+          pushLog({ type: 'miss', message: 'The attack missed.' });
           continue;
         }
 
         pushLog({ type: 'move', message: `${state[actingKey].username}'s ${actingPokemon.displayName} used ${moveDisplayName}!` });
 
-        if (healingFraction > 0 && (!selectedMove.power || selectedMove.damageClass === 'status')) {
+        if ((!selectedMove.power || selectedMove.damageClass === 'status') && healingFraction > 0) {
           const healed = Math.max(1, Math.floor(actingPokemon.maxHP * healingFraction));
           const previousHP = actingPokemon.currentHP;
           actingPokemon.currentHP = Math.min(actingPokemon.maxHP, actingPokemon.currentHP + healed);
-          pushLog({ type: 'heal', message: `${actingPokemon.displayName} restored ${actingPokemon.currentHP - previousHP} HP!` });
+          pushLog({ type: 'heal', message: `${actingPokemon.displayName} healed for ${actingPokemon.currentHP - previousHP} HP!` });
           applyStatChanges(selectedMove, actingKey, defendingKey);
+          if (ailment && ailmentChance > 0 && Math.random() * 100 <= ailmentChance && applyAilment(defendingPokemon, ailment)) {
+            pushLog({ type: 'status', message: `${defendingPokemon.displayName} is now ${ailment}!` });
+          }
+          continue;
+        }
+
+        if ((!selectedMove.power || selectedMove.damageClass === 'status') && !healingFraction) {
+          applyStatChanges(selectedMove, actingKey, defendingKey);
+          if (ailment && ailmentChance > 0 && Math.random() * 100 <= ailmentChance && applyAilment(defendingPokemon, ailment)) {
+            const ailmentLabel = ailment === 'paralysis' ? 'paralyzed' : ailment;
+            pushLog({ type: 'status', message: `${defendingPokemon.displayName} is now ${ailmentLabel}!` });
+          }
           continue;
         }
 
         const damageResult = calculateDamage(actingPokemon, defendingPokemon, selectedMove);
         const damage = damageResult.damage;
         defendingPokemon.currentHP = Math.max(0, defendingPokemon.currentHP - damage);
+        pushLog({ type: 'attack', message: `It dealt ${damage} damage.` });
+        if (damageResult.isCritical) pushLog({ type: 'critical', message: 'Critical hit!' });
+        if (damageResult.multiplier >= 2) pushLog({ type: 'effectiveness', message: 'Super effective!' });
+        if (damageResult.multiplier > 0 && damageResult.multiplier < 1) pushLog({ type: 'effectiveness', message: 'Not very effective..' });
+        if (damageResult.multiplier === 0) pushLog({ type: 'effectiveness', message: `Does not affect ${defendingPokemon.displayName}.` });
 
-        const parts = [`It dealt ${damage} damage.`];
-        if (damageResult.isCritical) parts.push('A critical hit!');
-        if (damageResult.multiplier >= 2) parts.push(`It's super effective!`);
-        if (damageResult.multiplier > 0 && damageResult.multiplier < 1) parts.push(`It's not very effective...`);
-        if (damageResult.multiplier === 0) parts.push(`It had no effect.`);
-        pushLog({ type: 'attack', message: parts.join(' ') });
+        if (drainFraction > 0 && damage > 0) {
+          const healed = Math.max(1, Math.floor(damage * drainFraction));
+          const beforeHP = actingPokemon.currentHP;
+          actingPokemon.currentHP = Math.min(actingPokemon.maxHP, actingPokemon.currentHP + healed);
+          pushLog({ type: 'drain', message: `${actingPokemon.displayName} healed for ${actingPokemon.currentHP - beforeHP} HP!` });
+        }
 
         applyStatChanges(selectedMove, actingKey, defendingKey);
 
-        const ailment = getAilmentToApply(selectedMove);
-        const ailmentChance = selectedMove.ailmentChance || selectedMove.effectChance || 0;
         if (ailment && ailmentChance > 0 && Math.random() * 100 <= ailmentChance && applyAilment(defendingPokemon, ailment)) {
           const ailmentLabel = ailment === 'paralysis' ? 'paralyzed' : ailment;
           pushLog({ type: 'status', message: `${defendingPokemon.displayName} is now ${ailmentLabel}!` });
@@ -3748,7 +3797,7 @@ if (pathname.includes('/api/auth/signin')) {
           actingPokemon.currentHP = Math.max(0, actingPokemon.currentHP - recoilDamage);
           pushLog({ type: 'recoil', message: `${actingPokemon.displayName} took ${recoilDamage} recoil damage!` });
           if (actingPokemon.currentHP === 0) {
-            pushLog({ type: 'faint', message: `${actingPokemon.displayName} fainted from recoil!` });
+            pushLog({ type: 'faint', message: `${actingPokemon.displayName} fainted!` });
             setAwaitingSwitch(actingKey);
             if (battleOver) break;
           }
@@ -3828,6 +3877,14 @@ if (pathname.includes('/api/auth/signin')) {
           $set: { 
             status: 'finished',
             winner: winner
+          },
+          $push: {
+            battleLog: {
+              turn: battle.roundNumber || 1,
+              type: 'forfeit',
+              message: `${battle.player1.userId === userId ? battle.player1.username : battle.player2.username} Fled`,
+              timestamp: new Date().toISOString()
+            }
           }
         }
       );

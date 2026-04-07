@@ -10,13 +10,27 @@ import { ArrowLeft, Swords } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
+const BATTLE_BACKGROUNDS = [
+  '/battle-backgrounds/bg1.png',
+  '/battle-backgrounds/bg2.png',
+  '/battle-backgrounds/bg3.png',
+  '/battle-backgrounds/bg4.png',
+];
+
+function getHpBarColor(current, max) {
+  const ratio = max > 0 ? current / max : 0;
+  if (ratio <= 0.25) return 'bg-red-500';
+  if (ratio <= 0.5) return 'bg-orange-400';
+  return 'bg-green-500';
+}
+
 function PokemonCard({ pokemon, selected, onClick, fainted = false }) {
   return (
     <Card
       onClick={onClick}
-      className={`cursor-pointer transition-all ${
+      className={`cursor-pointer transition-all bg-slate-900/95 ${
         selected
-          ? 'border-4 border-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.8)]'
+          ? 'border-4 border-white ring-4 ring-white/40 shadow-[0_0_24px_rgba(255,255,255,0.45)]'
           : fainted
             ? 'border-2 border-red-500/50 opacity-60'
             : 'border-2 border-slate-600 hover:border-cyan-500'
@@ -31,7 +45,7 @@ function PokemonCard({ pokemon, selected, onClick, fainted = false }) {
           {pokemon.statusCondition === 'paralysis' && <Badge className="bg-yellow-600">⚡ Paralyzed</Badge>}
           {pokemon.statusCondition === 'freeze' && <Badge className="bg-cyan-500">🧊 Frozen</Badge>}
         </div>
-        <img src={pokemon.sprite} alt={pokemon.displayName} className="w-full mb-2" />
+        <img src={pokemon.sprite} alt={pokemon.displayName} className="w-full mb-2 drop-shadow-[0_8px_12px_rgba(0,0,0,0.6)]" />
         <p className="text-white font-bold text-center">{pokemon.nickname || pokemon.displayName}</p>
         <p className="text-gray-400 text-sm text-center">Level {pokemon.level}</p>
         <p className="text-green-400 text-xs text-center">HP: {pokemon.currentHP ?? pokemon.stats.hp}/{pokemon.maxHP ?? pokemon.stats.hp}</p>
@@ -54,6 +68,32 @@ function StatusBadge({ status }) {
   return <Badge className={item.className}>{item.label}</Badge>;
 }
 
+function BattlePokemonPanel({ label, pokemon, align = 'left' }) {
+  const barColor = getHpBarColor(pokemon?.currentHP || 0, pokemon?.maxHP || 1);
+  return (
+    <div className={`text-center ${align === 'left' ? 'lg:text-left' : 'lg:text-right'}`}>
+      <p className="text-white font-bold mb-2">{label} {pokemon?.displayName}</p>
+      <div className={`flex ${align === 'left' ? 'justify-center lg:justify-start' : 'justify-center lg:justify-end'} mb-2`}><StatusBadge status={pokemon?.statusCondition} /></div>
+      <div className={`flex ${align === 'left' ? 'justify-center lg:justify-start' : 'justify-center lg:justify-end'} mb-3`}>
+        <div className="w-64">
+          <div className="bg-slate-800/80 rounded-full h-4 overflow-hidden border-2 border-white">
+            <div className={`${barColor} h-full transition-all`} style={{ width: `${((pokemon?.currentHP || 0) / Math.max(1, pokemon?.maxHP || 1)) * 100}%` }} />
+          </div>
+          <p className="text-white text-sm mt-1">HP: {pokemon?.currentHP}/{pokemon?.maxHP}</p>
+        </div>
+      </div>
+      {pokemon && (
+        <img
+          src={pokemon.sprite}
+          alt={pokemon.displayName}
+          className={`w-40 h-40 md:w-48 md:h-48 ${align === 'left' ? 'mx-auto lg:mx-0' : 'mx-auto lg:ml-auto'} drop-shadow-[0_12px_16px_rgba(0,0,0,0.65)]`}
+        />
+      )}
+      <p className="text-gray-300 mt-2">Level {pokemon?.level}</p>
+    </div>
+  );
+}
+
 function BattlePageContent() {
   const searchParams = useSearchParams();
   const battleId = searchParams.get('id');
@@ -64,8 +104,10 @@ function BattlePageContent() {
   const [selectedPokemon, setSelectedPokemon] = useState([]);
   const [teamSearch, setTeamSearch] = useState('');
   const [actionSubmitting, setActionSubmitting] = useState(false);
+  const [backgroundImage, setBackgroundImage] = useState(BATTLE_BACKGROUNDS[0]);
 
   useEffect(() => {
+    setBackgroundImage(BATTLE_BACKGROUNDS[Math.floor(Math.random() * BATTLE_BACKGROUNDS.length)]);
     const storedUserId = localStorage.getItem('userId');
     if (!storedUserId) {
       window.location.href = '/';
@@ -147,7 +189,7 @@ function BattlePageContent() {
   const awaitingMySwitch = battle.awaitingSwitchFor === user.id;
   const myMoveLocked = !!battle.pendingActions?.[myPlayerKey];
   const opponentMoveLocked = !!battle.pendingActions?.[opponentPlayerKey];
-  const battleLog = [...(battle.battleLog || [])].reverse();
+  const battleLog = battle.battleLog || [];
 
   const handleSelectPokemon = (pokemon) => {
     if (selectedPokemon.find(p => p._id === pokemon._id)) {
@@ -312,25 +354,21 @@ function BattlePageContent() {
 
   if (battle.status === 'active' || battle.status === 'finished') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-green-900 via-emerald-800 to-green-900 p-4 md:p-6 lg:p-8 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-10 left-10 text-6xl">🌿</div>
-          <div className="absolute top-40 right-20 text-6xl">🍃</div>
-          <div className="absolute bottom-20 left-40 text-6xl">🌲</div>
-          <div className="absolute bottom-40 right-10 text-6xl">🌳</div>
-        </div>
-
+      <div
+        className="min-h-screen p-4 md:p-6 lg:p-8 relative overflow-hidden bg-cover bg-center"
+        style={{ backgroundImage: `linear-gradient(rgba(6, 18, 32, 0.45), rgba(6, 18, 32, 0.55)), url(${backgroundImage})` }}
+      >
         <div className="max-w-6xl mx-auto relative z-10 space-y-4">
           <div className="flex justify-between items-center gap-4 flex-wrap">
             <Link href="/wilds">
-              <Button variant="outline" className="bg-slate-800 border-green-500">
+              <Button variant="outline" className="bg-slate-900/90 border-green-500 text-white">
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back to Pokemon Wilds
               </Button>
             </Link>
             <div className="text-center flex-1 min-w-[240px]">
-              <h1 className="text-2xl font-bold text-white mb-1">Battle Arena</h1>
-              <p className="text-green-300">
+              <h1 className="text-2xl font-bold text-white mb-1 drop-shadow">Battle Arena</h1>
+              <p className="text-green-200 drop-shadow">
                 {battle.status === 'finished'
                   ? `Winner: ${battle.winner === user.id ? 'You!' : opponentPlayer.username}`
                   : awaitingMySwitch
@@ -345,77 +383,18 @@ function BattlePageContent() {
             </Button>
           </div>
 
-          {battle.status === 'active' && !awaitingMySwitch && (
-            <Card className="border-2 border-green-500/50 bg-slate-800/90">
-              <CardContent className="p-4 space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <h2 className="text-xl font-bold text-white">Attack</h2>
-                  <p className="text-sm text-yellow-300">
-                    {myMoveLocked ? 'Your move is locked in.' : 'Pick a move for this round.'}
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {myCurrentPokemon?.moveset?.map((move, index) => {
-                    const moveData = myCurrentPokemon.allMovesData?.find(m => m.name === move);
-                    return (
-                      <Button
-                        key={index}
-                        onClick={() => handleAttack(index)}
-                        disabled={myMoveLocked || actionSubmitting || myCurrentPokemon.currentHP === 0 || battle.status !== 'active'}
-                        className="h-20 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 flex flex-col items-center justify-center"
-                      >
-                        <span className="font-bold">{move.replace(/-/g, ' ').toUpperCase()}</span>
-                        {moveData && (
-                          <span className="text-xs text-center">
-                            {moveData.type} • {moveData.damageClass} • Power: {moveData.power || 'N/A'}
-                          </span>
-                        )}
-                      </Button>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
           <div className="grid lg:grid-cols-[1fr_320px] gap-6 items-start">
-            <div className="space-y-6">
-              <div className="text-center">
-                <p className="text-white font-bold mb-2">{opponentPlayer.username}'s {opponentCurrentPokemon?.displayName}</p>
-                <div className="flex justify-center mb-2"><StatusBadge status={opponentCurrentPokemon?.statusCondition} /></div>
-                <div className="flex justify-center mb-2">
-                  <div className="w-64">
-                    <div className="bg-slate-800/80 rounded-full h-4 overflow-hidden border-2 border-white">
-                      <div className="bg-green-500 h-full transition-all" style={{ width: `${((opponentCurrentPokemon?.currentHP || 0) / Math.max(1, opponentCurrentPokemon?.maxHP || 1)) * 100}%` }} />
-                    </div>
-                    <p className="text-white text-sm mt-1">HP: {opponentCurrentPokemon?.currentHP}/{opponentCurrentPokemon?.maxHP}</p>
-                  </div>
+            <div className="space-y-6 pb-28">
+              <div className="grid md:grid-cols-[1fr_auto_1fr] gap-6 items-center">
+                <BattlePokemonPanel label="Your" pokemon={myCurrentPokemon} align="left" />
+                <div className="text-center order-first md:order-none">
+                  <Swords className="w-12 h-12 text-white mx-auto drop-shadow" />
                 </div>
-                {opponentCurrentPokemon && <img src={opponentCurrentPokemon.sprite} alt={opponentCurrentPokemon.displayName} className="w-40 h-40 md:w-48 md:h-48 mx-auto" />}
-                <p className="text-gray-300">Level {opponentCurrentPokemon?.level}</p>
-              </div>
-
-              <div className="text-center">
-                <Swords className="w-12 h-12 text-white mx-auto" />
-              </div>
-
-              <div className="text-center">
-                <p className="text-white font-bold mb-2">Your {myCurrentPokemon?.displayName}</p>
-                <div className="flex justify-center mb-2"><StatusBadge status={myCurrentPokemon?.statusCondition} /></div>
-                {myCurrentPokemon && <img src={myCurrentPokemon.sprite} alt={myCurrentPokemon.displayName} className="w-40 h-40 md:w-48 md:h-48 mx-auto mb-2" />}
-                <div className="flex justify-center mb-2">
-                  <div className="w-64">
-                    <div className="bg-slate-800/80 rounded-full h-4 overflow-hidden border-2 border-white">
-                      <div className="bg-green-500 h-full transition-all" style={{ width: `${((myCurrentPokemon?.currentHP || 0) / Math.max(1, myCurrentPokemon?.maxHP || 1)) * 100}%` }} />
-                    </div>
-                    <p className="text-white text-sm mt-1">HP: {myCurrentPokemon?.currentHP}/{myCurrentPokemon?.maxHP}</p>
-                  </div>
-                </div>
-                <p className="text-gray-300">Level {myCurrentPokemon?.level}</p>
+                <BattlePokemonPanel label={`${opponentPlayer.username}'s`} pokemon={opponentCurrentPokemon} align="right" />
               </div>
 
               {battle.status === 'active' && awaitingMySwitch && (
-                <Card className="border-2 border-yellow-500/50 bg-slate-800/90">
+                <Card className="border-2 border-yellow-500/50 bg-slate-900/95">
                   <CardContent className="p-6 space-y-4">
                     <h2 className="text-xl font-bold text-white">Choose Your Next Pokemon</h2>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -436,7 +415,7 @@ function BattlePageContent() {
 
               {battle.status === 'finished' && (
                 <div className="text-center">
-                  <Card className="border-4 border-yellow-500 bg-slate-800/90">
+                  <Card className="border-4 border-yellow-500 bg-slate-900/95">
                     <CardContent className="p-8">
                       <p className="text-4xl font-bold text-white mb-4">
                         {battle.winner === user.id ? '🎉 Victory!' : '💀 Defeat!'}
@@ -450,7 +429,7 @@ function BattlePageContent() {
               )}
             </div>
 
-            <Card className="border-2 border-slate-600 bg-slate-900/85 h-fit sticky top-4">
+            <Card className="border-2 border-slate-600 bg-slate-900/92 h-fit sticky top-4">
               <CardContent className="p-4">
                 <h2 className="text-white font-bold mb-3">Battle Log</h2>
                 <ScrollArea className="h-[420px] pr-4">
@@ -466,6 +445,41 @@ function BattlePageContent() {
               </CardContent>
             </Card>
           </div>
+
+          {battle.status === 'active' && !awaitingMySwitch && (
+            <div className="sticky bottom-4 z-20 max-w-4xl mx-auto">
+              <Card className="border-2 border-green-500/50 bg-slate-900/95 backdrop-blur-sm shadow-2xl">
+                <CardContent className="p-3 space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <h2 className="text-lg font-bold text-white">Attack</h2>
+                    <p className="text-xs text-yellow-300">
+                      {myMoveLocked ? 'Move locked in — waiting for opponent.' : 'Pick a move for this round.'}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {myCurrentPokemon?.moveset?.map((move, index) => {
+                      const moveData = myCurrentPokemon.allMovesData?.find(m => m.name === move);
+                      return (
+                        <Button
+                          key={index}
+                          onClick={() => handleAttack(index)}
+                          disabled={myMoveLocked || actionSubmitting || myCurrentPokemon.currentHP === 0 || battle.status !== 'active'}
+                          className="h-16 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 flex flex-col items-center justify-center px-2"
+                        >
+                          <span className="font-bold text-xs md:text-sm">{move.replace(/-/g, ' ').toUpperCase()}</span>
+                          {moveData && (
+                            <span className="text-[10px] md:text-xs text-center">
+                              {moveData.type} • {moveData.damageClass} • {moveData.power || 'N/A'}
+                            </span>
+                          )}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </div>
       </div>
     );
