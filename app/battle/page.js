@@ -204,10 +204,21 @@ function BattlePageContent() {
 
   useEffect(() => {
     const el = logContainerRef.current;
-    if (el) {
+    if (!el) return;
+
+    const scrollToBottom = () => {
       el.scrollTop = el.scrollHeight;
-    }
-  }, [battleLog.length]);
+    };
+
+    requestAnimationFrame(scrollToBottom);
+    const timeout1 = setTimeout(scrollToBottom, 30);
+    const timeout2 = setTimeout(scrollToBottom, 120);
+
+    return () => {
+      clearTimeout(timeout1);
+      clearTimeout(timeout2);
+    };
+  }, [battleLog.length, battle?.status]);
 
   useEffect(() => {
     if (!myCurrentPokemon || !opponentCurrentPokemon) return;
@@ -435,11 +446,11 @@ function BattlePageContent() {
           </div>
 
           <div className="hidden lg:block relative min-h-[620px] pt-20">
-            <div className="absolute left-0 top-40 w-[340px]">
+            <div className="absolute left-0 top-[310px] w-[340px]">
               <BattlePokemonPanel label="Your" pokemon={myCurrentPokemon} align="left" displayedHP={displayedMyHP} />
             </div>
 
-            <div className="absolute right-[390px] top-28 w-[340px]">
+            <div className="absolute right-[390px] top-[262px] w-[340px]">
               <BattlePokemonPanel label={`${opponentPlayer.username}'s`} pokemon={opponentCurrentPokemon} align="right" displayedHP={displayedOppHP} />
             </div>
 

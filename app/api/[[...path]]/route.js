@@ -3454,6 +3454,8 @@ if (pathname.includes('/api/auth/signin')) {
         maxHP: p.stats.hp,
         statusCondition: null,
         sleepTurns: 0,
+        poisonCounter: 0,
+        burnCounter: 0,
         statStages: defaultStatStages()
       }));
 
@@ -3652,8 +3654,18 @@ if (pathname.includes('/api/auth/signin')) {
       const applyAilment = (targetPokemon, ailment) => {
         if (!ailment || targetPokemon.statusCondition) return false;
         targetPokemon.statusCondition = ailment;
-        if (ailment === 'sleep') targetPokemon.sleepTurns = Math.floor(Math.random() * 3) + 1;
-        if (ailment === 'freeze') targetPokemon.sleepTurns = 0;
+        if (ailment === 'sleep') {
+          targetPokemon.sleepTurns = Math.floor(Math.random() * 5) + 1;
+        }
+        if (ailment === 'freeze') {
+          targetPokemon.sleepTurns = Math.floor(Math.random() * 5) + 1;
+        }
+        if (ailment === 'poison') {
+          targetPokemon.poisonCounter = 1;
+        }
+        if (ailment === 'burn') {
+          targetPokemon.burnCounter = 1;
+        }
         return true;
       };
 
@@ -3676,27 +3688,33 @@ if (pathname.includes('/api/auth/signin')) {
       const handlePreTurnStatus = (pokemon, playerName) => {
         if (!pokemon.statusCondition) return { canMove: true };
         if (pokemon.statusCondition === 'sleep') {
-          if ((pokemon.sleepTurns || 0) > 1) {
-            pokemon.sleepTurns -= 1;
-            pushLog({ type: 'status', message: `${pokemon.displayName} is fast asleep!` });
-            return { canMove: false };
+          const remaining = pokemon.sleepTurns || 1;
+          const shouldWake = remaining <= 1 || Math.random() < 0.35;
+          if (shouldWake) {
+            pokemon.sleepTurns = 0;
+            pokemon.statusCondition = null;
+            pushLog({ type: 'status', message: `${pokemon.displayName} woke up!` });
+            return { canMove: true };
           }
-          pokemon.sleepTurns = 0;
-          pokemon.statusCondition = null;
-          pushLog({ type: 'status', message: `${pokemon.displayName} woke up!` });
-          return { canMove: true };
+          pokemon.sleepTurns = Math.max(1, remaining - 1);
+          pushLog({ type: 'status', message: `${pokemon.displayName} is fast asleep!` });
+          return { canMove: false };
         }
         if (pokemon.statusCondition === 'freeze') {
-          if (Math.random() < 0.2) {
+          const remaining = pokemon.sleepTurns || 1;
+          const shouldThaw = remaining <= 1 || Math.random() < 0.25;
+          if (shouldThaw) {
+            pokemon.sleepTurns = 0;
             pokemon.statusCondition = null;
             pushLog({ type: 'status', message: `${pokemon.displayName} thawed out!` });
             return { canMove: true };
           }
+          pokemon.sleepTurns = Math.max(1, remaining - 1);
           pushLog({ type: 'status', message: `${pokemon.displayName} is frozen solid!` });
           return { canMove: false };
         }
-        if (pokemon.statusCondition === 'paralysis' && Math.random() < 0.25) {
-          pushLog({ type: 'status', message: `${pokemon.displayName} is paralyzed.` });
+        if (pokemon.statusCondition === 'paralysis' && Math.random() < 0.5) {
+          pushLog({ type: 'status', message: `${pokemon.displayName} is fully paralyzed!` });
           return { canMove: false };
         }
         return { canMove: true };
@@ -3706,12 +3724,27 @@ if (pathname.includes('/api/auth/signin')) {
         if (battleOver || awaitingSwitchFor) return;
         const pokemon = getActive(key);
         if (!pokemon || pokemon.currentHP <= 0) return;
-        if (pokemon.statusCondition === 'burn' || pokemon.statusCondition === 'poison') {
-          const chipDamage = Math.max(1, Math.floor(pokemon.maxHP / 8));
+        if (pokemon.statusCondition === 'burn') {
+          const chipDamage = Math.max(1, Math.floor(pokemon.maxHP / 16));
           pokemon.currentHP = Math.max(0, pokemon.currentHP - chipDamage);
           pushLog({
             type: 'status',
-            message: `${pokemon.displayName} was hurt by ${pokemon.statusCondition}! (-${chipDamage} HP)`
+            message: `${pokemon.displayName} was hurt by its burn! (-${chipDamage} HP)`
+          });
+          if (pokemon.currentHP === 0) {
+            pushLog({ type: 'faint', message: `${pokemon.displayName} fainted!` });
+            setAwaitingSwitch(key);
+          }
+          return;
+        }
+        if (pokemon.statusCondition === 'poison') {
+          const stage = Math.max(1, pokemon.poisonCounter || 1);
+          const chipDamage = Math.max(1, Math.floor((pokemon.maxHP / 16) * stage));
+          pokemon.currentHP = Math.max(0, pokemon.currentHP - chipDamage);
+          pokemon.poisonCounter = stage + 1;
+          pushLog({
+            type: 'status',
+            message: `${pokemon.displayName} was hurt by poison! (-${chipDamage} HP)`
           });
           if (pokemon.currentHP === 0) {
             pushLog({ type: 'faint', message: `${pokemon.displayName} fainted!` });
