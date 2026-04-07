@@ -16,6 +16,8 @@ const LEGACY_SETS = [
   'ex7', 'ex8', 'ex9', 'ex10', 'ex11', 'ex12'
 ];
 
+const HS_SETS = ['hgss1', 'hgss2', 'hgss3', 'hgss4'];
+
 
 function openPack(cards, setId = null) {
   const nonEnergyCards = cards.filter(card => card.supertype !== 'Energy');
@@ -120,25 +122,31 @@ function openPack(cards, setId = null) {
     pulledCards.push({ ...reverseHoloBase, isReverseHolo: true });
   }
 
-  const weightedSpecialTable = [
-    { key: 'rareHoloEx', weight: 35 },
-    { key: 'doubleRare', weight: 30 },
-    { key: 'illustrationRare', weight: 12 },
-    { key: 'specialIllustrationRare', weight: 3 },
-    { key: 'ultraRare', weight: 10 },
-    { key: 'shinyRare', weight: 5 },
-    { key: 'amazingRare', weight: 3 },
-    { key: 'radiantRare', weight: 3 },
-    { key: 'rarePrismStar', weight: 2 },
-    { key: 'aceSpecRare', weight: 2 },
-    { key: 'rareBreak', weight: 2 },
-    { key: 'legend', weight: 1 },
-    { key: 'rainbowRare', weight: 1 },
-    { key: 'hyperRare', weight: 0.5 },
-    { key: 'secretRare', weight: 1 },
-  ];
+  const isHsPack = setId && HS_SETS.includes(setId);
+  const weightedSpecialTable = isHsPack
+    ? [
+        { key: 'legend', weight: 4 },
+        { key: 'secretRare', weight: 1 },
+      ]
+    : [
+        { key: 'rareHoloEx', weight: 35 },
+        { key: 'doubleRare', weight: 30 },
+        { key: 'illustrationRare', weight: 12 },
+        { key: 'specialIllustrationRare', weight: 3 },
+        { key: 'ultraRare', weight: 10 },
+        { key: 'shinyRare', weight: 5 },
+        { key: 'amazingRare', weight: 3 },
+        { key: 'radiantRare', weight: 3 },
+        { key: 'rarePrismStar', weight: 2 },
+        { key: 'aceSpecRare', weight: 2 },
+        { key: 'rareBreak', weight: 2 },
+        { key: 'legend', weight: 1 },
+        { key: 'rainbowRare', weight: 1 },
+        { key: 'hyperRare', weight: 0.5 },
+        { key: 'secretRare', weight: 1 },
+      ];
   const availableSpecialPoolKeys = weightedSpecialTable.filter(entry => specialPools[entry.key]?.length > 0);
-  const hitSpecialTable = Math.random() < 0.10;
+  const hitSpecialTable = Math.random() < (isHsPack ? 0.05 : 0.10);
 
   const pickWeightedSpecialPoolKey = () => {
     const totalWeight = availableSpecialPoolKeys.reduce((sum, entry) => sum + entry.weight, 0);
