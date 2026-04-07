@@ -859,6 +859,23 @@ function getDrainFraction(move) {
   return drainMoves[move.name] || 0;
 }
 
+function getMultiHitCount(move) {
+  const text = `${move.effectEntries || ''}`.toLowerCase();
+  const fixedTwoHitMoves = new Set(['double-kick', 'twineedle', 'bonemerang', 'double-hit', 'gear-grind']);
+  const fixedThreeHitMoves = new Set(['triple-kick', 'triple-axel']);
+  const twoToFiveMoves = new Set(['double-slap', 'comet-punch', 'fury-attack', 'fury-swipes', 'spike-cannon', 'barrage', 'bone-rush', 'bullet-seed', 'icicle-spear', 'rock-blast', 'tail-slap', 'arm-thrust', 'pin-missile']);
+  if (fixedTwoHitMoves.has(move.name)) return 2;
+  if (fixedThreeHitMoves.has(move.name)) return 3;
+  if (twoToFiveMoves.has(move.name) || (text.includes('2-5 times') || text.includes('two to five times'))) {
+    const roll = Math.random();
+    if (roll < 0.35) return 2;
+    if (roll < 0.7) return 3;
+    if (roll < 0.85) return 4;
+    return 5;
+  }
+  return 1;
+}
+
 function getAilmentToApply(move) {
   const ailment = move.ailment;
   if (['sleep', 'burn', 'poison', 'freeze', 'paralysis'].includes(ailment)) return ailment;
@@ -3735,11 +3752,13 @@ if (pathname.includes('/api/auth/signin')) {
         const healingFraction = getHealingFraction(selectedMove);
         const drainFraction = getDrainFraction(selectedMove);
         const recoilFraction = getRecoilFraction(selectedMove);
+        const multiHitCount = getMultiHitCount(selectedMove);
         const moveDisplayName = formatMoveName(selectedMoveName);
         const ailment = getAilmentToApply(selectedMove);
         const ailmentChance = selectedMove.damageClass === 'status'
           ? (ailment ? 100 : 0)
           : (selectedMove.ailmentChance || selectedMove.effectChance || 0);
+        const moveTypeMultiplier = getTypeMultiplier(selectedMove.type, defendingPokemon.types || []);
 
         if (selectedMove.accuracy && Math.random() * 100 > selectedMove.accuracy) {
           pushLog({ type: 'miss', message: 'The attack missed.' });
@@ -3753,33 +3772,59 @@ if (pathname.includes('/api/auth/signin')) {
           const previousHP = actingPokemon.currentHP;
           actingPokemon.currentHP = Math.min(actingPokemon.maxHP, actingPokemon.currentHP + healed);
           pushLog({ type: 'heal', message: `${actingPokemon.displayName} healed for ${actingPokemon.currentHP - previousHP} HP!` });
+          if (moveTypeMultiplier === 0) {
+            pushLog({ type: 'effectiveness', message: `Does not affect ${defendingPokemon.displayName}.` });
+            continue;
+          }
           applyStatChanges(selectedMove, actingKey, defendingKey);
           if (ailment && ailmentChance > 0 && Math.random() * 100 <= ailmentChance && applyAilment(defendingPokemon, ailment)) {
-            pushLog({ type: 'status', message: `${defendingPokemon.displayName} is now ${ailment}!` });
+            pushLog({ type: 'status', message: `${defendingPokemon.displayName} is now ${ailment}.` });
           }
           continue;
         }
 
         if ((!selectedMove.power || selectedMove.damageClass === 'status') && !healingFraction) {
+          if (moveTypeMultiplier === 0) {
+            pushLog({ type: 'effectiveness', message: `Does not affect ${defendingPokemon.displayName}.` });
+            continue;
+          }
           applyStatChanges(selectedMove, actingKey, defendingKey);
           if (ailment && ailmentChance > 0 && Math.random() * 100 <= ailmentChance && applyAilment(defendingPokemon, ailment)) {
             const ailmentLabel = ailment === 'paralysis' ? 'paralyzed' : ailment;
-            pushLog({ type: 'status', message: `${defendingPokemon.displayName} is now ${ailmentLabel}!` });
+            pushLog({ type: 'status', message: `${defendingPokemon.displayName} is now ${ailmentLabel}.` });
           }
           continue;
         }
 
-        const damageResult = calculateDamage(actingPokemon, defendingPokemon, selectedMove);
-        const damage = damageResult.damage;
-        defendingPokemon.currentHP = Math.max(0, defendingPokemon.currentHP - damage);
-        pushLog({ type: 'attack', message: `It dealt ${damage} damage.` });
-        if (damageResult.isCritical) pushLog({ type: 'critical', message: 'Critical hit!' });
-        if (damageResult.multiplier >= 2) pushLog({ type: 'effectiveness', message: 'Super effective!' });
-        if (damageResult.multiplier > 0 && damageResult.multiplier < 1) pushLog({ type: 'effectiveness', message: 'Not very effective..' });
-        if (damageResult.multiplier === 0) pushLog({ type: 'effectiveness', message: `Does not affect ${defendingPokemon.displayName}.` });
+        const hitDamages = [];
+        let totalDamage = 0;
+        let lastDamageResult = null;
+        const actualHitCount = Math.min(multiHitCount, defendingPokemon.currentHP > 0 ? multiHitCount : 0);
 
-        if (drainFraction > 0 && damage > 0) {
-          const healed = Math.max(1, Math.floor(damage * drainFraction));
+        for (let hitIndex = 0; hitIndex < multiHitCount; hitIndex += 1) {
+          if (defendingPokemon.currentHP <= 0) break;
+          const damageResult = calculateDamage(actingPokemon, defendingPokemon, selectedMove);
+          lastDamageResult = damageResult;
+          if (damageResult.multiplier === 0) {
+            pushLog({ type: 'effectiveness', message: `Does not affect ${defendingPokemon.displayName}.` });
+            break;
+          }
+          const hitDamage = damageResult.damage;
+          hitDamages.push(hitDamage);
+          totalDamage += hitDamage;
+          defendingPokemon.currentHP = Math.max(0, defendingPokemon.currentHP - hitDamage);
+        }
+
+        pushLog({ type: 'attack', message: `It dealt ${totalDamage} damage.` });
+        if (hitDamages.length > 1) {
+          pushLog({ type: 'multihit', message: `Hit ${hitDamages.length} times!`, hitDamages, targetPlayerKey: defendingKey });
+        }
+        if (lastDamageResult?.isCritical) pushLog({ type: 'critical', message: 'Critical hit!' });
+        if (lastDamageResult?.multiplier >= 2) pushLog({ type: 'effectiveness', message: 'Super effective!' });
+        if (lastDamageResult?.multiplier > 0 && lastDamageResult?.multiplier < 1) pushLog({ type: 'effectiveness', message: 'Not very effective..' });
+
+        if (drainFraction > 0 && totalDamage > 0) {
+          const healed = Math.max(1, Math.floor(totalDamage * drainFraction));
           const beforeHP = actingPokemon.currentHP;
           actingPokemon.currentHP = Math.min(actingPokemon.maxHP, actingPokemon.currentHP + healed);
           pushLog({ type: 'drain', message: `${actingPokemon.displayName} healed for ${actingPokemon.currentHP - beforeHP} HP!` });
@@ -3787,13 +3832,13 @@ if (pathname.includes('/api/auth/signin')) {
 
         applyStatChanges(selectedMove, actingKey, defendingKey);
 
-        if (ailment && ailmentChance > 0 && Math.random() * 100 <= ailmentChance && applyAilment(defendingPokemon, ailment)) {
+        if (lastDamageResult?.multiplier > 0 && ailment && ailmentChance > 0 && Math.random() * 100 <= ailmentChance && applyAilment(defendingPokemon, ailment)) {
           const ailmentLabel = ailment === 'paralysis' ? 'paralyzed' : ailment;
-          pushLog({ type: 'status', message: `${defendingPokemon.displayName} is now ${ailmentLabel}!` });
+          pushLog({ type: 'status', message: `${defendingPokemon.displayName} is now ${ailmentLabel}.` });
         }
 
-        if (recoilFraction > 0 && damage > 0) {
-          const recoilDamage = Math.max(1, Math.floor(damage * recoilFraction));
+        if (recoilFraction > 0 && totalDamage > 0) {
+          const recoilDamage = Math.max(1, Math.floor(totalDamage * recoilFraction));
           actingPokemon.currentHP = Math.max(0, actingPokemon.currentHP - recoilDamage);
           pushLog({ type: 'recoil', message: `${actingPokemon.displayName} took ${recoilDamage} recoil damage!` });
           if (actingPokemon.currentHP === 0) {

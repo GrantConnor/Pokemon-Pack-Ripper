@@ -24,7 +24,7 @@ function getHpBarColor(current, max) {
   return 'bg-green-500';
 }
 
-function PokemonCard({ pokemon, selected, onClick, fainted = false }) {
+function PokemonCard({ pokemon, selected, selectedOrder = null, onClick, fainted = false }) {
   return (
     <Card
       onClick={onClick}
@@ -36,8 +36,13 @@ function PokemonCard({ pokemon, selected, onClick, fainted = false }) {
             : 'border-2 border-slate-600 hover:border-cyan-500'
       }`}
     >
-      <CardContent className="p-4">
-        <div className="flex gap-2 flex-wrap mb-2">
+      <CardContent className="p-4 relative">
+        {selectedOrder ? (
+          <div className="absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-cyan-500 text-sm font-bold text-white shadow-lg">
+            {selectedOrder}
+          </div>
+        ) : null}
+        <div className="flex gap-2 flex-wrap mb-2 pr-10">
           {pokemon.isShiny && <Badge className="bg-yellow-500">✨ SHINY</Badge>}
           {pokemon.statusCondition === 'sleep' && <Badge className="bg-indigo-500">💤 Sleep</Badge>}
           {pokemon.statusCondition === 'burn' && <Badge className="bg-red-500">🔥 Burn</Badge>}
@@ -68,8 +73,10 @@ function StatusBadge({ status }) {
   return <Badge className={item.className}>{item.label}</Badge>;
 }
 
-function BattlePokemonPanel({ label, pokemon, align = 'left' }) {
-  const barColor = getHpBarColor(pokemon?.currentHP || 0, pokemon?.maxHP || 1);
+function BattlePokemonPanel({ label, pokemon, align = 'left', displayedHP }) {
+  const hp = displayedHP ?? pokemon?.currentHP ?? 0;
+  const maxHP = pokemon?.maxHP || 1;
+  const barColor = getHpBarColor(hp, maxHP);
   return (
     <div className={`text-center ${align === 'left' ? 'lg:text-left' : 'lg:text-right'}`}>
       <p className="text-white font-bold mb-2">{label} {pokemon?.displayName}</p>
@@ -77,9 +84,9 @@ function BattlePokemonPanel({ label, pokemon, align = 'left' }) {
       <div className={`flex ${align === 'left' ? 'justify-center lg:justify-start' : 'justify-center lg:justify-end'} mb-3`}>
         <div className="w-64">
           <div className="bg-slate-800/80 rounded-full h-4 overflow-hidden border-2 border-white">
-            <div className={`${barColor} h-full transition-all`} style={{ width: `${((pokemon?.currentHP || 0) / Math.max(1, pokemon?.maxHP || 1)) * 100}%` }} />
+            <div className={`${barColor} h-full transition-all duration-500`} style={{ width: `${(hp / Math.max(1, maxHP)) * 100}%` }} />
           </div>
-          <p className="text-white text-sm mt-1">HP: {pokemon?.currentHP}/{pokemon?.maxHP}</p>
+          <p className="text-white text-sm mt-1">HP: {hp}/{maxHP}</p>
         </div>
       </div>
       {pokemon && (
@@ -94,6 +101,14 @@ function BattlePokemonPanel({ label, pokemon, align = 'left' }) {
   );
 }
 
+export default function BattlePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center text-white">Loading battle...</div>}>
+      <BattlePageContent />
+    </Suspense>
+  );
+}
+
 function BattlePageContent() {
   const searchParams = useSearchParams();
   const battleId = searchParams.get('id');
@@ -105,7 +120,10 @@ function BattlePageContent() {
   const [teamSearch, setTeamSearch] = useState('');
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [backgroundImage, setBackgroundImage] = useState(BATTLE_BACKGROUNDS[0]);
+  const [displayedMyHP, setDisplayedMyHP] = useState(null);
+  const [displayedOppHP, setDisplayedOppHP] = useState(null);
   const logContainerRef = useRef(null);
+  const lastAnimatedRef = useRef(null);
 
   useEffect(() => {
     setBackgroundImage(BATTLE_BACKGROUNDS[Math.floor(Math.random() * BATTLE_BACKGROUNDS.length)]);
@@ -137,13 +155,6 @@ function BattlePageContent() {
     }, 2000);
     return () => clearInterval(interval);
   }, [battleId]);
-
-  useEffect(() => {
-    const el = logContainerRef.current;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [battle?.battleLog?.length]);
 
   const loadMyPokemon = async (userId) => {
     try {
@@ -179,6 +190,50 @@ function BattlePageContent() {
     });
   }, [myPokemon, teamSearch]);
 
+  const isPlayer1 = battle?.player1?.userId === user?.id;
+  const myPlayerKey = isPlayer1 ? 'player1' : 'player2';
+  const opponentPlayerKey = isPlayer1 ? 'player2' : 'player1';
+  const myPlayer = battle?.[myPlayerKey];
+  const opponentPlayer = battle?.[opponentPlayerKey];
+  const myCurrentPokemon = myPlayer?.pokemon?.[myPlayer.currentPokemonIndex];
+  const opponentCurrentPokemon = opponentPlayer?.pokemon?.[opponentPlayer.currentPokemonIndex];
+  const awaitingMySwitch = battle?.awaitingSwitchFor === user?.id;
+  const myMoveLocked = !!battle?.pendingActions?.[myPlayerKey];
+  const opponentMoveLocked = !!battle?.pendingActions?.[opponentPlayerKey];
+  const battleLog = battle?.battleLog || [];
+
+  useEffect(() => {
+    const el = logContainerRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [battleLog.length]);
+
+  useEffect(() => {
+    if (!myCurrentPokemon || !opponentCurrentPokemon) return;
+
+    setDisplayedMyHP(myCurrentPokemon.currentHP);
+    setDisplayedOppHP(opponentCurrentPokemon.currentHP);
+
+    const latestMultihit = [...battleLog].reverse().find((entry) => entry.type === 'multihit' && entry.hitDamages?.length);
+    if (!latestMultihit || latestMultihit.timestamp === lastAnimatedRef.current) return;
+
+    lastAnimatedRef.current = latestMultihit.timestamp;
+    const targetIsMine = latestMultihit.targetPlayerKey === myPlayerKey;
+    const damages = latestMultihit.hitDamages || [];
+    const finalHP = targetIsMine ? myCurrentPokemon.currentHP : opponentCurrentPokemon.currentHP;
+    const startingHP = finalHP + damages.reduce((sum, dmg) => sum + dmg, 0);
+    const setDisplayed = targetIsMine ? setDisplayedMyHP : setDisplayedOppHP;
+    setDisplayed(startingHP);
+    let runningHP = startingHP;
+    damages.forEach((damage, index) => {
+      setTimeout(() => {
+        runningHP = Math.max(finalHP, runningHP - damage);
+        setDisplayed(runningHP);
+      }, 2000 * (index + 1));
+    });
+  }, [battleLog, myCurrentPokemon, opponentCurrentPokemon, myPlayerKey]);
+
   if (!user || !battle) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
@@ -186,18 +241,6 @@ function BattlePageContent() {
       </div>
     );
   }
-
-  const isPlayer1 = battle.player1.userId === user.id;
-  const myPlayerKey = isPlayer1 ? 'player1' : 'player2';
-  const opponentPlayerKey = isPlayer1 ? 'player2' : 'player1';
-  const myPlayer = battle[myPlayerKey];
-  const opponentPlayer = battle[opponentPlayerKey];
-  const myCurrentPokemon = myPlayer.pokemon?.[myPlayer.currentPokemonIndex];
-  const opponentCurrentPokemon = opponentPlayer.pokemon?.[opponentPlayer.currentPokemonIndex];
-  const awaitingMySwitch = battle.awaitingSwitchFor === user.id;
-  const myMoveLocked = !!battle.pendingActions?.[myPlayerKey];
-  const opponentMoveLocked = !!battle.pendingActions?.[opponentPlayerKey];
-  const battleLog = battle.battleLog || [];
 
   const handleSelectPokemon = (pokemon) => {
     if (selectedPokemon.find(p => p._id === pokemon._id)) {
@@ -310,6 +353,7 @@ function BattlePageContent() {
           <Card className="border-2 border-cyan-500/50 bg-slate-800/90 mb-6">
             <CardContent className="pt-6 space-y-4">
               <p className="text-white text-center">Choose up to 6 Pokemon for battle ({selectedPokemon.length}/6)</p>
+              <p className="text-cyan-300 text-center text-sm">Selection order = send-out order (1 → 6)</p>
               <Input
                 value={teamSearch}
                 onChange={(e) => setTeamSearch(e.target.value)}
@@ -333,6 +377,7 @@ function BattlePageContent() {
                   key={pokemon._id}
                   pokemon={pokemon}
                   selected={!!selectedPokemon.find(p => p._id === pokemon._id)}
+                  selectedOrder={(selectedPokemon.findIndex(p => p._id === pokemon._id) + 1) || null}
                   onClick={() => handleSelectPokemon(pokemon)}
                 />
               ))}
@@ -366,82 +411,62 @@ function BattlePageContent() {
         className="min-h-screen p-4 md:p-6 lg:p-8 relative overflow-hidden bg-cover bg-center"
         style={{ backgroundImage: `linear-gradient(rgba(6, 18, 32, 0.45), rgba(6, 18, 32, 0.55)), url(${backgroundImage})` }}
       >
-        <div className="max-w-7xl mx-auto relative z-10 space-y-4">
-          <div className="flex justify-between items-center gap-4 flex-wrap">
+        <div className="max-w-[1500px] mx-auto relative z-10 min-h-[780px]">
+          <div className="absolute top-4 left-4 z-30">
             <Link href="/wilds">
               <Button variant="outline" className="bg-slate-900/90 border-green-500 text-white">
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back to Pokemon Wilds
               </Button>
             </Link>
-            <div className="text-center flex-1 min-w-[240px]">
-              <h1 className="text-2xl font-bold text-white mb-1 drop-shadow">Battle Arena</h1>
-              <p className="text-green-200 drop-shadow">
-                {battle.status === 'finished'
-                  ? `Winner: ${battle.winner === user.id ? 'You!' : opponentPlayer.username}`
-                  : awaitingMySwitch
-                    ? 'Choose your next Pokemon'
-                    : myMoveLocked
-                      ? opponentMoveLocked ? 'Resolving round...' : 'Move locked in — waiting for opponent'
-                      : 'Choose your move'}
-              </p>
-            </div>
-            <Button onClick={handleForfeit} disabled={battle.status === 'finished'} className="bg-red-600 hover:bg-red-500">
-              Flee
-            </Button>
           </div>
 
-          <div className="grid lg:grid-cols-[minmax(260px,1fr)_minmax(260px,1fr)_340px] gap-6 items-start min-h-[560px]">
-            <div className="space-y-6 pb-32 lg:pt-28">
-              <div className="grid lg:grid-cols-2 gap-12 items-start">
-                <div className="lg:pr-16 lg:pt-24">
-                  <BattlePokemonPanel label="Your" pokemon={myCurrentPokemon} align="left" />
-                </div>
-                <div className="lg:pl-8 lg:pt-32">
-                  <BattlePokemonPanel label={`${opponentPlayer.username}'s`} pokemon={opponentCurrentPokemon} align="right" />
-                </div>
-              </div>
+          <div className="pt-2 text-center max-w-xl mx-auto">
+            <h1 className="text-2xl font-bold text-white mb-1 drop-shadow">Battle Arena</h1>
+            <p className="text-green-200 drop-shadow">
+              {battle.status === 'finished'
+                ? `Winner: ${battle.winner === user.id ? 'You!' : opponentPlayer.username}`
+                : awaitingMySwitch
+                  ? 'Choose your next Pokemon'
+                  : myMoveLocked
+                    ? opponentMoveLocked ? 'Resolving round...' : 'Move locked in — waiting for opponent'
+                    : 'Choose your move'}
+            </p>
+          </div>
 
-              {battle.status === 'active' && awaitingMySwitch && (
-                <Card className="border-2 border-yellow-500/50 bg-slate-900/95">
-                  <CardContent className="p-6 space-y-4">
-                    <h2 className="text-xl font-bold text-white">Choose Your Next Pokemon</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {myPlayer.pokemon
-                        ?.map((pokemon, index) => ({ pokemon, index }))
-                        .filter(({ pokemon, index }) => pokemon.currentHP > 0 && index !== myPlayer.currentPokemonIndex)
-                        .map(({ pokemon, index }) => (
-                          <PokemonCard
-                            key={`${pokemon._id || pokemon.id}-${index}`}
-                            pokemon={pokemon}
-                            onClick={() => handleSwitchPokemon(index)}
-                          />
-                        ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {battle.status === 'finished' && (
-                <div className="text-center">
-                  <Card className="border-4 border-yellow-500 bg-slate-900/95">
-                    <CardContent className="p-8">
-                      <p className="text-4xl font-bold text-white mb-4">
-                        {battle.winner === user.id ? '🎉 Victory!' : '💀 Defeat!'}
-                      </p>
-                      <Link href="/wilds">
-                        <Button className="bg-cyan-600 hover:bg-cyan-500">Return to Wilds</Button>
-                      </Link>
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
+          <div className="hidden lg:block relative min-h-[620px] pt-20">
+            <div className="absolute left-0 top-40 w-[340px]">
+              <BattlePokemonPanel label="Your" pokemon={myCurrentPokemon} align="left" displayedHP={displayedMyHP} />
             </div>
 
-            <Card className="border-2 border-slate-600 bg-slate-900/92 h-fit sticky top-24">
+            <div className="absolute right-[390px] top-28 w-[340px]">
+              <BattlePokemonPanel label={`${opponentPlayer.username}'s`} pokemon={opponentCurrentPokemon} align="right" displayedHP={displayedOppHP} />
+            </div>
+
+            <div className="absolute right-0 top-20 w-[340px]">
+              <Card className="border-2 border-slate-600 bg-slate-900/92 h-fit">
+                <CardContent className="p-4">
+                  <h2 className="text-white font-bold mb-3">Battle Log</h2>
+                  <div ref={logContainerRef} className="h-[430px] overflow-y-auto pr-2 space-y-3">
+                    {battleLog.length === 0 && <p className="text-slate-400 text-sm">The battle is about to begin.</p>}
+                    {battleLog.map((entry, index) => (
+                      <div key={`${entry.timestamp}-${index}`} className="rounded-lg bg-slate-800/80 p-3 text-sm text-white">
+                        {entry.message || `${entry.attacker || entry.player} used a move.`}
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
+          <div className="lg:hidden space-y-6 pt-16 pb-40">
+            <BattlePokemonPanel label="Your" pokemon={myCurrentPokemon} align="left" displayedHP={displayedMyHP} />
+            <BattlePokemonPanel label={`${opponentPlayer.username}'s`} pokemon={opponentCurrentPokemon} align="right" displayedHP={displayedOppHP} />
+            <Card className="border-2 border-slate-600 bg-slate-900/92 h-fit">
               <CardContent className="p-4">
                 <h2 className="text-white font-bold mb-3">Battle Log</h2>
-                <div ref={logContainerRef} className="h-[430px] overflow-y-auto pr-2 space-y-3">
+                <div ref={logContainerRef} className="h-[260px] overflow-y-auto pr-2 space-y-3">
                   {battleLog.length === 0 && <p className="text-slate-400 text-sm">The battle is about to begin.</p>}
                   {battleLog.map((entry, index) => (
                     <div key={`${entry.timestamp}-${index}`} className="rounded-lg bg-slate-800/80 p-3 text-sm text-white">
@@ -453,8 +478,53 @@ function BattlePageContent() {
             </Card>
           </div>
 
+          {battle.status === 'active' && awaitingMySwitch && (
+            <div className="max-w-5xl mx-auto mt-6 lg:mt-0 lg:absolute lg:left-1/2 lg:bottom-24 lg:w-[780px] lg:-translate-x-1/2">
+              <Card className="border-2 border-yellow-500/50 bg-slate-900/95">
+                <CardContent className="p-6 space-y-4">
+                  <h2 className="text-xl font-bold text-white">Choose Your Next Pokemon</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {myPlayer.pokemon
+                      ?.map((pokemon, index) => ({ pokemon, index }))
+                      .filter(({ pokemon, index }) => pokemon.currentHP > 0 && index !== myPlayer.currentPokemonIndex)
+                      .map(({ pokemon, index }) => (
+                        <PokemonCard
+                          key={`${pokemon._id || pokemon.id}-${index}`}
+                          pokemon={pokemon}
+                          onClick={() => handleSwitchPokemon(index)}
+                        />
+                      ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {battle.status === 'finished' && (
+            <div className="max-w-xl mx-auto mt-6 lg:absolute lg:left-1/2 lg:bottom-24 lg:-translate-x-1/2 lg:w-[520px]">
+              <Card className="border-4 border-yellow-500 bg-slate-900/95">
+                <CardContent className="p-8 text-center">
+                  <p className="text-4xl font-bold text-white mb-4">
+                    {battle.winner === user.id ? '🎉 Victory!' : '💀 Defeat!'}
+                  </p>
+                  <Link href="/wilds">
+                    <Button className="bg-cyan-600 hover:bg-cyan-500">Return to Wilds</Button>
+                  </Link>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {battle.status === 'active' && (
+            <div className="fixed bottom-6 right-6 z-30">
+              <Button onClick={handleForfeit} disabled={battle.status === 'finished'} className="bg-red-600 hover:bg-red-500">
+                Flee
+              </Button>
+            </div>
+          )}
+
           {battle.status === 'active' && !awaitingMySwitch && (
-            <div className="sticky bottom-2 z-20 max-w-3xl mx-auto pt-4">
+            <div className="fixed bottom-3 left-1/2 z-30 w-full max-w-3xl -translate-x-1/2 px-4">
               <Card className="border-2 border-green-500/50 bg-slate-900/95 backdrop-blur-sm shadow-2xl">
                 <CardContent className="p-2.5 space-y-2.5">
                   <div className="flex items-center justify-between flex-wrap gap-2">
@@ -493,12 +563,4 @@ function BattlePageContent() {
   }
 
   return null;
-}
-
-export default function BattlePage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center text-white">Loading battle...</div>}>
-      <BattlePageContent />
-    </Suspense>
-  );
 }
