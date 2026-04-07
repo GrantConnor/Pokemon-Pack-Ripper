@@ -392,12 +392,12 @@ function BattlePageContent() {
           </div>
 
           <div className="grid lg:grid-cols-[minmax(260px,1fr)_minmax(260px,1fr)_340px] gap-6 items-start min-h-[560px]">
-            <div className="space-y-6 pb-28">
-              <div className="grid lg:grid-cols-2 gap-10 items-start">
-                <div className="lg:pr-10">
+            <div className="space-y-6 pb-32 lg:pt-28">
+              <div className="grid lg:grid-cols-2 gap-12 items-start">
+                <div className="lg:pr-16 lg:pt-24">
                   <BattlePokemonPanel label="Your" pokemon={myCurrentPokemon} align="left" />
                 </div>
-                <div className="lg:pl-4 lg:pt-8">
+                <div className="lg:pl-8 lg:pt-32">
                   <BattlePokemonPanel label={`${opponentPlayer.username}'s`} pokemon={opponentCurrentPokemon} align="right" />
                 </div>
               </div>
