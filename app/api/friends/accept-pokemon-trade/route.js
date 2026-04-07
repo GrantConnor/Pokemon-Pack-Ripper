@@ -1,9 +1,85 @@
 import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { connectDB } from '@/lib/mongodb';
+import axios from 'axios';
+import { fetchPokemonData, calculateStats } from '@/lib/wilds';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+
+const POKEAPI_BASE = 'https://pokeapi.co/api/v2';
+
+async function fetchEvolutionChain(pokemonId) {
+  try {
+    const speciesResponse = await axios.get(`${POKEAPI_BASE}/pokemon-species/${pokemonId}`);
+    const evolutionChainUrl = speciesResponse.data.evolution_chain.url;
+    const chainResponse = await axios.get(evolutionChainUrl);
+    const chain = chainResponse.data.chain;
+
+    function findEvolution(node, currentId) {
+      if (node.species.url.includes(`/${currentId}/`)) {
+        if (node.evolves_to && node.evolves_to.length > 0) {
+          const nextEvolution = node.evolves_to[0];
+          const evolutionDetails = nextEvolution.evolution_details?.[0] || {};
+          const urlParts = nextEvolution.species.url.split('/');
+          const nextId = parseInt(urlParts[urlParts.length - 2], 10);
+          return {
+            canEvolve: true,
+            evolvesTo: nextId,
+            trigger: evolutionDetails.trigger?.name || null,
+            itemName: evolutionDetails.item?.name || evolutionDetails.held_item?.name || null,
+          };
+        }
+        return { canEvolve: false };
+      }
+      for (const evolution of node.evolves_to || []) {
+        const result = findEvolution(evolution, currentId);
+        if (result) return result;
+      }
+      return null;
+    }
+
+    return findEvolution(chain, pokemonId) || { canEvolve: false };
+  } catch {
+    return { canEvolve: false };
+  }
+}
+
+async function applyEvolutionToStoredPokemon(database, pokemon, evolutionData) {
+  const evolvedData = await fetchPokemonData(evolutionData.evolvesTo, pokemon.isShiny);
+  const updateData = {
+    id: evolvedData.id,
+    name: evolvedData.name,
+    displayName: evolvedData.displayName,
+    sprite: evolvedData.sprite,
+    types: evolvedData.types,
+    baseStats: evolvedData.baseStats,
+    allMoves: evolvedData.allMoves,
+    allMovesData: evolvedData.allMovesData,
+    captureRate: evolvedData.captureRate,
+    isLegendary: evolvedData.isLegendary,
+    isMythical: evolvedData.isMythical,
+    stats: calculateStats(evolvedData.baseStats, pokemon.ivs, pokemon.level),
+    moveset: evolvedData.moveset,
+  };
+
+  await database.collection('caught_pokemon').updateOne(
+    { _id: pokemon._id },
+    { $set: updateData }
+  );
+
+  return evolvedData;
+}
+
+async function autoEvolveTradePokemon(database, pokemon) {
+  const evolutionData = await fetchEvolutionChain(pokemon.id);
+  if (!evolutionData?.canEvolve) return null;
+  if (evolutionData.trigger !== 'trade') return null;
+  if (evolutionData.itemName) return null;
+  return applyEvolutionToStoredPokemon(database, pokemon, evolutionData);
+}
+
 
 export async function POST(request) {
   try {
@@ -47,11 +123,15 @@ export async function POST(request) {
       users.updateOne({ id: tradeRequest.fromId }, { $inc: { tradesCompleted: 1 } }),
     ]);
 
+    const autoEvolvedReceived = await autoEvolveTradePokemon(database, fromPokemon);
+    const autoEvolvedSent = await autoEvolveTradePokemon(database, toPokemon);
+
     return NextResponse.json({
       success: true,
-      message: `Trade completed! You received ${fromPokemon.displayName}`,
-      receivedPokemon: fromPokemon.displayName,
-      sentPokemon: toPokemon.displayName,
+      message: `Trade completed! You received ${autoEvolvedReceived?.displayName || fromPokemon.displayName}`,
+      receivedPokemon: autoEvolvedReceived?.displayName || fromPokemon.displayName,
+      sentPokemon: autoEvolvedSent?.displayName || toPokemon.displayName,
+      autoEvolved: [autoEvolvedReceived?.displayName, autoEvolvedSent?.displayName].filter(Boolean),
     });
   } catch (error) {
     return NextResponse.json({ error: error?.message || 'Failed to accept Pokémon trade' }, { status: 500 });
