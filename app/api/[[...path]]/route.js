@@ -712,27 +712,63 @@ function calculateCatchChance(captureRate, isLegendary, isMythical) {
   return 100; // 100% catch rate for normal Pokemon
 }
 
-// Battle damage calculation (simplified Pokemon formula)
+const TYPE_CHART = {
+  normal: { rock: 0.5, ghost: 0, steel: 0.5 },
+  fire: { fire: 0.5, water: 0.5, grass: 2, ice: 2, bug: 2, rock: 0.5, dragon: 0.5, steel: 2 },
+  water: { fire: 2, water: 0.5, grass: 0.5, ground: 2, rock: 2, dragon: 0.5 },
+  electric: { water: 2, electric: 0.5, grass: 0.5, ground: 0, flying: 2, dragon: 0.5 },
+  grass: { fire: 0.5, water: 2, grass: 0.5, poison: 0.5, ground: 2, flying: 0.5, bug: 0.5, rock: 2, dragon: 0.5, steel: 0.5 },
+  ice: { fire: 0.5, water: 0.5, grass: 2, ground: 2, flying: 2, dragon: 2, steel: 0.5, ice: 0.5 },
+  fighting: { normal: 2, ice: 2, poison: 0.5, flying: 0.5, psychic: 0.5, bug: 0.5, rock: 2, ghost: 0, dark: 2, steel: 2, fairy: 0.5 },
+  poison: { grass: 2, poison: 0.5, ground: 0.5, rock: 0.5, ghost: 0.5, steel: 0, fairy: 2 },
+  ground: { fire: 2, electric: 2, grass: 0.5, poison: 2, flying: 0, bug: 0.5, rock: 2, steel: 2 },
+  flying: { electric: 0.5, grass: 2, fighting: 2, bug: 2, rock: 0.5, steel: 0.5 },
+  psychic: { fighting: 2, poison: 2, psychic: 0.5, dark: 0, steel: 0.5 },
+  bug: { fire: 0.5, grass: 2, fighting: 0.5, poison: 0.5, flying: 0.5, psychic: 2, ghost: 0.5, dark: 2, steel: 0.5, fairy: 0.5 },
+  rock: { fire: 2, ice: 2, fighting: 0.5, ground: 0.5, flying: 2, bug: 2, steel: 0.5 },
+  ghost: { normal: 0, psychic: 2, ghost: 2, dark: 0.5 },
+  dragon: { dragon: 2, steel: 0.5, fairy: 0 },
+  dark: { fighting: 0.5, psychic: 2, ghost: 2, dark: 0.5, fairy: 0.5 },
+  steel: { fire: 0.5, water: 0.5, electric: 0.5, ice: 2, rock: 2, steel: 0.5, fairy: 2 },
+  fairy: { fire: 0.5, fighting: 2, poison: 0.5, dragon: 2, dark: 2, steel: 0.5 }
+};
+
+function getTypeMultiplier(moveType, defenderTypes = []) {
+  return defenderTypes.reduce((multiplier, type) => {
+    const typeRules = TYPE_CHART[moveType] || {};
+    return multiplier * (typeRules[type] ?? 1);
+  }, 1);
+}
+
+function formatMoveName(moveName = '') {
+  return moveName.replace(/-/g, ' ');
+}
+
 function calculateDamage(attacker, defender, move) {
   if (!move.power || move.damageClass === 'status') {
-    return 0; // Status moves don't deal damage
+    return { damage: 0, multiplier: 1, stab: 1, isCritical: false };
   }
-  
+
   const level = attacker.level || 50;
   const power = move.power;
-  
-  // Determine if move is physical or special
   const isPhysical = move.damageClass === 'physical';
-  const attackStat = isPhysical ? attacker.stats.attack : attacker.stats.spAttack;
-  const defenseStat = isPhysical ? defender.stats.defense : defender.stats.spDefense;
-  
-  // Simplified damage formula: ((2 * Level / 5 + 2) * Power * Attack / Defense / 50 + 2)
-  const baseDamage = ((2 * level / 5 + 2) * power * attackStat / defenseStat / 50 + 2);
-  
-  // Add some randomness (85-100% of base damage)
+  const attackStat = Math.max(1, isPhysical ? attacker.stats.attack : attacker.stats.spAttack);
+  const defenseStat = Math.max(1, isPhysical ? defender.stats.defense : defender.stats.spDefense);
+  const typeMultiplier = getTypeMultiplier(move.type, defender.types || []);
+  const stab = (attacker.types || []).includes(move.type) ? 1.5 : 1;
+  const critical = Math.random() < 0.0625 ? 1.5 : 1;
   const randomFactor = 0.85 + Math.random() * 0.15;
-  
-  return Math.floor(baseDamage * randomFactor);
+  const baseDamage = ((2 * level / 5 + 2) * power * attackStat / defenseStat / 50 + 2);
+  const damage = typeMultiplier === 0
+    ? 0
+    : Math.max(1, Math.floor(baseDamage * stab * typeMultiplier * critical * randomFactor));
+
+  return {
+    damage,
+    multiplier: typeMultiplier,
+    stab,
+    isCritical: critical > 1
+  };
 }
 
 // Initialize or update global spawn
@@ -3206,11 +3242,13 @@ if (pathname.includes('/api/auth/signin')) {
         })
         .toArray();
 
-      // Add current HP to each Pokemon (start at max HP)
+      // Add battle state to each Pokemon (start at max HP)
       const pokemonWithHP = pokemon.map(p => ({
         ...p,
         currentHP: p.stats.hp,
-        maxHP: p.stats.hp
+        maxHP: p.stats.hp,
+        statusCondition: null,
+        sleepTurns: 0
       }));
 
       // Determine which player and update
@@ -3235,6 +3273,64 @@ if (pathname.includes('/api/auth/signin')) {
           { $set: { status: 'active' } }
         );
       }
+
+      return NextResponse.json({ success: true });
+    }
+
+    // Switch Pokemon after a faint
+    if (pathname.includes('/api/battles/switch-pokemon')) {
+      const { battleId, userId, pokemonIndex } = body;
+
+      if (!battleId || !userId || pokemonIndex === undefined) {
+        return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const battle = await database.collection('battles').findOne({ id: battleId });
+
+      if (!battle || battle.status !== 'active') {
+        return NextResponse.json({ error: 'Battle not active' }, { status: 400 });
+      }
+
+      if (battle.awaitingSwitchFor !== userId) {
+        return NextResponse.json({ error: 'No switch needed right now' }, { status: 400 });
+      }
+
+      const isPlayer1 = battle.player1.userId === userId;
+      const playerField = isPlayer1 ? 'player1' : 'player2';
+      const player = isPlayer1 ? battle.player1 : battle.player2;
+      const chosenPokemon = player.pokemon?.[pokemonIndex];
+
+      if (!chosenPokemon) {
+        return NextResponse.json({ error: 'Pokemon not found' }, { status: 404 });
+      }
+
+      if (chosenPokemon.currentHP <= 0) {
+        return NextResponse.json({ error: 'That Pokemon has fainted' }, { status: 400 });
+      }
+
+      if (pokemonIndex === player.currentPokemonIndex) {
+        return NextResponse.json({ error: 'That Pokemon is already active' }, { status: 400 });
+      }
+
+      await database.collection('battles').updateOne(
+        { id: battleId },
+        {
+          $set: {
+            [`${playerField}.currentPokemonIndex`]: pokemonIndex,
+            awaitingSwitchFor: null
+          },
+          $push: {
+            battleLog: {
+              turn: battle.battleLog.length + 1,
+              type: 'switch',
+              player: player.username,
+              pokemon: chosenPokemon.displayName,
+              timestamp: new Date().toISOString()
+            }
+          }
+        }
+      );
 
       return NextResponse.json({ success: true });
     }
@@ -3272,91 +3368,193 @@ if (pathname.includes('/api/auth/signin')) {
         return NextResponse.json({ error: 'Battle not active' }, { status: 400 });
       }
 
+      if (battle.awaitingSwitchFor) {
+        return NextResponse.json({ error: 'A player must choose their next Pokemon first' }, { status: 400 });
+      }
+
       if (battle.currentTurn !== userId) {
         return NextResponse.json({ error: 'Not your turn' }, { status: 400 });
       }
 
       const isPlayer1 = battle.player1.userId === userId;
+      const attackerField = isPlayer1 ? 'player1' : 'player2';
+      const defenderField = isPlayer1 ? 'player2' : 'player1';
       const attacker = isPlayer1 ? battle.player1 : battle.player2;
       const defender = isPlayer1 ? battle.player2 : battle.player1;
 
-      const attackingPokemon = attacker.pokemon[attacker.currentPokemonIndex];
-      const defendingPokemon = defender.pokemon[defender.currentPokemonIndex];
+      const attackingPokemon = attacker.pokemon?.[attacker.currentPokemonIndex];
+      const defendingPokemon = defender.pokemon?.[defender.currentPokemonIndex];
 
-      // Get move details
-      const moveName = attackingPokemon.moveset[moveIndex];
+      if (!attackingPokemon || !defendingPokemon) {
+        return NextResponse.json({ error: 'Battle Pokemon missing' }, { status: 400 });
+      }
+
+      if (attackingPokemon.currentHP <= 0) {
+        return NextResponse.json({ error: 'Your active Pokemon has fainted' }, { status: 400 });
+      }
+
+      const moveName = attackingPokemon.moveset?.[moveIndex];
       const moveData = attackingPokemon.allMovesData?.find(m => m.name === moveName);
 
       if (!moveData) {
         return NextResponse.json({ error: 'Invalid move' }, { status: 400 });
       }
 
-      // Calculate damage
-      const damage = calculateDamage(attackingPokemon, defendingPokemon, moveData);
-      const newHP = Math.max(0, defendingPokemon.currentHP - damage);
+      const nextTurnUserId = defender.userId;
+      const battleLogEntries = [];
+      let damage = 0;
+      let fainted = false;
+      let battleOver = false;
+      let winner = null;
+      let effectiveness = 1;
+      let statusApplied = null;
+      let moveMissed = false;
+      let turnSkipped = false;
+      const updateSet = {};
 
-      // Update defender's Pokemon HP
-      const defenderField = isPlayer1 ? 'player2' : 'player1';
-      await database.collection('battles').updateOne(
-        { id: battleId },
-        { 
-          $set: { 
-            [`${defenderField}.pokemon.${defender.currentPokemonIndex}.currentHP`]: newHP
+      // Sleep handling
+      if (attackingPokemon.statusCondition === 'sleep') {
+        const remainingSleepTurns = Math.max(0, (attackingPokemon.sleepTurns || 0) - 1);
+        if (remainingSleepTurns > 0) {
+          turnSkipped = true;
+          updateSet[`${attackerField}.pokemon.${attacker.currentPokemonIndex}.sleepTurns`] = remainingSleepTurns;
+          updateSet.currentTurn = nextTurnUserId;
+          battleLogEntries.push({
+            turn: battle.battleLog.length + 1,
+            type: 'status',
+            attacker: attacker.username,
+            move: formatMoveName(moveName),
+            message: `${attackingPokemon.displayName} is fast asleep!`,
+            timestamp: new Date().toISOString()
+          });
+        } else {
+          updateSet[`${attackerField}.pokemon.${attacker.currentPokemonIndex}.sleepTurns`] = 0;
+          updateSet[`${attackerField}.pokemon.${attacker.currentPokemonIndex}.statusCondition`] = null;
+          battleLogEntries.push({
+            turn: battle.battleLog.length + 1,
+            type: 'status',
+            attacker: attacker.username,
+            move: formatMoveName(moveName),
+            message: `${attackingPokemon.displayName} woke up!`,
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+
+      if (!turnSkipped) {
+        if (moveData.accuracy && Math.random() * 100 > moveData.accuracy) {
+          moveMissed = true;
+          updateSet.currentTurn = nextTurnUserId;
+          battleLogEntries.push({
+            turn: battle.battleLog.length + battleLogEntries.length + 1,
+            type: 'miss',
+            attacker: attacker.username,
+            defender: defender.username,
+            move: formatMoveName(moveName),
+            message: `${attackingPokemon.displayName}'s ${formatMoveName(moveName)} missed!`,
+            timestamp: new Date().toISOString()
+          });
+        } else {
+          const damageResult = calculateDamage(attackingPokemon, defendingPokemon, moveData);
+          damage = damageResult.damage;
+          effectiveness = damageResult.multiplier;
+          const newHP = Math.max(0, defendingPokemon.currentHP - damage);
+          fainted = newHP === 0;
+
+          updateSet[`${defenderField}.pokemon.${defender.currentPokemonIndex}.currentHP`] = newHP;
+
+          const moveMessageParts = [
+            `${attackingPokemon.displayName} used ${formatMoveName(moveName)}!`,
+            `It dealt ${damage} damage.`
+          ];
+          if (damageResult.isCritical) moveMessageParts.push('A critical hit!');
+          if (effectiveness >= 2) moveMessageParts.push(`It's super effective!`);
+          if (effectiveness > 0 && effectiveness < 1) moveMessageParts.push(`It's not very effective...`);
+          if (effectiveness === 0) moveMessageParts.push(`It had no effect.`);
+
+          battleLogEntries.push({
+            turn: battle.battleLog.length + battleLogEntries.length + 1,
+            type: 'attack',
+            attacker: attacker.username,
+            defender: defender.username,
+            move: formatMoveName(moveName),
+            damage,
+            multiplier: effectiveness,
+            message: moveMessageParts.join(' '),
+            timestamp: new Date().toISOString()
+          });
+
+          if (
+            moveData.damageClass !== 'status' &&
+            !defendingPokemon.statusCondition &&
+            moveData.ailment === 'sleep' &&
+            (moveData.ailmentChance || moveData.effectChance || 100) > 0 &&
+            Math.random() * 100 <= (moveData.ailmentChance || moveData.effectChance || 100)
+          ) {
+            const sleepTurns = Math.floor(Math.random() * 3) + 1;
+            updateSet[`${defenderField}.pokemon.${defender.currentPokemonIndex}.statusCondition`] = 'sleep';
+            updateSet[`${defenderField}.pokemon.${defender.currentPokemonIndex}.sleepTurns`] = sleepTurns;
+            statusApplied = 'sleep';
+            battleLogEntries.push({
+              turn: battle.battleLog.length + battleLogEntries.length + 1,
+              type: 'status',
+              attacker: attacker.username,
+              defender: defender.username,
+              move: formatMoveName(moveName),
+              message: `${defendingPokemon.displayName} fell asleep!`,
+              timestamp: new Date().toISOString()
+            });
+          }
+
+          if (fainted) {
+            battleLogEntries.push({
+              turn: battle.battleLog.length + battleLogEntries.length + 1,
+              type: 'faint',
+              attacker: attacker.username,
+              defender: defender.username,
+              move: formatMoveName(moveName),
+              message: `${defendingPokemon.displayName} fainted!`,
+              timestamp: new Date().toISOString()
+            });
+
+            const remainingAliveIndexes = defender.pokemon
+              .map((pokemon, index) => ({ pokemon, index }))
+              .filter(({ pokemon, index }) => index !== defender.currentPokemonIndex && pokemon.currentHP > 0);
+
+            if (remainingAliveIndexes.length === 0) {
+              battleOver = true;
+              winner = userId;
+              updateSet.status = 'finished';
+              updateSet.winner = userId;
+            } else {
+              updateSet.awaitingSwitchFor = defender.userId;
+              updateSet.currentTurn = defender.userId;
+            }
+          } else {
+            updateSet.currentTurn = nextTurnUserId;
           }
         }
-      );
-
-      // Create battle log entry
-      const logEntry = {
-        turn: battle.battleLog.length + 1,
-        attacker: attacker.username,
-        defender: defender.username,
-        move: moveName.replace('-', ' '),
-        damage: damage,
-        timestamp: new Date().toISOString()
-      };
+      }
 
       await database.collection('battles').updateOne(
         { id: battleId },
-        { $push: { battleLog: logEntry } }
-      );
-
-      // Check if Pokemon fainted
-      let battleUpdate = {};
-      if (newHP === 0) {
-        // Pokemon fainted, check if defender has more Pokemon
-        const alivePokemon = defender.pokemon.filter((p, idx) => 
-          idx > defender.currentPokemonIndex && p.currentHP > 0
-        );
-
-        if (alivePokemon.length === 0) {
-          // Battle over, attacker wins
-          battleUpdate = {
-            status: 'finished',
-            winner: userId
-          };
-        } else {
-          // Switch to next Pokemon
-          battleUpdate[`${defenderField}.currentPokemonIndex`] = defender.currentPokemonIndex + 1;
+        {
+          $set: updateSet,
+          ...(battleLogEntries.length ? { $push: { battleLog: { $each: battleLogEntries } } } : {})
         }
-      }
-
-      // Switch turn
-      if (battleUpdate.status !== 'finished') {
-        battleUpdate.currentTurn = defender.userId;
-      }
-
-      await database.collection('battles').updateOne(
-        { id: battleId },
-        { $set: battleUpdate }
       );
 
-      return NextResponse.json({ 
-        success: true, 
+      return NextResponse.json({
+        success: true,
         damage,
-        fainted: newHP === 0,
-        battleOver: battleUpdate.status === 'finished',
-        winner: battleUpdate.winner
+        fainted,
+        battleOver,
+        winner,
+        effectiveness,
+        statusApplied,
+        moveMissed,
+        turnSkipped,
+        awaitingSwitchFor: updateSet.awaitingSwitchFor || null
       });
     }
 
