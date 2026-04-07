@@ -28,14 +28,18 @@ export async function POST(request) {
     const db = await connectDB();
     const users = db.collection('users');
 
-    const existingUser = await users.findOne({ normalizedUsername });
+    const existingUser = await users.findOne(
+      { normalizedUsername },
+      { projection: { _id: 1, id: 1, username: 1, normalizedUsername: 1 } }
+    );
     if (existingUser) {
       return NextResponse.json({ error: 'Username already exists', authTraceId }, { status: 409 });
     }
 
-    const legacyMatch = await users.findOne({
-      username: { $regex: new RegExp(`^${escapeRegex(trimmedUsername)}$`, 'i') }
-    });
+    const legacyMatch = await users.findOne(
+      { username: { $regex: new RegExp(`^${escapeRegex(trimmedUsername)}$`, 'i') } },
+      { projection: { _id: 1, id: 1, username: 1, normalizedUsername: 1 } }
+    );
     if (legacyMatch) {
       return NextResponse.json({ error: 'Username already exists', authTraceId }, { status: 409 });
     }
