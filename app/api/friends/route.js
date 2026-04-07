@@ -22,6 +22,7 @@ export async function GET(request) {
           sentFriendRequests: 1,
           tradeRequests: 1,
           battleRequests: 1,
+          activeBattleId: 1,
         },
       }
     );
@@ -36,7 +37,7 @@ export async function GET(request) {
 
     const [friends, pendingRequests, sentRequests] = await Promise.all([
       friendIds.length
-        ? database.collection('users').find({ id: { $in: friendIds } }).project({ id: 1, username: 1, tradesCompleted: 1 }).toArray()
+        ? database.collection('users').find({ id: { $in: friendIds } }).project({ id: 1, username: 1, tradesCompleted: 1, lastSeenAt: 1 }).toArray()
         : Promise.resolve([]),
       requestIds.length
         ? database.collection('users').find({ id: { $in: requestIds } }).project({ id: 1, username: 1 }).toArray()
@@ -46,12 +47,19 @@ export async function GET(request) {
         : Promise.resolve([]),
     ]);
 
+    const onlineThreshold = Date.now() - 60 * 1000;
+    const friendsWithPresence = friends.map((friend) => ({
+      ...friend,
+      isOnline: !!friend.lastSeenAt && new Date(friend.lastSeenAt).getTime() >= onlineThreshold,
+    }));
+
     return NextResponse.json({
-      friends,
+      friends: friendsWithPresence,
       pendingRequests,
       sentRequests,
       tradeRequests: user.tradeRequests || [],
       battleRequests: user.battleRequests || [],
+      activeBattleId: user.activeBattleId || null,
     });
   } catch (error) {
     return NextResponse.json({ error: error?.message || 'Failed to load friends' }, { status: 500 });

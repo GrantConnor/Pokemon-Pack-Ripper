@@ -2146,6 +2146,17 @@ if (pathname.includes('/api/auth/signin')) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
 
+      const existingPokemonTrade = [...(toUser.tradeRequests || []), ...(fromUser.tradeRequests || [])].find((request) =>
+        request.status === 'pending' && (
+          (request.fromId === fromId && request.toId === toId) ||
+          (request.fromId === toId && request.toId === fromId)
+        )
+      );
+
+      if (existingPokemonTrade) {
+        return NextResponse.json({ error: 'Only one pending Pokemon trade request is allowed between these users at a time' }, { status: 409 });
+      }
+
       // Create trade request
       const tradeRequest = {
         id: uuidv4(),
@@ -2263,6 +2274,17 @@ if (pathname.includes('/api/auth/signin')) {
       // Check if users are friends
       if (!user.friends?.includes(friendId)) {
         return NextResponse.json({ error: 'Can only trade with friends' }, { status: 403 });
+      }
+
+      const existingCardTrade = [...(friend.tradeRequests || []), ...(user.tradeRequests || [])].find((trade) =>
+        trade.status === 'pending' && 'offeredCards' in trade && (
+          (trade.from === userId && trade.to === friendId) ||
+          (trade.from === friendId && trade.to === userId)
+        )
+      );
+
+      if (existingCardTrade) {
+        return NextResponse.json({ error: 'Only one pending card trade request is allowed between these users at a time' }, { status: 409 });
       }
 
       const tradeRequest = {
@@ -3123,6 +3145,17 @@ if (pathname.includes('/api/auth/signin')) {
       
       if (!fromUser || !toUser) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      const existingBattleRequest = [...(toUser.battleRequests || []), ...(fromUser.battleRequests || [])].find((request) =>
+        request.status === 'pending' && (
+          (request.from?.id === fromUserId && request.to?.id === toUserId) ||
+          (request.from?.id === toUserId && request.to?.id === fromUserId)
+        )
+      );
+
+      if (existingBattleRequest) {
+        return NextResponse.json({ error: 'Only one pending battle request is allowed between these users at a time' }, { status: 409 });
       }
 
       // Create battle request

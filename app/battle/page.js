@@ -86,7 +86,7 @@ function BattlePageContent() {
     try {
       const response = await fetch(`/api/wilds/my-pokemon?userId=${userId}`);
       const data = await response.json();
-      setMyPokemon(data.pokemon || []);
+      setMyPokemon((data.pokemon || []).filter((pokemon) => pokemon && (pokemon._id || pokemon.id)));
     } catch (err) {
       console.error('Error loading Pokemon:', err);
     }

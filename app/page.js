@@ -185,6 +185,33 @@ export default function App() {
     }
   }, [user, countdown]);
 
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const pingPresence = () => {
+      fetch('/api/presence/ping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      }).catch(err => console.error('Presence ping failed on home page:', err));
+    };
+
+    pingPresence();
+    const interval = setInterval(pingPresence, 30000);
+    return () => clearInterval(interval);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    loadFriends({ forceRefresh: true });
+    const interval = setInterval(() => {
+      loadFriends({ forceRefresh: true });
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [user?.id]);
+
   // Format countdown as HH:MM:SS (with zero-padding for hours)
   const formatCountdown = (seconds) => {
     const hours = Math.floor(seconds / 3600);

@@ -122,12 +122,28 @@ export default function PokemonWilds() {
   }, [user]);
 
   useEffect(() => {
+    if (!user?.id) return;
+
+    const pingPresence = () => {
+      fetch('/api/presence/ping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      }).catch(err => console.error('Presence ping failed on wilds page:', err));
+    };
+
+    pingPresence();
+    const interval = setInterval(pingPresence, 30000);
+    return () => clearInterval(interval);
+  }, [user?.id]);
+
+  useEffect(() => {
     if (!user) return;
 
     loadFriends();
     const interval = setInterval(() => {
       loadFriends();
-    }, 3000);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [user]);
@@ -445,13 +461,14 @@ export default function PokemonWilds() {
 
       const data = await response.json();
       if (data.success) {
-        console.log(`Battle request sent to ${friend.username}!`);
+        alert(`Battle request sent to ${friend.username}!`);
         loadFriends(); // Reload to update UI
       } else {
-        console.error(data.error || 'Error sending battle request');
+        alert(data.error || 'Error sending battle request');
       }
     } catch (err) {
       console.error('Battle request error:', err);
+      alert('Error sending battle request');
     }
   };
 
