@@ -48,6 +48,20 @@ function openPack(cards, setId = null) {
     return pool[Math.floor(Math.random() * pool.length)];
   };
 
+  const buildGodPack = (pool) => {
+    const godPack = [];
+    const usedIds = new Set();
+    for (let i = 0; i < 10; i++) {
+      const available = pool.filter(card => !usedIds.has(card.id));
+      const sourcePool = available.length > 0 ? available : pool;
+      if (!sourcePool.length) break;
+      const card = sourcePool[Math.floor(Math.random() * sourcePool.length)];
+      usedIds.add(card.id);
+      godPack.push(card);
+    }
+    return godPack;
+  };
+
   const rarityValue = (card) => String(card?.rarity || '').toLowerCase();
   const isStandardRareCard = (card) => {
     const rarity = rarityValue(card);
@@ -101,6 +115,16 @@ function openPack(cards, setId = null) {
     hyperRare: nonEnergyCards.filter(card => rarityValue(card).includes('hyper rare')),
     secretRare: nonEnergyCards.filter(card => rarityValue(card).includes('secret rare') || rarityValue(card).includes('rare secret')),
   };
+
+  const godPackPool = [
+    ...specialPools.illustrationRare,
+    ...specialPools.specialIllustrationRare,
+    ...specialPools.ultraRare,
+    ...specialPools.rainbowRare,
+    ...specialPools.hyperRare,
+    ...specialPools.secretRare,
+    ...specialPools.legend,
+  ];
 
   const lowPool = lowRarityCards.length ? lowRarityCards : nonEnergyCards;
 
@@ -168,6 +192,13 @@ function openPack(cards, setId = null) {
 
   const isLegacyPack = setId && LEGACY_SETS.includes(setId);
   const legacyHitRare = !isLegacyPack || Math.random() < 0.15;
+
+  if (!isLegacyPack && !isHsPack && hitSpecialTable && godPackPool.length > 0) {
+    const godPackRoll = Math.floor(Math.random() * 100) + 1;
+    if (godPackRoll === 100) {
+      return buildGodPack(godPackPool);
+    }
+  }
 
   let rareSlotCard = null;
   if (legacyHitRare && hitSpecialTable && availableSpecialPoolKeys.length) {
