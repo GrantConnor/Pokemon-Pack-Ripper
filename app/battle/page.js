@@ -1,12 +1,11 @@
 'use client';
 
-import { useState, useEffect, useMemo, Suspense } from 'react';
+import { useState, useEffect, useMemo, Suspense, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Swords } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
@@ -105,6 +104,7 @@ function BattlePageContent() {
   const [teamSearch, setTeamSearch] = useState('');
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [backgroundImage, setBackgroundImage] = useState(BATTLE_BACKGROUNDS[0]);
+  const logContainerRef = useRef(null);
 
   useEffect(() => {
     setBackgroundImage(BATTLE_BACKGROUNDS[Math.floor(Math.random() * BATTLE_BACKGROUNDS.length)]);
@@ -136,6 +136,13 @@ function BattlePageContent() {
     }, 2000);
     return () => clearInterval(interval);
   }, [battleId]);
+
+  useEffect(() => {
+    const el = logContainerRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [battle?.battleLog?.length]);
 
   const loadMyPokemon = async (userId) => {
     try {
@@ -358,7 +365,7 @@ function BattlePageContent() {
         className="min-h-screen p-4 md:p-6 lg:p-8 relative overflow-hidden bg-cover bg-center"
         style={{ backgroundImage: `linear-gradient(rgba(6, 18, 32, 0.45), rgba(6, 18, 32, 0.55)), url(${backgroundImage})` }}
       >
-        <div className="max-w-6xl mx-auto relative z-10 space-y-4">
+        <div className="max-w-7xl mx-auto relative z-10 space-y-4">
           <div className="flex justify-between items-center gap-4 flex-wrap">
             <Link href="/wilds">
               <Button variant="outline" className="bg-slate-900/90 border-green-500 text-white">
@@ -383,14 +390,15 @@ function BattlePageContent() {
             </Button>
           </div>
 
-          <div className="grid lg:grid-cols-[1fr_320px] gap-6 items-start">
+          <div className="grid lg:grid-cols-[minmax(260px,1fr)_minmax(260px,1fr)_340px] gap-6 items-start min-h-[560px]">
             <div className="space-y-6 pb-28">
-              <div className="grid md:grid-cols-[1fr_auto_1fr] gap-6 items-center">
-                <BattlePokemonPanel label="Your" pokemon={myCurrentPokemon} align="left" />
-                <div className="text-center order-first md:order-none">
-                  <Swords className="w-12 h-12 text-white mx-auto drop-shadow" />
+              <div className="grid lg:grid-cols-2 gap-10 items-start">
+                <div className="lg:pr-10">
+                  <BattlePokemonPanel label="Your" pokemon={myCurrentPokemon} align="left" />
                 </div>
-                <BattlePokemonPanel label={`${opponentPlayer.username}'s`} pokemon={opponentCurrentPokemon} align="right" />
+                <div className="lg:pl-4 lg:pt-8">
+                  <BattlePokemonPanel label={`${opponentPlayer.username}'s`} pokemon={opponentCurrentPokemon} align="right" />
+                </div>
               </div>
 
               {battle.status === 'active' && awaitingMySwitch && (
@@ -429,27 +437,25 @@ function BattlePageContent() {
               )}
             </div>
 
-            <Card className="border-2 border-slate-600 bg-slate-900/92 h-fit sticky top-4">
+            <Card className="border-2 border-slate-600 bg-slate-900/92 h-fit sticky top-24">
               <CardContent className="p-4">
                 <h2 className="text-white font-bold mb-3">Battle Log</h2>
-                <ScrollArea className="h-[420px] pr-4">
-                  <div className="space-y-3">
-                    {battleLog.length === 0 && <p className="text-slate-400 text-sm">The battle is about to begin.</p>}
-                    {battleLog.map((entry, index) => (
-                      <div key={`${entry.timestamp}-${index}`} className="rounded-lg bg-slate-800/80 p-3 text-sm text-white">
-                        {entry.message || `${entry.attacker || entry.player} used a move.`}
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
+                <div ref={logContainerRef} className="h-[430px] overflow-y-auto pr-2 space-y-3">
+                  {battleLog.length === 0 && <p className="text-slate-400 text-sm">The battle is about to begin.</p>}
+                  {battleLog.map((entry, index) => (
+                    <div key={`${entry.timestamp}-${index}`} className="rounded-lg bg-slate-800/80 p-3 text-sm text-white">
+                      {entry.message || `${entry.attacker || entry.player} used a move.`}
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           </div>
 
           {battle.status === 'active' && !awaitingMySwitch && (
-            <div className="sticky bottom-4 z-20 max-w-4xl mx-auto">
+            <div className="sticky bottom-2 z-20 max-w-3xl mx-auto pt-4">
               <Card className="border-2 border-green-500/50 bg-slate-900/95 backdrop-blur-sm shadow-2xl">
-                <CardContent className="p-3 space-y-3">
+                <CardContent className="p-2.5 space-y-2.5">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <h2 className="text-lg font-bold text-white">Attack</h2>
                     <p className="text-xs text-yellow-300">
@@ -464,7 +470,7 @@ function BattlePageContent() {
                           key={index}
                           onClick={() => handleAttack(index)}
                           disabled={myMoveLocked || actionSubmitting || myCurrentPokemon.currentHP === 0 || battle.status !== 'active'}
-                          className="h-16 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 flex flex-col items-center justify-center px-2"
+                          className="h-14 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 flex flex-col items-center justify-center px-2"
                         >
                           <span className="font-bold text-xs md:text-sm">{move.replace(/-/g, ' ').toUpperCase()}</span>
                           {moveData && (
