@@ -866,8 +866,24 @@ const evolutionItemCache = globalThis.__wildsEvolutionItemCache || { items: null
 globalThis.__wildsEvolutionItemCache = evolutionItemCache;
 
 
+
+const HARD_CODED_ITEM_FALLBACKS = {
+  'upgrade': '/items/upgrade.png',
+  'sweet-apple': '/items/sweet-apple.png',
+  'tart-apple': '/items/tart-apple.png',
+  'cracked-pot': '/items/cracked-pot.png',
+  'chipped-pot': '/items/chipped-pot.png',
+  'galarica-cuff': '/items/galarica-cuff.png',
+  'galarica-wreath': '/items/galarica-wreath.png',
+  'black-augurite': '/items/black-augurite.png',
+  'peat-block': '/items/peat-block.png',
+  'auspicious-armor': '/items/auspicious-armor.png',
+  'malicious-armor': '/items/malicious-armor.png',
+  'syrupy-apple': '/items/syrupy-apple.png',
+};
+
 function getEvolutionItemSpriteUrl(itemName, apiSprite = null) {
-  return apiSprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/${itemName}.png`;
+  return apiSprite || HARD_CODED_ITEM_FALLBACKS[itemName] || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/${itemName}.png`;
 }
 
 function formatEvolutionItemName(name) {
