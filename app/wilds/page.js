@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -73,6 +73,16 @@ export default function PokemonWilds() {
   const [battleOpponent, setBattleOpponent] = useState(null);
   const [showBattleScreen, setShowBattleScreen] = useState(false);
   const [adminSpawnQuery, setAdminSpawnQuery] = useState('');
+  const tradeSoundCountRef = useRef(0);
+  const battleSoundCountRef = useRef(0);
+
+  const playTradeNotificationSound = () => {
+    try { new Audio('/pokemon-level-up.mp3').play().catch(() => {}); } catch {}
+  };
+
+  const playBattleNotificationSound = () => {
+    try { new Audio('/alert-meme.mp3').play().catch(() => {}); } catch {}
+  };
 
   useEffect(() => {
     // Check if user is logged in
@@ -173,6 +183,27 @@ export default function PokemonWilds() {
 
     return () => clearInterval(interval);
   }, [timeUntilSpawn]);
+
+
+  useEffect(() => {
+    const tradeCount = Array.isArray(tradeRequests) ? tradeRequests.filter(Boolean).length : 0;
+    const battleCount = Array.isArray(battleRequests) ? battleRequests.filter(Boolean).length : 0;
+
+    if (tradeCount > 0 && tradeSoundCountRef.current === 0) {
+      playTradeNotificationSound();
+    } else if (tradeCount > tradeSoundCountRef.current) {
+      playTradeNotificationSound();
+    }
+
+    if (battleCount > 0 && battleSoundCountRef.current === 0) {
+      playBattleNotificationSound();
+    } else if (battleCount > battleSoundCountRef.current) {
+      playBattleNotificationSound();
+    }
+
+    tradeSoundCountRef.current = tradeCount;
+    battleSoundCountRef.current = battleCount;
+  }, [tradeRequests, battleRequests]);
 
   const loadCurrentSpawn = async () => {
     try {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -116,6 +116,16 @@ export default function App() {
   const [battleRequests, setBattleRequests] = useState([]);
   const [friendUsername, setFriendUsername] = useState('');
   const [friendMessage, setFriendMessage] = useState('');
+  const tradeSoundCountRef = useRef(0);
+  const battleSoundCountRef = useRef(0);
+
+  const playTradeNotificationSound = () => {
+    try { new Audio('/pokemon-level-up.mp3').play().catch(() => {}); } catch {}
+  };
+
+  const playBattleNotificationSound = () => {
+    try { new Audio('/alert-meme.mp3').play().catch(() => {}); } catch {}
+  };
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [tradeFriend, setTradeFriend] = useState(null);
   const [selectedTradeCards, setSelectedTradeCards] = useState([]);
@@ -534,6 +544,27 @@ export default function App() {
   }, [collection]);
 
   // Filtered packs based on search
+
+  useEffect(() => {
+    const tradeCount = Array.isArray(tradeRequests) ? tradeRequests.filter(Boolean).length : 0;
+    const battleCount = Array.isArray(battleRequests) ? battleRequests.filter(Boolean).length : 0;
+
+    if (tradeCount > 0 && tradeSoundCountRef.current === 0) {
+      playTradeNotificationSound();
+    } else if (tradeCount > tradeSoundCountRef.current) {
+      playTradeNotificationSound();
+    }
+
+    if (battleCount > 0 && battleSoundCountRef.current === 0) {
+      playBattleNotificationSound();
+    } else if (battleCount > battleSoundCountRef.current) {
+      playBattleNotificationSound();
+    }
+
+    tradeSoundCountRef.current = tradeCount;
+    battleSoundCountRef.current = battleCount;
+  }, [tradeRequests, battleRequests]);
+
   const filteredPacks = useMemo(() => {
     if (!packSearchQuery) return sets;
     return sets.filter(set => 
