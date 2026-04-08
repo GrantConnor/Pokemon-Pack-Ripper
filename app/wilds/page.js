@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -34,11 +34,14 @@ export default function PokemonWilds() {
   const [friendSearchTerm, setFriendSearchTerm] = useState('');
   const [showFriendsPanel, setShowFriendsPanel] = useState(false);
   const [activeTrade, setActiveTrade] = useState(null);
+  const [activeCardTrade, setActiveCardTrade] = useState(null);
   const [selectedPokemonForTrade, setSelectedPokemonForTrade] = useState([]);
   const [viewingFriendPokemon, setViewingFriendPokemon] = useState(null);
   const [friendPokemonList, setFriendPokemonList] = useState([]);
   const [battleRequests, setBattleRequests] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState([]);
   const [tradeRequests, setTradeRequests] = useState([]);
+  const unreadSocialCount = pendingRequests.length + tradeRequests.length;
   const [showTradeDialog, setShowTradeDialog] = useState(false);
   const [tradePartner, setTradePartner] = useState(null);
   const [mySelectedPokemon, setMySelectedPokemon] = useState(null);
@@ -52,6 +55,16 @@ export default function PokemonWilds() {
   const [fetchingEvolutionData, setFetchingEvolutionData] = useState(false);
   const [showEvolveConfirm, setShowEvolveConfirm] = useState(false);
   const [showReleaseConfirm, setShowReleaseConfirm] = useState(false);
+  const [showCustomXPDialog, setShowCustomXPDialog] = useState(false);
+  const [customXPAmount, setCustomXPAmount] = useState('500');
+  const [showShopDialog, setShowShopDialog] = useState(false);
+  const [showInventoryDialog, setShowInventoryDialog] = useState(false);
+  const [showUseItemDialog, setShowUseItemDialog] = useState(false);
+  const [shopItems, setShopItems] = useState([]);
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [selectedInventoryItem, setSelectedInventoryItem] = useState(null);
+  const [compatiblePokemon, setCompatiblePokemon] = useState([]);
+  const [loadingItems, setLoadingItems] = useState(false);
 
   // Battle states
   const [activeBattle, setActiveBattle] = useState(null);
@@ -59,6 +72,17 @@ export default function PokemonWilds() {
   const [selectedForBattle, setSelectedForBattle] = useState([]);
   const [battleOpponent, setBattleOpponent] = useState(null);
   const [showBattleScreen, setShowBattleScreen] = useState(false);
+  const [adminSpawnQuery, setAdminSpawnQuery] = useState('');
+  const tradeSoundCountRef = useRef(0);
+  const battleSoundCountRef = useRef(0);
+
+  const playTradeNotificationSound = () => {
+    try { new Audio('/pokemon-level-up.mp3').play().catch(() => {}); } catch {}
+  };
+
+  const playBattleNotificationSound = () => {
+    try { new Audio('/alert-meme.mp3').play().catch(() => {}); } catch {}
+  };
 
   useEffect(() => {
     // Check if user is logged in
@@ -72,20 +96,25 @@ export default function PokemonWilds() {
             loadCurrentSpawn();
             loadMyPokemon();
             
-            // Load friends directly with the user data (don't wait for state update)
             fetch(`/api/friends?userId=${data.user.id}`)
               .then(res => res.json())
               .then(friendsData => {
                 console.log('📥 Friends loaded on page load:', friendsData);
-                setFriends(friendsData.friends || []);
-                setBattleRequests(friendsData.battleRequests || []);
-                setTradeRequests(friendsData.tradeRequests || []);
+                setFriends((friendsData.friends || []).filter(Boolean));
+                setBattleRequests((friendsData.battleRequests || []).filter(Boolean));
+                setTradeRequests((friendsData.tradeRequests || []).filter(Boolean));
+                setActiveBattle(friendsData.activeBattleId || null);
               })
               .catch(err => console.error('Error loading friends:', err));
+          } else if (data.transient) {
+            console.error('Transient session error on wilds page:', data.error);
           } else {
             localStorage.removeItem('userId');
             window.location.href = '/';
           }
+        })
+        .catch(err => {
+          console.error('Session fetch failed on wilds page:', err);
         });
     } else {
       window.location.href = '/';
@@ -102,6 +131,39 @@ export default function PokemonWilds() {
 
     return () => clearInterval(interval);
   }, [user]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const pingPresence = () => {
+      fetch('/api/presence/ping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      }).catch(err => console.error('Presence ping failed on wilds page:', err));
+    };
+
+    pingPresence();
+    const interval = setInterval(pingPresence, 30000);
+    return () => clearInterval(interval);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    loadFriends();
+    const interval = setInterval(() => {
+      loadFriends();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [user]);
+
+  useEffect(() => {
+    if (activeBattle && !showBattleScreen) {
+      window.location.href = `/battle?id=${activeBattle}`;
+    }
+  }, [activeBattle, showBattleScreen]);
 
   // Countdown timer for next spawn
   useEffect(() => {
@@ -121,6 +183,27 @@ export default function PokemonWilds() {
 
     return () => clearInterval(interval);
   }, [timeUntilSpawn]);
+
+
+  useEffect(() => {
+    const tradeCount = Array.isArray(tradeRequests) ? tradeRequests.filter(Boolean).length : 0;
+    const battleCount = Array.isArray(battleRequests) ? battleRequests.filter(Boolean).length : 0;
+
+    if (tradeCount > 0 && tradeSoundCountRef.current === 0) {
+      playTradeNotificationSound();
+    } else if (tradeCount > tradeSoundCountRef.current) {
+      playTradeNotificationSound();
+    }
+
+    if (battleCount > 0 && battleSoundCountRef.current === 0) {
+      playBattleNotificationSound();
+    } else if (battleCount > battleSoundCountRef.current) {
+      playBattleNotificationSound();
+    }
+
+    tradeSoundCountRef.current = tradeCount;
+    battleSoundCountRef.current = battleCount;
+  }, [tradeRequests, battleRequests]);
 
   const loadCurrentSpawn = async () => {
     try {
@@ -173,7 +256,9 @@ export default function PokemonWilds() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          pokemonId: pokemon.id // Pokemon species ID, not database _id
+          pokemonId: pokemon.id,
+          currentLevel: pokemon.level,
+          gender: pokemon.gender
         })
       });
 
@@ -196,11 +281,123 @@ export default function PokemonWilds() {
       const data = await response.json();
       console.log('📥 Friends API response:', data);
       console.log('👥 Friends array:', data.friends);
-      setFriends(data.friends || []);
-      setBattleRequests(data.battleRequests || []);
-      setTradeRequests(data.tradeRequests || []);
+      setFriends((data.friends || []).filter(Boolean));
+      setPendingRequests((data.pendingRequests || []).filter(Boolean));
+      setBattleRequests((data.battleRequests || []).filter(Boolean));
+      setTradeRequests((data.tradeRequests || []).filter(Boolean));
+      setActiveBattle(data.activeBattleId || null);
     } catch (err) {
       console.error('Error loading friends:', err);
+    }
+  };
+
+
+  const handleSignOut = () => {
+    localStorage.removeItem('userId');
+    window.location.href = '/';
+  };
+
+  const loadEvolutionShop = async () => {
+    if (!user) return;
+    setLoadingItems(true);
+    try {
+      const response = await fetch('/api/wilds/items/catalog', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      });
+      const data = await response.json();
+      if (data.success) setShopItems(data.items || []);
+    } catch (err) {
+      console.error('Error loading evolution shop:', err);
+    } finally {
+      setLoadingItems(false);
+    }
+  };
+
+  const loadInventoryItems = async () => {
+    if (!user) return;
+    setLoadingItems(true);
+    try {
+      const response = await fetch('/api/wilds/items/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      });
+      const data = await response.json();
+      if (data.success) setInventoryItems(data.inventory || []);
+    } catch (err) {
+      console.error('Error loading inventory:', err);
+    } finally {
+      setLoadingItems(false);
+    }
+  };
+
+  const handleBuyEvolutionItem = async (itemName) => {
+    if (!user) return;
+    try {
+      const response = await fetch('/api/wilds/items/buy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, itemName })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setUser({ ...user, points: data.pointsRemaining });
+        await loadInventoryItems();
+        alert(`Bought ${data.item.name}!`);
+      } else {
+        alert(data.error || 'Unable to buy item');
+      }
+    } catch (err) {
+      alert('Unable to buy item');
+    }
+  };
+
+  const handleOpenUseItem = async (item) => {
+    setSelectedInventoryItem(item);
+    setShowUseItemDialog(true);
+    setCompatiblePokemon([]);
+    try {
+      const response = await fetch('/api/wilds/items/compatible', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, itemName: item.itemName })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setCompatiblePokemon(data.pokemon || []);
+      } else {
+        alert(data.error || 'Unable to load compatible Pokemon');
+      }
+    } catch (err) {
+      alert('Unable to load compatible Pokemon');
+    }
+  };
+
+  const handleUseEvolutionItem = async (pokemonId) => {
+    if (!selectedInventoryItem) return;
+    try {
+      const response = await fetch('/api/wilds/items/use', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, itemName: selectedInventoryItem.itemName, pokemonId })
+      });
+      const data = await response.json();
+      if (data.success) {
+        alert(data.message);
+        setShowUseItemDialog(false);
+        setSelectedInventoryItem(null);
+        await loadInventoryItems();
+        await loadMyPokemon();
+        if (selectedPokemon?._id === pokemonId) {
+          setSelectedPokemon(null);
+        }
+      } else {
+        alert(data.error || 'Unable to use item');
+      }
+    } catch (err) {
+      alert('Unable to use item');
     }
   };
 
@@ -227,6 +424,82 @@ export default function PokemonWilds() {
       }
     } catch (err) {
       console.error('Error adding friend:', err);
+    }
+  };
+
+
+
+  const handleAcceptFriend = async (friendId) => {
+    try {
+      await fetch('/api/friends/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, friendId })
+      });
+      loadFriends();
+    } catch (err) {
+      console.error('Error accepting friend:', err);
+    }
+  };
+
+  const handleDeclineFriend = async (friendId) => {
+    try {
+      await fetch('/api/friends/decline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, friendId })
+      });
+      loadFriends();
+    } catch (err) {
+      console.error('Error declining friend:', err);
+    }
+  };
+
+
+
+  const handleViewCardTrade = (trade) => {
+    setActiveCardTrade(trade);
+  };
+  const handleAcceptCardTrade = async (trade) => {
+    try {
+      const response = await fetch('/api/trades/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, tradeId: trade.id })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Error accepting card trade');
+      loadFriends();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeclineCardTrade = async (trade) => {
+    try {
+      await fetch('/api/trades/decline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, tradeId: trade.id })
+      });
+      setActiveCardTrade(null);
+      loadFriends();
+    } catch (err) {
+      console.error('Error declining card trade:', err);
+    }
+  };
+
+  const handleRemoveFriend = async (friend) => {
+    if (!confirm(`Remove ${friend.username} from your friends list?`)) return;
+    try {
+      await fetch('/api/friends/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, friendId: friend.id })
+      });
+      loadFriends();
+    } catch (err) {
+      console.error('Error removing friend:', err);
     }
   };
 
@@ -265,7 +538,7 @@ export default function PokemonWilds() {
 
       const data = await response.json();
       if (response.ok) {
-        console.log('Trade request sent!');
+        alert('Pokemon Wilds trade request sent!');
         setShowTradeDialog(false);
         setMySelectedPokemon(null);
         setPartnerSelectedPokemon(null);
@@ -301,13 +574,14 @@ export default function PokemonWilds() {
 
       const data = await response.json();
       if (data.success) {
-        console.log(`Battle request sent to ${friend.username}!`);
+        alert(`Battle request sent to ${friend.username}!`);
         loadFriends(); // Reload to update UI
       } else {
-        console.error(data.error || 'Error sending battle request');
+        alert(data.error || 'Error sending battle request');
       }
     } catch (err) {
       console.error('Battle request error:', err);
+      alert('Error sending battle request');
     }
   };
 
@@ -324,7 +598,7 @@ export default function PokemonWilds() {
 
       const data = await response.json();
       if (data.success) {
-        // Navigate to battle page
+        setActiveBattle(data.battle.id);
         window.location.href = `/battle?id=${data.battle.id}`;
       } else {
         alert(data.error || 'Error accepting battle');
@@ -487,7 +761,7 @@ export default function PokemonWilds() {
       const response = await fetch('/api/wilds/admin-spawn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId: user.id })
+        body: JSON.stringify({ adminId: user.id, pokemonId: adminSpawnQuery })
       });
 
       const data = await response.json();
@@ -507,7 +781,7 @@ export default function PokemonWilds() {
       const response = await fetch('/api/wilds/admin-spawn-shiny', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId: user.id })
+        body: JSON.stringify({ adminId: user.id, pokemonId: adminSpawnQuery })
       });
 
       const data = await response.json();
@@ -595,16 +869,24 @@ export default function PokemonWilds() {
     return Math.floor(10 + (currentLevel - 1) * 18);
   };
 
-  const handleBuyXP = async () => {
+  const handleBuyXP = async (amount = 50) => {
     if (!selectedPokemon || buyingXP) return;
-    
+
+    const parsedAmount = Number(amount);
+    const xpAmount = Number.isFinite(parsedAmount) ? Math.floor(parsedAmount) : 50;
+
+    if (!Number.isInteger(xpAmount) || xpAmount <= 0) {
+      alert('XP amount must be a positive whole number.');
+      return;
+    }
+
     if (selectedPokemon.level >= 100) {
       alert('Pokemon is already at max level!');
       return;
     }
-    
-    if (user.username !== 'Spheal' && user.points < 50) {
-      alert('Not enough points! Need 50 points.');
+
+    if (user.username !== 'Spheal' && user.points < xpAmount) {
+      alert(`Not enough points! Need ${xpAmount} points.`);
       return;
     }
 
@@ -615,7 +897,8 @@ export default function PokemonWilds() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           userId: user.id,
-          pokemonId: selectedPokemon._id
+          pokemonId: selectedPokemon._id,
+          xpAmount
         })
       });
 
@@ -638,7 +921,8 @@ export default function PokemonWilds() {
         if (data.leveledUp) {
           alert(`🎉 Leveled up to ${data.newLevel}!`);
         } else {
-          alert('XP purchased successfully!');
+          alert(`XP purchased successfully! +${xpAmount} XP`);
+          setShowCustomXPDialog(false);
         }
       } else {
         alert(data.error || 'Error purchasing XP');
@@ -745,7 +1029,8 @@ export default function PokemonWilds() {
   }
 
   return (
-    <div 
+    <>
+      <div 
       className="min-h-screen bg-cover bg-center bg-no-repeat relative"
       style={{ backgroundImage: 'url(https://customer-assets.emergentagent.com/job_booster-hub-1/artifacts/3j79tqa6_image.png)' }}
     >
@@ -756,60 +1041,93 @@ export default function PokemonWilds() {
       <div className="relative z-10">
         {/* Header */}
         <div className="bg-gradient-to-r from-slate-900/90 to-slate-800/90 border-b-4 border-cyan-500 p-6">
-          <div className="max-w-7xl mx-auto flex justify-between items-center">
-            <div className="flex items-center gap-4">
-              <Link href="/">
-                <Button className="bg-cyan-600 hover:bg-cyan-500">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back to Pack Ripper
-                </Button>
-              </Link>
-              <div>
+          <div className="max-w-7xl mx-auto flex flex-col lg:flex-row lg:justify-between gap-4">
+            <div className="flex-1">
+              <div className="mb-4">
                 <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">
                   Pokemon Wilds
                 </h1>
                 <p className="text-cyan-200">Catch wild Pokemon as they appear!</p>
               </div>
-            </div>
-            <div className="flex gap-4 items-center">
-              {user.username === 'Spheal' && (
-                <>
-                  <Button 
-                    onClick={handleAdminSpawn}
-                    className="bg-red-600 hover:bg-red-500 border-2 border-red-400 font-bold"
-                  >
-                    ⚡ Spawn Pokemon
+              <div className="flex flex-wrap items-center gap-3">
+                <Link href="/">
+                  <Button className="bg-cyan-600 hover:bg-cyan-500">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Back to Pack Ripper
                   </Button>
-                  <Button 
-                    onClick={handleAdminSpawnShiny}
-                    className="bg-yellow-600 hover:bg-yellow-500 border-2 border-yellow-400 font-bold"
-                  >
-                    ✨ Spawn Shiny
-                  </Button>
-                </>
-              )}
-              <Button 
-                onClick={() => setShowFriendsPanel(true)}
-                className="bg-blue-600 hover:bg-blue-500"
-              >
-                <Users className="mr-2 h-4 w-4" />
-                Friends ({friends.length})
-              </Button>
-              <Button 
-                onClick={() => {
-                  setShowMyPokemon(true);
-                  loadMyPokemon();
-                }}
-                className="bg-purple-600 hover:bg-purple-500"
-              >
-                <Sparkles className="mr-2 h-4 w-4" />
-                My Pokemon ({myPokemon.length})
-              </Button>
-              <div className="text-right">
-                <p className="text-sm text-gray-400">Trainer</p>
-                <p className="text-xl font-bold text-white">{user.username}</p>
-                <p className="text-sm text-yellow-400 font-bold">⭐ {user.points} Points</p>
+                </Link>
+                {user.username === 'Spheal' && (
+                  <>
+                    <Input
+                      type="text"
+                      placeholder="Dex # or name"
+                      value={adminSpawnQuery}
+                      onChange={(e) => setAdminSpawnQuery(e.target.value)}
+                      className="w-40 border-2 border-red-400/50 bg-slate-900/70 text-white"
+                    />
+                    <Button 
+                      onClick={handleAdminSpawn}
+                      className="bg-red-600 hover:bg-red-500 border-2 border-red-400 font-bold"
+                    >
+                      ⚡ Spawn Pokemon
+                    </Button>
+                    <Button 
+                      onClick={handleAdminSpawnShiny}
+                      className="bg-yellow-600 hover:bg-yellow-500 border-2 border-yellow-400 font-bold"
+                    >
+                      ✨ Spawn Shiny
+                    </Button>
+                  </>
+                )}
+                <Button
+                  onClick={() => {
+                    setShowShopDialog(true);
+                    loadEvolutionShop();
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-500"
+                >
+                  Shop
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowInventoryDialog(true);
+                    loadInventoryItems();
+                  }}
+                  className="bg-orange-600 hover:bg-orange-500"
+                >
+                  Inventory
+                </Button>
+                <Button 
+                  onClick={() => setShowFriendsPanel(true)}
+                  className="relative bg-blue-600 hover:bg-blue-500"
+                >
+                  <Users className="mr-2 h-4 w-4" />
+                  Friends ({friends.length})
+                  {unreadSocialCount > 0 && (
+                    <span className="absolute -top-2 -right-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white">
+                      {unreadSocialCount}
+                    </span>
+                  )}
+                </Button>
+                <Button 
+                  onClick={() => {
+                    setShowMyPokemon(true);
+                    loadMyPokemon();
+                  }}
+                  className="bg-purple-600 hover:bg-purple-500"
+                >
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  My Pokemon ({myPokemon.length})
+                </Button>
+                <Button onClick={handleSignOut} className="bg-slate-700 hover:bg-slate-600 border border-cyan-400/40 text-white ml-auto lg:ml-0">
+                  Sign Out
+                </Button>
               </div>
+            </div>
+            <div className="text-right self-start lg:self-center">
+              <p className="text-sm text-gray-400">Trainer</p>
+              <p className="text-xl font-bold text-white">{user.username}</p>
+              <p className="text-sm text-yellow-400 font-bold">⭐ {user.points} Points</p>
             </div>
           </div>
         </div>
@@ -820,12 +1138,6 @@ export default function PokemonWilds() {
             <div className="text-center">
               {/* Pokemon Display */}
               <div className="mb-8 animate-bounce-slow relative">
-                {spawn.pokemon.isShiny && (
-                  <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                    <div className="text-4xl animate-pulse">✨</div>
-                    <div className="text-yellow-400 font-bold text-sm">SHINY!</div>
-                  </div>
-                )}
                 <img
                   src={spawn.pokemon.sprite}
                   alt={spawn.pokemon.displayName}
@@ -1168,14 +1480,32 @@ export default function PokemonWilds() {
                               }}
                             />
                           </div>
-                          <div className="flex gap-2">
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button
+                                onClick={() => handleBuyXP(50)}
+                                disabled={buyingXP || selectedPokemon.level >= 100 || (user.username !== 'Spheal' && user.points < 50)}
+                                className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                                size="sm"
+                              >
+                                {buyingXP ? 'Buying...' : 'Buy 50 XP (50 Points)'}
+                              </Button>
+                              <Button
+                                onClick={() => handleBuyXP(2500)}
+                                disabled={buyingXP || selectedPokemon.level >= 100 || (user.username !== 'Spheal' && user.points < 2500)}
+                                className="bg-blue-700 hover:bg-blue-600 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                                size="sm"
+                              >
+                                {buyingXP ? 'Buying...' : 'Buy 2500 XP (2500 Points)'}
+                              </Button>
+                            </div>
                             <Button
-                              onClick={handleBuyXP}
-                              disabled={buyingXP || selectedPokemon.level >= 100 || (user.username !== 'Spheal' && user.points < 50)}
-                              className="flex-1 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                              onClick={() => setShowCustomXPDialog(true)}
+                              disabled={buyingXP || selectedPokemon.level >= 100}
+                              className="w-full bg-purple-700 hover:bg-purple-600 disabled:bg-gray-600 disabled:cursor-not-allowed"
                               size="sm"
                             >
-                              {buyingXP ? 'Buying...' : 'Buy 50 XP (50 Points)'}
+                              Buy Custom XP
                             </Button>
                           </div>
                         </div>
@@ -1488,13 +1818,57 @@ export default function PokemonWilds() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!activeCardTrade} onOpenChange={() => setActiveCardTrade(null)}>
+        <DialogContent className="max-w-3xl border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-purple-400">Card Trade Request</DialogTitle>
+          </DialogHeader>
+          {activeCardTrade && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Card className="border-2 border-purple-500/30 bg-slate-800/50">
+                  <CardHeader><CardTitle className="text-purple-300 text-lg">They offer</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(activeCardTrade.offeredCards || []).filter(Boolean).slice(0, 6).map((card, idx) => (
+                        <div key={`${card.id}-${idx}`} className="flex items-center gap-2 bg-slate-700/40 rounded p-2">
+                          <img src={card.images?.small || '/placeholder.png'} alt={card.name} className="w-12 h-16 object-cover rounded" />
+                          <div><p className="text-white text-xs font-bold">{card.name}</p></div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-2 border-cyan-500/30 bg-slate-800/50">
+                  <CardHeader><CardTitle className="text-cyan-300 text-lg">For your</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(activeCardTrade.requestedCards || []).filter(Boolean).slice(0, 6).map((card, idx) => (
+                        <div key={`${card.id}-${idx}`} className="flex items-center gap-2 bg-slate-700/40 rounded p-2">
+                          <img src={card.images?.small || '/placeholder.png'} alt={card.name} className="w-12 h-16 object-cover rounded" />
+                          <div><p className="text-white text-xs font-bold">{card.name}</p></div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+              <div className="flex gap-3">
+                <Button onClick={() => handleAcceptCardTrade(activeCardTrade)} className="flex-1 bg-green-600 hover:bg-green-500">Accept Trade</Button>
+                <Button onClick={() => handleDeclineCardTrade(activeCardTrade)} className="flex-1 bg-red-600 hover:bg-red-500">Decline Trade</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Friends Panel Dialog */}
       <Dialog open={showFriendsPanel} onOpenChange={setShowFriendsPanel}>
         <DialogContent className="max-w-4xl max-h-[90vh] border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold text-cyan-400 flex items-center gap-2">
               <Users className="h-6 w-6" />
-              Friends & Battles
+              Friends
             </DialogTitle>
           </DialogHeader>
 
@@ -1527,20 +1901,20 @@ export default function PokemonWilds() {
               {/* Friends List */}
               <Card className="border-2 border-cyan-500/30 bg-slate-800/50">
                 <CardHeader>
-                  <CardTitle className="text-cyan-400">My Friends ({friends.length})</CardTitle>
+                  <CardTitle className="text-cyan-400">Friends ({friends.length})</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {friends.length === 0 ? (
                     <p className="text-gray-400 text-center py-4">No friends yet. Add friends to trade and battle!</p>
                   ) : (
                     <div className="space-y-2">
-                      {friends.map((friend) => (
+                      {friends.filter(Boolean).map((friend) => (
                         <div 
                           key={friend.id}
                           className="flex items-center justify-between p-3 bg-slate-700/50 rounded"
                         >
                           <div>
-                            <p className="text-white font-bold">{friend.username}</p>
+                            <p className="text-white font-bold flex items-center gap-2">{friend.username}{friend.isOnline && <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-400" />}</p>
                             <p className="text-xs text-gray-400">{friend.tradesCompleted || 0} trades completed</p>
                           </div>
                           <div className="flex gap-2">
@@ -1560,6 +1934,93 @@ export default function PokemonWilds() {
                             >
                               ⚔️ Battle
                             </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => handleRemoveFriend(friend)}
+                              className="bg-red-700 hover:bg-red-600 text-xs"
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Friend Requests */}
+              <Card className="border-2 border-yellow-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(234,179,8,0.2)]">
+                <CardHeader>
+                  <CardTitle className="text-yellow-400">Friend Requests ({pendingRequests.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {pendingRequests.length === 0 ? (
+                    <p className="text-cyan-100/50 text-center py-4">No pending requests</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {pendingRequests.filter(Boolean).map((req) => (
+                        <div key={req.id} className="flex items-center justify-between p-3 bg-slate-700/50 rounded">
+                          <span className="text-white font-bold">{req.username}</span>
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={() => handleAcceptFriend(req.id)} className="bg-green-600 hover:bg-green-500">Accept</Button>
+                            <Button size="sm" onClick={() => handleDeclineFriend(req.id)} className="bg-red-600 hover:bg-red-500">Decline</Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Pokemon Wilds Trade Requests */}
+              <Card className="border-2 border-purple-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(168,85,247,0.2)]">
+                <CardHeader>
+                  <CardTitle className="text-purple-400">Pokemon Wilds Trade Requests ({(tradeRequests || []).filter(trade => trade?.type === 'pokemon-trade' || trade?.offeredPokemon || trade?.requestedPokemon).length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(tradeRequests || []).filter(trade => trade?.type === 'pokemon-trade' || trade?.offeredPokemon || trade?.requestedPokemon).length === 0 ? (
+                    <p className="text-cyan-100/50 text-center py-4">No Pokemon Wilds trade requests</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {(tradeRequests || []).filter(Boolean).filter(trade => trade?.type === 'pokemon-trade' || trade?.offeredPokemon || trade?.requestedPokemon).map((trade) => (
+                        <div key={trade.id} className="p-3 bg-slate-700/50 rounded">
+                          <div className="flex items-center justify-between mb-2">
+                            <div>
+                              <p className="text-white font-bold">{trade.fromUsername}</p>
+                              <p className="text-xs text-cyan-100/60">wants to trade Pokemon!</p>
+                            </div>
+                            <Badge className="bg-purple-500">{trade.offeredPokemon?.length || 0} Pokemon</Badge>
+                          </div>
+                          <div className="flex gap-2 mt-2">
+                            <Button size="sm" onClick={() => handleAcceptPokemonTrade(trade)} className="flex-1 bg-green-600 hover:bg-green-500">Accept Trade</Button>
+                            <Button size="sm" onClick={() => handleDeclinePokemonTrade(trade)} className="flex-1 bg-red-600 hover:bg-red-500">Decline</Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Card Trade Requests */}
+              <Card className="border-2 border-purple-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(168,85,247,0.2)]">
+                <CardHeader>
+                  <CardTitle className="text-purple-400">Card Trade Requests ({(tradeRequests || []).filter(trade => trade?.offeredCards || trade?.requestedCards).length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(tradeRequests || []).filter(trade => trade?.offeredCards || trade?.requestedCards).length === 0 ? (
+                    <p className="text-cyan-100/50 text-center py-4">No card trade requests</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {(tradeRequests || []).filter(Boolean).filter(trade => trade?.offeredCards || trade?.requestedCards).map((trade) => (
+                        <div key={trade.id} className="p-3 bg-slate-700/50 rounded">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-white font-bold">{trade.fromUsername}</span>
+                            <Badge className="bg-purple-500">{trade.offeredCards?.length || 0} Cards</Badge>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={() => handleViewCardTrade(trade)} className="w-full bg-purple-500 text-white hover:bg-purple-400">View Trade</Button>
                           </div>
                         </div>
                       ))}
@@ -1569,120 +2030,24 @@ export default function PokemonWilds() {
               </Card>
 
               {/* Battle Requests */}
-              <Card className="border-2 border-red-500/30 bg-slate-800/50">
+              <Card className="border-2 border-red-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(239,68,68,0.2)]">
                 <CardHeader>
                   <CardTitle className="text-red-400">Battle Requests ({battleRequests.length})</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {battleRequests.length === 0 ? (
-                    <p className="text-gray-400 text-center py-4">No battle requests</p>
+                    <p className="text-cyan-100/50 text-center py-4">No battle requests</p>
                   ) : (
                     <div className="space-y-2">
-                      {battleRequests.map(request => (
+                      {battleRequests.filter(Boolean).map(request => (
                         <div key={request.id} className="flex items-center justify-between p-3 bg-slate-700/50 rounded">
                           <div>
                             <p className="text-white font-bold">{request.from.username}</p>
-                            <p className="text-xs text-gray-400">wants to battle!</p>
+                            <p className="text-xs text-cyan-100/60">wants to battle!</p>
                           </div>
                           <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              onClick={() => handleAcceptBattleRequest(request)}
-                              className="bg-green-600 hover:bg-green-500"
-                            >
-                              Accept
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => handleDeclineBattleRequest(request)}
-                              className="bg-gray-600 hover:bg-gray-500"
-                            >
-                              Decline
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Incoming Pokemon Trade Requests - Always visible */}
-              <Card className="border-2 border-purple-500/30 bg-slate-800/50">
-                <CardHeader>
-                  <CardTitle className="text-purple-400">Incoming Pokemon Trade Requests ({tradeRequests?.length || 0})</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {!tradeRequests || tradeRequests.length === 0 ? (
-                    <p className="text-gray-400 text-center py-4">No trade requests</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {tradeRequests.map((trade) => (
-                        <div key={trade.id} className="p-3 bg-slate-700/50 rounded">
-                          <div className="flex items-center justify-between mb-2">
-                            <div>
-                              <p className="text-white font-bold">{trade.fromUsername}</p>
-                              <p className="text-xs text-gray-400">wants to trade Pokemon!</p>
-                            </div>
-                            <Badge className="bg-purple-500">{trade.offeredPokemon?.length || 0} Pokemon</Badge>
-                          </div>
-                          
-                          {/* Show trade details */}
-                          {trade.offeredPokemon && trade.offeredPokemon.length > 0 && (
-                            <div className="flex items-center gap-4 my-2 p-2 bg-slate-800/50 rounded">
-                              <div className="flex-1">
-                                <p className="text-xs text-gray-400 mb-1">They offer:</p>
-                                <div className="flex items-center gap-2">
-                                  <img 
-                                    src={trade.offeredPokemon[0].pokemonData?.sprite} 
-                                    alt={trade.offeredPokemon[0].pokemonData?.displayName}
-                                    className="w-12 h-12"
-                                  />
-                                  <div>
-                                    <p className="text-white text-sm font-bold">{trade.offeredPokemon[0].pokemonData?.displayName}</p>
-                                    <p className="text-gray-400 text-xs">Level {trade.offeredPokemon[0].pokemonData?.level}</p>
-                                  </div>
-                                </div>
-                              </div>
-                              
-                              <span className="text-purple-400">⇄</span>
-                              
-                              <div className="flex-1">
-                                <p className="text-xs text-gray-400 mb-1">For your:</p>
-                                {trade.requestedPokemon && trade.requestedPokemon.length > 0 ? (
-                                  <div className="flex items-center gap-2">
-                                    <img 
-                                      src={trade.requestedPokemon[0].pokemonData?.sprite} 
-                                      alt={trade.requestedPokemon[0].pokemonData?.displayName}
-                                      className="w-12 h-12"
-                                    />
-                                    <div>
-                                      <p className="text-white text-sm font-bold">{trade.requestedPokemon[0].pokemonData?.displayName}</p>
-                                      <p className="text-gray-400 text-xs">Level {trade.requestedPokemon[0].pokemonData?.level}</p>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <p className="text-gray-500 text-sm">Not specified</p>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                          
-                          <div className="flex gap-2 mt-2">
-                            <Button
-                              size="sm"
-                              onClick={() => handleAcceptPokemonTrade(trade)}
-                              className="flex-1 bg-green-600 hover:bg-green-500"
-                            >
-                              Accept Trade
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => handleDeclinePokemonTrade(trade)}
-                              className="flex-1 bg-gray-600 hover:bg-gray-500"
-                            >
-                              Decline
-                            </Button>
+                            <Button size="sm" onClick={() => handleAcceptBattleRequest(request)} className="bg-green-600 hover:bg-green-500">Accept</Button>
+                            <Button size="sm" onClick={() => handleDeclineBattleRequest(request)} className="bg-red-600 hover:bg-red-500">Decline</Button>
                           </div>
                         </div>
                       ))}
@@ -1737,7 +2102,7 @@ export default function PokemonWilds() {
                           <Badge className="mb-1 bg-yellow-500 text-xs">✨</Badge>
                         )}
                         <img src={pokemon.sprite} alt={pokemon.displayName} className="w-16 h-16 mx-auto mb-1" />
-                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}</p>
+                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}{pokemon.isShiny ? ' ✨' : ''}</p>
                         <p className="text-gray-400 text-xs text-center">Lv {pokemon.level}</p>
                       </CardContent>
                     </Card>
@@ -1766,7 +2131,7 @@ export default function PokemonWilds() {
                           <Badge className="mb-1 bg-yellow-500 text-xs">✨</Badge>
                         )}
                         <img src={pokemon.sprite} alt={pokemon.displayName} className="w-16 h-16 mx-auto mb-1" />
-                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}</p>
+                        <p className="text-white font-bold text-xs text-center truncate">{pokemon.nickname || pokemon.displayName}{pokemon.isShiny ? ' ✨' : ''}</p>
                         <p className="text-gray-400 text-xs text-center">Lv {pokemon.level}</p>
                       </CardContent>
                     </Card>
@@ -1837,5 +2202,143 @@ export default function PokemonWilds() {
       </Dialog>
 
     </div>
+
+
+      <Dialog open={showShopDialog} onOpenChange={setShowShopDialog}>
+        <DialogContent className="max-w-4xl max-h-[85vh] border-4 border-emerald-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-emerald-400">Evolution Item Shop</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="h-[60vh] pr-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {shopItems.map((item) => (
+                <Card key={item.itemName} className="border-2 border-emerald-500/30 bg-slate-800/70">
+                  <CardContent className="p-4 text-center space-y-3">
+                    {item.sprite ? (
+                      <img src={item.sprite} alt={item.name} className="w-16 h-16 mx-auto" />
+                    ) : (
+                      <div className="w-16 h-16 mx-auto rounded bg-slate-700" />
+                    )}
+                    <div>
+                      <p className="text-white font-bold">{item.name}</p>
+                      <p className="text-emerald-300 text-sm">500 Points</p>
+                    </div>
+                    <Button
+                      onClick={() => handleBuyEvolutionItem(item.itemName)}
+                      disabled={user?.username !== 'Spheal' && (user?.points ?? 0) < 500}
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-600"
+                    >
+                      Buy
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showInventoryDialog} onOpenChange={setShowInventoryDialog}>
+        <DialogContent className="max-w-4xl max-h-[85vh] border-4 border-orange-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-orange-400">Inventory</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="h-[60vh] pr-4">
+            {inventoryItems.length === 0 ? (
+              <p className="text-slate-300">No evolution items yet.</p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {inventoryItems.map((item) => (
+                  <Card key={item.itemName} className="border-2 border-orange-500/30 bg-slate-800/70">
+                    <CardContent className="p-4 text-center space-y-3">
+                      {item.sprite ? (
+                        <img src={item.sprite} alt={item.name} className="w-16 h-16 mx-auto" />
+                      ) : (
+                        <div className="w-16 h-16 mx-auto rounded bg-slate-700" />
+                      )}
+                      <div>
+                        <p className="text-white font-bold">{item.name}</p>
+                        <p className="text-orange-300 text-sm">x{item.count}</p>
+                      </div>
+                      <Button onClick={() => handleOpenUseItem(item)} className="w-full bg-orange-600 hover:bg-orange-500">
+                        Use
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showUseItemDialog} onOpenChange={setShowUseItemDialog}>
+        <DialogContent className="max-w-3xl max-h-[85vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-purple-400">Use {selectedInventoryItem?.name}</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="h-[55vh] pr-4">
+            {compatiblePokemon.length === 0 ? (
+              <p className="text-slate-300">No Pokemon can use this item right now.</p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {compatiblePokemon.map((pokemon) => (
+                  <Card key={pokemon._id} className="border-2 border-purple-500/30 bg-slate-800/70">
+                    <CardContent className="p-4 text-center space-y-3">
+                      <img src={pokemon.sprite} alt={pokemon.displayName} className="w-20 h-20 mx-auto" />
+                      <div>
+                        <p className="text-white font-bold">{pokemon.nickname || pokemon.displayName}</p>
+                        <p className="text-slate-300 text-sm">Lv {pokemon.level}</p>
+                      </div>
+                      <Button onClick={() => handleUseEvolutionItem(pokemon._id)} className="w-full bg-purple-600 hover:bg-purple-500">
+                        Use Item
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showCustomXPDialog} onOpenChange={setShowCustomXPDialog}>
+        <DialogContent className="max-w-md border-4 border-orange-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-orange-400">Custom XP Purchase</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-orange-500/30 bg-slate-800/60 p-3">
+              <p className="text-sm text-orange-200">Current Points</p>
+              <p className="text-2xl font-bold text-white">{user?.username === 'Spheal' ? '999999+' : (user?.points ?? 0)}</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-orange-300">XP to buy</label>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                value={customXPAmount}
+                onChange={(e) => setCustomXPAmount(e.target.value)}
+                className="border-2 border-orange-500/30 bg-slate-800/70 text-white"
+              />
+              <p className="text-xs text-slate-300">Cost: {Number(customXPAmount) > 0 ? Math.floor(Number(customXPAmount)) : 0} points</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setShowCustomXPDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-orange-600 hover:bg-orange-500 disabled:bg-gray-600"
+                disabled={buyingXP || !Number.isFinite(Number(customXPAmount)) || Math.floor(Number(customXPAmount)) <= 0 || (user?.username !== 'Spheal' && (user?.points ?? 0) < Math.floor(Number(customXPAmount)))}
+                onClick={() => handleBuyXP(customXPAmount)}
+              >
+                {buyingXP ? 'Buying...' : 'Buy Custom XP'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
