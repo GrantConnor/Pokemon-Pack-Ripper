@@ -120,6 +120,7 @@ export default function App() {
   const [tradeFriend, setTradeFriend] = useState(null);
   const [selectedTradeCards, setSelectedTradeCards] = useState([]);
   const [activeTrade, setActiveTrade] = useState(null);
+  const [activePokemonTrade, setActivePokemonTrade] = useState(null);
   const [selectedResponseCards, setSelectedResponseCards] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [tradeSearchWant, setTradeSearchWant] = useState('');
@@ -853,6 +854,76 @@ export default function App() {
       loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error declining trade:', err);
+    }
+  };
+
+  const handleViewPokemonTrade = (trade) => {
+    setActivePokemonTrade(trade);
+  };
+
+  const handleAcceptPokemonTrade = async (trade) => {
+    try {
+      const response = await fetch('/api/friends/accept-pokemon-trade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, tradeId: trade.id })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Error accepting Pokemon trade');
+      alert(data.message || 'Pokemon trade completed');
+      setActivePokemonTrade(null);
+      invalidateFriendsCache();
+      loadFriends({ forceRefresh: true });
+    } catch (err) {
+      alert(err.message || 'Error accepting Pokemon trade');
+    }
+  };
+
+  const handleDeclinePokemonTrade = async (trade) => {
+    try {
+      const response = await fetch('/api/friends/decline-trade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, tradeId: trade.id })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Error declining Pokemon trade');
+      setActivePokemonTrade(null);
+      invalidateFriendsCache();
+      loadFriends({ forceRefresh: true });
+    } catch (err) {
+      alert(err.message || 'Error declining Pokemon trade');
+    }
+  };
+
+  const handleAcceptBattleRequest = async (request) => {
+    try {
+      const response = await fetch('/api/battles/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, requestId: request.id })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Error accepting battle request');
+      window.location.href = `/battle?id=${data.battle.id}`;
+    } catch (err) {
+      alert(err.message || 'Error accepting battle request');
+    }
+  };
+
+  const handleDeclineBattleRequest = async (request) => {
+    try {
+      const response = await fetch('/api/battles/decline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, requestId: request.id })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Error declining battle request');
+      invalidateFriendsCache();
+      loadFriends({ forceRefresh: true });
+    } catch (err) {
+      alert(err.message || 'Error declining battle request');
     }
   };
 
@@ -2366,8 +2437,7 @@ export default function App() {
                               <Badge className="bg-fuchsia-500">{trade.offeredPokemon?.length || 0} Pokemon</Badge>
                             </div>
                             <div className="flex gap-2">
-                              <Button size="sm" onClick={() => handleAcceptPokemonTrade(trade)} className="flex-1 bg-green-500 text-white hover:bg-green-400">Accept</Button>
-                              <Button size="sm" onClick={() => handleDeclinePokemonTrade(trade)} className="flex-1 bg-red-500 text-white hover:bg-red-400">Decline</Button>
+                              <Button size="sm" onClick={() => handleViewPokemonTrade(trade)} className="w-full bg-fuchsia-500 text-white hover:bg-fuchsia-400">View Trade</Button>
                             </div>
                           </div>
                         ))}
@@ -2673,6 +2743,56 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
+
+      <Dialog open={!!activePokemonTrade} onOpenChange={() => setActivePokemonTrade(null)}>
+        <DialogContent className="max-w-2xl border-4 border-fuchsia-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-fuchsia-400">Pokemon Wilds Trade Request</DialogTitle>
+          </DialogHeader>
+          {activePokemonTrade && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Card className="border-2 border-fuchsia-500/30 bg-slate-800/50">
+                  <CardHeader>
+                    <CardTitle className="text-fuchsia-300 text-lg">They offer</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {activePokemonTrade.offeredPokemon?.[0]?.pokemonData ? (
+                      <div className="flex items-center gap-3">
+                        <img src={activePokemonTrade.offeredPokemon[0].pokemonData.sprite} alt={activePokemonTrade.offeredPokemon[0].pokemonData.displayName} className="w-20 h-20" />
+                        <div>
+                          <p className="text-white font-bold">{activePokemonTrade.offeredPokemon[0].pokemonData.displayName}</p>
+                          <p className="text-cyan-100/70 text-sm">Level {activePokemonTrade.offeredPokemon[0].pokemonData.level}</p>
+                        </div>
+                      </div>
+                    ) : <p className="text-cyan-100/60">No offered Pokemon data</p>}
+                  </CardContent>
+                </Card>
+                <Card className="border-2 border-cyan-500/30 bg-slate-800/50">
+                  <CardHeader>
+                    <CardTitle className="text-cyan-300 text-lg">For your</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {activePokemonTrade.requestedPokemon?.[0]?.pokemonData ? (
+                      <div className="flex items-center gap-3">
+                        <img src={activePokemonTrade.requestedPokemon[0].pokemonData.sprite} alt={activePokemonTrade.requestedPokemon[0].pokemonData.displayName} className="w-20 h-20" />
+                        <div>
+                          <p className="text-white font-bold">{activePokemonTrade.requestedPokemon[0].pokemonData.displayName}</p>
+                          <p className="text-cyan-100/70 text-sm">Level {activePokemonTrade.requestedPokemon[0].pokemonData.level}</p>
+                        </div>
+                      </div>
+                    ) : <p className="text-cyan-100/60">No requested Pokemon data</p>}
+                  </CardContent>
+                </Card>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button onClick={() => handleAcceptPokemonTrade(activePokemonTrade)} className="flex-1 bg-green-500 text-white hover:bg-green-400">Accept Trade</Button>
+                <Button onClick={() => handleDeclinePokemonTrade(activePokemonTrade)} className="flex-1 bg-red-500 text-white hover:bg-red-400">Decline Trade</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Trade Modal - Send Trade */}
       <Dialog open={showTradeModal} onOpenChange={setShowTradeModal}>

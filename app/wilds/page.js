@@ -1860,13 +1860,13 @@ export default function PokemonWilds() {
               </Card>
 
               {/* Friend Requests */}
-              <Card className="border-2 border-yellow-500/30 bg-slate-800/50">
+              <Card className="border-2 border-yellow-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(234,179,8,0.2)]">
                 <CardHeader>
                   <CardTitle className="text-yellow-400">Friend Requests ({pendingRequests.length})</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {pendingRequests.length === 0 ? (
-                    <p className="text-gray-400 text-center py-4">No pending requests</p>
+                    <p className="text-cyan-100/50 text-center py-4">No pending requests</p>
                   ) : (
                     <div className="space-y-2">
                       {pendingRequests.map((req) => (
@@ -1874,7 +1874,37 @@ export default function PokemonWilds() {
                           <span className="text-white font-bold">{req.username}</span>
                           <div className="flex gap-2">
                             <Button size="sm" onClick={() => handleAcceptFriend(req.id)} className="bg-green-600 hover:bg-green-500">Accept</Button>
-                            <Button size="sm" onClick={() => handleDeclineFriend(req.id)} className="bg-gray-600 hover:bg-gray-500">Decline</Button>
+                            <Button size="sm" onClick={() => handleDeclineFriend(req.id)} className="bg-red-600 hover:bg-red-500">Decline</Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Pokemon Wilds Trade Requests */}
+              <Card className="border-2 border-purple-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(168,85,247,0.2)]">
+                <CardHeader>
+                  <CardTitle className="text-purple-400">Pokemon Wilds Trade Requests ({(tradeRequests || []).filter(trade => trade?.type === 'pokemon-trade' || trade?.offeredPokemon || trade?.requestedPokemon).length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(tradeRequests || []).filter(trade => trade?.type === 'pokemon-trade' || trade?.offeredPokemon || trade?.requestedPokemon).length === 0 ? (
+                    <p className="text-cyan-100/50 text-center py-4">No Pokemon Wilds trade requests</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {(tradeRequests || []).filter(trade => trade?.type === 'pokemon-trade' || trade?.offeredPokemon || trade?.requestedPokemon).map((trade) => (
+                        <div key={trade.id} className="p-3 bg-slate-700/50 rounded">
+                          <div className="flex items-center justify-between mb-2">
+                            <div>
+                              <p className="text-white font-bold">{trade.fromUsername}</p>
+                              <p className="text-xs text-cyan-100/60">wants to trade Pokemon!</p>
+                            </div>
+                            <Badge className="bg-purple-500">{trade.offeredPokemon?.length || 0} Pokemon</Badge>
+                          </div>
+                          <div className="flex gap-2 mt-2">
+                            <Button size="sm" onClick={() => handleAcceptPokemonTrade(trade)} className="flex-1 bg-green-600 hover:bg-green-500">Accept Trade</Button>
+                            <Button size="sm" onClick={() => handleDeclinePokemonTrade(trade)} className="flex-1 bg-red-600 hover:bg-red-500">Decline</Button>
                           </div>
                         </div>
                       ))}
@@ -1884,24 +1914,24 @@ export default function PokemonWilds() {
               </Card>
 
               {/* Card Trade Requests */}
-              <Card className="border-2 border-violet-500/30 bg-slate-800/50">
+              <Card className="border-2 border-purple-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(168,85,247,0.2)]">
                 <CardHeader>
-                  <CardTitle className="text-violet-400">Card Trade Requests ({(tradeRequests || []).filter(trade => trade?.offeredCards || trade?.requestedCards).length})</CardTitle>
+                  <CardTitle className="text-purple-400">Card Trade Requests ({(tradeRequests || []).filter(trade => trade?.offeredCards || trade?.requestedCards).length})</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {(tradeRequests || []).filter(trade => trade?.offeredCards || trade?.requestedCards).length === 0 ? (
-                    <p className="text-gray-400 text-center py-4">No card trade requests</p>
+                    <p className="text-cyan-100/50 text-center py-4">No card trade requests</p>
                   ) : (
                     <div className="space-y-2">
                       {(tradeRequests || []).filter(trade => trade?.offeredCards || trade?.requestedCards).map((trade) => (
                         <div key={trade.id} className="p-3 bg-slate-700/50 rounded">
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-white font-bold">{trade.fromUsername}</span>
-                            <Badge className="bg-violet-500">{trade.offeredCards?.length || 0} Cards</Badge>
+                            <Badge className="bg-purple-500">{trade.offeredCards?.length || 0} Cards</Badge>
                           </div>
                           <div className="flex gap-2">
                             <Button size="sm" onClick={() => handleAcceptCardTrade(trade)} className="flex-1 bg-green-600 hover:bg-green-500">Accept</Button>
-                            <Button size="sm" onClick={() => handleDeclineCardTrade(trade)} className="flex-1 bg-gray-600 hover:bg-gray-500">Decline</Button>
+                            <Button size="sm" onClick={() => handleDeclineCardTrade(trade)} className="flex-1 bg-red-600 hover:bg-red-500">Decline</Button>
                           </div>
                         </div>
                       ))}
@@ -1911,120 +1941,24 @@ export default function PokemonWilds() {
               </Card>
 
               {/* Battle Requests */}
-              <Card className="border-2 border-red-500/30 bg-slate-800/50">
+              <Card className="border-2 border-red-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(239,68,68,0.2)]">
                 <CardHeader>
                   <CardTitle className="text-red-400">Battle Requests ({battleRequests.length})</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {battleRequests.length === 0 ? (
-                    <p className="text-gray-400 text-center py-4">No battle requests</p>
+                    <p className="text-cyan-100/50 text-center py-4">No battle requests</p>
                   ) : (
                     <div className="space-y-2">
                       {battleRequests.map(request => (
                         <div key={request.id} className="flex items-center justify-between p-3 bg-slate-700/50 rounded">
                           <div>
                             <p className="text-white font-bold">{request.from.username}</p>
-                            <p className="text-xs text-gray-400">wants to battle!</p>
+                            <p className="text-xs text-cyan-100/60">wants to battle!</p>
                           </div>
                           <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              onClick={() => handleAcceptBattleRequest(request)}
-                              className="bg-green-600 hover:bg-green-500"
-                            >
-                              Accept
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => handleDeclineBattleRequest(request)}
-                              className="bg-gray-600 hover:bg-gray-500"
-                            >
-                              Decline
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Pokemon Wilds Trade Requests - Always visible */}
-              <Card className="border-2 border-purple-500/30 bg-slate-800/50">
-                <CardHeader>
-                  <CardTitle className="text-purple-400">Pokemon Wilds Trade Requests ({tradeRequests?.length || 0})</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {!tradeRequests || tradeRequests.length === 0 ? (
-                    <p className="text-gray-400 text-center py-4">No trade requests</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {tradeRequests.map((trade) => (
-                        <div key={trade.id} className="p-3 bg-slate-700/50 rounded">
-                          <div className="flex items-center justify-between mb-2">
-                            <div>
-                              <p className="text-white font-bold">{trade.fromUsername}</p>
-                              <p className="text-xs text-gray-400">wants to trade Pokemon!</p>
-                            </div>
-                            <Badge className="bg-purple-500">{trade.offeredPokemon?.length || 0} Pokemon</Badge>
-                          </div>
-                          
-                          {/* Show trade details */}
-                          {trade.offeredPokemon && trade.offeredPokemon.length > 0 && (
-                            <div className="flex items-center gap-4 my-2 p-2 bg-slate-800/50 rounded">
-                              <div className="flex-1">
-                                <p className="text-xs text-gray-400 mb-1">They offer:</p>
-                                <div className="flex items-center gap-2">
-                                  <img 
-                                    src={trade.offeredPokemon[0].pokemonData?.sprite} 
-                                    alt={trade.offeredPokemon[0].pokemonData?.displayName}
-                                    className="w-12 h-12"
-                                  />
-                                  <div>
-                                    <p className="text-white text-sm font-bold">{trade.offeredPokemon[0].pokemonData?.displayName}</p>
-                                    <p className="text-gray-400 text-xs">Level {trade.offeredPokemon[0].pokemonData?.level}</p>
-                                  </div>
-                                </div>
-                              </div>
-                              
-                              <span className="text-purple-400">⇄</span>
-                              
-                              <div className="flex-1">
-                                <p className="text-xs text-gray-400 mb-1">For your:</p>
-                                {trade.requestedPokemon && trade.requestedPokemon.length > 0 ? (
-                                  <div className="flex items-center gap-2">
-                                    <img 
-                                      src={trade.requestedPokemon[0].pokemonData?.sprite} 
-                                      alt={trade.requestedPokemon[0].pokemonData?.displayName}
-                                      className="w-12 h-12"
-                                    />
-                                    <div>
-                                      <p className="text-white text-sm font-bold">{trade.requestedPokemon[0].pokemonData?.displayName}</p>
-                                      <p className="text-gray-400 text-xs">Level {trade.requestedPokemon[0].pokemonData?.level}</p>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <p className="text-gray-500 text-sm">Not specified</p>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                          
-                          <div className="flex gap-2 mt-2">
-                            <Button
-                              size="sm"
-                              onClick={() => handleAcceptPokemonTrade(trade)}
-                              className="flex-1 bg-green-600 hover:bg-green-500"
-                            >
-                              Accept Trade
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => handleDeclinePokemonTrade(trade)}
-                              className="flex-1 bg-gray-600 hover:bg-gray-500"
-                            >
-                              Decline
-                            </Button>
+                            <Button size="sm" onClick={() => handleAcceptBattleRequest(request)} className="bg-green-600 hover:bg-green-500">Accept</Button>
+                            <Button size="sm" onClick={() => handleDeclineBattleRequest(request)} className="bg-red-600 hover:bg-red-500">Decline</Button>
                           </div>
                         </div>
                       ))}
