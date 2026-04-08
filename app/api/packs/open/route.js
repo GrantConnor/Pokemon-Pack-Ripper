@@ -259,7 +259,7 @@ export function openPack(cards, setId = null) {
     pulledCards.push(rareSlotCard);
   }
 
-  if (setId === 'swsh45' && specialPools.shinyRare.length > 0 && pulledCards.length >= 9 && Math.random() < 0.25) {
+  if (setId === 'swsh45' && specialPools.shinyRare.length > 0 && pulledCards.length >= 9 && Math.random() < 0.075) {
     const shinyVaultCard = getUniqueCard(specialPools.shinyRare) || getRandomCard(specialPools.shinyRare);
     if (shinyVaultCard) {
       pulledCards[pulledCards.length - 2] = shinyVaultCard;

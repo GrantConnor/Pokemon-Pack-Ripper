@@ -12,6 +12,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sparkles, Package, Library, LogOut, Coins, Search, Clock, Eye, Users, Send, X, Check, Star } from 'lucide-react';
 import Link from 'next/link';
+import { getBreakdownValueForRarity } from '@/lib/breakdown-values';
 
 
 const ALL_KNOWN_RARITIES = [
@@ -1007,24 +1008,7 @@ export default function App() {
     }
   };
 
-  const getBreakdownValue = (rarity) => {
-    const breakdownValues = {
-  'Common': 5,
-  'Uncommon': 10,
-  'Rare': 20,
-  'Rare Holo': 20,
-  'Double Rare': 50,
-  'Illustration Rare': 250,
-  'Ultra Rare': 250,
-  'Rare Ultra': 250,
-  'Rare Rainbow': 250,
-  'Special Illustration Rare': 250,
-  'Hyper Rare': 1000,
-  'Rare Secret': 1000,
-  'Secret Rare': 1000
-};
-    return breakdownValues[rarity] || 10;
-  };
+  const getBreakdownValue = (rarity) => getBreakdownValueForRarity(rarity);
 
   const calculateMultiplesBreakdownSummary = () => {
     return groupedAndSortedCollection.reduce((summary, card) => {

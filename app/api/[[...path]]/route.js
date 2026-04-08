@@ -4,6 +4,7 @@ import { connectDB as sharedConnectDB } from '@/lib/mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import { getPointRegenState as sharedGetPointRegenState, refreshAllUsersPointsIfDue as sharedRefreshAllUsersPointsIfDue } from '@/lib/auth';
+import { getBreakdownValueForRarity } from '@/lib/breakdown-values';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -138,23 +139,6 @@ const ACHIEVEMENTS = {
   SEVENTY_FIVE_CARDS: { threshold: 75, reward: 500, name: '75 Unique Cards' },
   HUNDRED_CARDS: { threshold: 100, reward: 750, name: '100 Unique Cards' },
   COMPLETE_SET: { threshold: 'complete', reward: 1500, name: 'Complete Set' }
-};
-
-// Card breakdown values (points awarded for breaking down cards)
-const BREAKDOWN_VALUES = {
-  'Common': 5,
-  'Uncommon': 10,
-  'Rare': 20,
-  'Rare Holo': 20,
-  'Double Rare': 50,
-  'Illustration Rare': 250,
-  'Ultra Rare': 250,
-  'Rare Ultra': 250,
-  'Rare Rainbow': 250,
-  'Special Illustration Rare': 250,
-  'Hyper Rare': 1000,
-  'Rare Secret': 1000,
-  'Secret Rare': 1000
 };
 
 async function connectDB() {
@@ -2806,7 +2790,7 @@ if (pathname.includes('/api/auth/signin')) {
 
       // Calculate points
       const firstCard = cardsToBreakdown[0];
-      const pointValue = BREAKDOWN_VALUES[firstCard.rarity] || 10;
+      const pointValue = getBreakdownValueForRarity(firstCard.rarity);
       const totalPoints = pointValue * amount;
 
       // Remove the specific cards by their pulledAt timestamps
@@ -2852,7 +2836,7 @@ if (pathname.includes('/api/auth/signin')) {
       // Calculate total points from breakdown
       let totalPoints = 0;
       cards.forEach(card => {
-        const pointValue = BREAKDOWN_VALUES[card.rarity] || 10;
+        const pointValue = getBreakdownValueForRarity(card.rarity);
         totalPoints += pointValue;
       });
 

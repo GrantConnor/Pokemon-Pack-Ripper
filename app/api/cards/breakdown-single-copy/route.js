@@ -1,25 +1,10 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { refreshAllUsersPointsIfDue, refreshUserPoints } from '@/lib/auth';
+import { getBreakdownValueForRarity } from '@/lib/breakdown-values';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const BREAKDOWN_VALUES = {
-  'Common': 5,
-  'Uncommon': 10,
-  'Rare': 20,
-  'Rare Holo': 20,
-  'Double Rare': 50,
-  'Illustration Rare': 250,
-  'Ultra Rare': 250,
-  'Rare Ultra': 250,
-  'Rare Rainbow': 250,
-  'Special Illustration Rare': 250,
-  'Hyper Rare': 1000,
-  'Rare Secret': 1000,
-  'Secret Rare': 1000,
-};
 
 export async function POST(request) {
   try {
@@ -44,7 +29,7 @@ export async function POST(request) {
     }
 
     const cardToBreakDown = matches[0];
-    const pointsAwarded = BREAKDOWN_VALUES[cardToBreakDown.rarity] || 5;
+    const pointsAwarded = getBreakdownValueForRarity(cardToBreakDown.rarity);
 
     await users.updateOne(
       { id: userId },
