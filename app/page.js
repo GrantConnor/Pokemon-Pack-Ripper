@@ -487,6 +487,10 @@ export default function App() {
   const cardTradeRequests = useMemo(() => (tradeRequests || []).filter((trade) => trade?.offeredCards || trade?.requestedCards), [tradeRequests]);
   const pokemonTradeRequests = useMemo(() => (tradeRequests || []).filter((trade) => trade?.type === 'pokemon-trade' || trade?.offeredPokemon || trade?.requestedPokemon), [tradeRequests]);
 
+  const tradeOfferCards = useMemo(() => {
+    return [...collection].sort((a, b) => new Date(b.pulledAt || 0) - new Date(a.pulledAt || 0));
+  }, [collection]);
+
 
   const previewOwnedIds = useMemo(() => new Set(collection.map(card => card.id)), [collection]);
 
@@ -768,6 +772,9 @@ export default function App() {
     setTradeFriend(friend);
     setSelectedTradeCards([]);
     setSelectedResponseCards([]);
+    setTradeSearchWant('');
+    setTradeSearchOffer('');
+    setSearchQuery('');
     setShowTradeModal(true); // Open modal first
     
     // Load friend's collection
@@ -960,6 +967,7 @@ export default function App() {
 
   const handleViewFriendProfile = async (friend) => {
     setViewingFriend(friend);
+    setSearchQuery('');
     
     // Load friend's collection
     try {
@@ -2509,6 +2517,9 @@ export default function App() {
           </TabsContent>
 
         </Tabs>
+        <div className="mt-10 pb-6 text-center text-xs text-cyan-100/55">
+          Pokémon and all related names, characters, images, and trademarks are owned by The Pokémon Company. This is an unofficial fan site made by fans.
+        </div>
       </div>
 
       {/* Pack Opening Animation Dialog */}
@@ -2529,13 +2540,13 @@ export default function App() {
 
       {/* Pack Results Dialog */}
       <Dialog open={pulledCards.length > 0} onOpenChange={(open) => { if (!open) closePackResults(); }}>
-        <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_60px_rgba(6,182,212,0.6)]">
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_60px_rgba(6,182,212,0.6)]">
           <DialogHeader>
             <DialogTitle className="text-center text-2xl font-bold text-white bg-gradient-to-r from-cyan-500/20 to-transparent py-3 -mx-6 -mt-6 mb-4 border-b-4 border-cyan-500/50 drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]">
               {pulledCards.length > 1 ? `Opened ${pulledCards.length} Packs!` : 'You pulled these cards!'}
             </DialogTitle>
           </DialogHeader>
-          <ScrollArea className="max-h-[70vh]">
+          <ScrollArea className="max-h-[62vh] pb-2">
             <div className="space-y-6 p-4">
               {pulledCards.map((pack, packIndex) => (
                 <div key={packIndex} className="space-y-3">
@@ -2695,7 +2706,7 @@ export default function App() {
 
       {/* Set Preview Dialog */}
       <Dialog open={!!previewSet} onOpenChange={closePreview}>
-        <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_60px_rgba(6,182,212,0.6)]">
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_60px_rgba(6,182,212,0.6)]">
           <DialogHeader>
             <DialogTitle className="text-center text-2xl font-bold text-white drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]">
               {previewSet?.name} - All Cards
@@ -2724,7 +2735,7 @@ export default function App() {
               </label>
             </div>
           </DialogHeader>
-          <ScrollArea className="max-h-[70vh]">
+          <ScrollArea className="max-h-[62vh] pb-2">
             {previewCards.length === 0 ? (
               <div className="flex items-center justify-center py-20">
                 <Package className="h-20 w-20 text-cyan-400 animate-spin" />
@@ -2908,7 +2919,7 @@ export default function App() {
 
               <ScrollArea className="h-96 border-2 border-purple-500/30 rounded p-2 bg-slate-800/30">
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {groupedAndSortedCollection
+                  {tradeOfferCards
                     .filter(card => !tradeSearchOffer || card.name.toLowerCase().includes(tradeSearchOffer.toLowerCase()))
                     .map((card, index) => {
                       const isSelected = selectedTradeCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
