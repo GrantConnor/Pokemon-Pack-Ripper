@@ -90,9 +90,9 @@ export default function PokemonWilds() {
               .then(res => res.json())
               .then(friendsData => {
                 console.log('📥 Friends loaded on page load:', friendsData);
-                setFriends(friendsData.friends || []);
-                setBattleRequests(friendsData.battleRequests || []);
-                setTradeRequests(friendsData.tradeRequests || []);
+                setFriends((friendsData.friends || []).filter(Boolean));
+                setBattleRequests((friendsData.battleRequests || []).filter(Boolean));
+                setTradeRequests((friendsData.tradeRequests || []).filter(Boolean));
                 setActiveBattle(friendsData.activeBattleId || null);
               })
               .catch(err => console.error('Error loading friends:', err));
@@ -250,16 +250,21 @@ export default function PokemonWilds() {
       const data = await response.json();
       console.log('📥 Friends API response:', data);
       console.log('👥 Friends array:', data.friends);
-      setFriends(data.friends || []);
-      setPendingRequests(data.pendingRequests || []);
-      setBattleRequests(data.battleRequests || []);
-      setTradeRequests(data.tradeRequests || []);
+      setFriends((data.friends || []).filter(Boolean));
+      setPendingRequests((data.pendingRequests || []).filter(Boolean));
+      setBattleRequests((data.battleRequests || []).filter(Boolean));
+      setTradeRequests((data.tradeRequests || []).filter(Boolean));
       setActiveBattle(data.activeBattleId || null);
     } catch (err) {
       console.error('Error loading friends:', err);
     }
   };
 
+
+  const handleSignOut = () => {
+    localStorage.removeItem('userId');
+    window.location.href = '/';
+  };
 
   const loadEvolutionShop = async () => {
     if (!user) return;
@@ -1794,7 +1799,7 @@ export default function PokemonWilds() {
                   <CardHeader><CardTitle className="text-purple-300 text-lg">They offer</CardTitle></CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-2 gap-2">
-                      {(activeCardTrade.offeredCards || []).slice(0, 6).map((card, idx) => (
+                      {(activeCardTrade.offeredCards || []).filter(Boolean).slice(0, 6).map((card, idx) => (
                         <div key={`${card.id}-${idx}`} className="flex items-center gap-2 bg-slate-700/40 rounded p-2">
                           <img src={card.images?.small || '/placeholder.png'} alt={card.name} className="w-12 h-16 object-cover rounded" />
                           <div><p className="text-white text-xs font-bold">{card.name}</p></div>
@@ -1807,7 +1812,7 @@ export default function PokemonWilds() {
                   <CardHeader><CardTitle className="text-cyan-300 text-lg">For your</CardTitle></CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-2 gap-2">
-                      {(activeCardTrade.requestedCards || []).slice(0, 6).map((card, idx) => (
+                      {(activeCardTrade.requestedCards || []).filter(Boolean).slice(0, 6).map((card, idx) => (
                         <div key={`${card.id}-${idx}`} className="flex items-center gap-2 bg-slate-700/40 rounded p-2">
                           <img src={card.images?.small || '/placeholder.png'} alt={card.name} className="w-12 h-16 object-cover rounded" />
                           <div><p className="text-white text-xs font-bold">{card.name}</p></div>
@@ -1872,7 +1877,7 @@ export default function PokemonWilds() {
                     <p className="text-gray-400 text-center py-4">No friends yet. Add friends to trade and battle!</p>
                   ) : (
                     <div className="space-y-2">
-                      {friends.map((friend) => (
+                      {friends.filter(Boolean).map((friend) => (
                         <div 
                           key={friend.id}
                           className="flex items-center justify-between p-3 bg-slate-700/50 rounded"
@@ -1923,7 +1928,7 @@ export default function PokemonWilds() {
                     <p className="text-cyan-100/50 text-center py-4">No pending requests</p>
                   ) : (
                     <div className="space-y-2">
-                      {pendingRequests.map((req) => (
+                      {pendingRequests.filter(Boolean).map((req) => (
                         <div key={req.id} className="flex items-center justify-between p-3 bg-slate-700/50 rounded">
                           <span className="text-white font-bold">{req.username}</span>
                           <div className="flex gap-2">
@@ -1947,7 +1952,7 @@ export default function PokemonWilds() {
                     <p className="text-cyan-100/50 text-center py-4">No Pokemon Wilds trade requests</p>
                   ) : (
                     <div className="space-y-2">
-                      {(tradeRequests || []).filter(trade => trade?.type === 'pokemon-trade' || trade?.offeredPokemon || trade?.requestedPokemon).map((trade) => (
+                      {(tradeRequests || []).filter(Boolean).filter(trade => trade?.type === 'pokemon-trade' || trade?.offeredPokemon || trade?.requestedPokemon).map((trade) => (
                         <div key={trade.id} className="p-3 bg-slate-700/50 rounded">
                           <div className="flex items-center justify-between mb-2">
                             <div>
@@ -1977,7 +1982,7 @@ export default function PokemonWilds() {
                     <p className="text-cyan-100/50 text-center py-4">No card trade requests</p>
                   ) : (
                     <div className="space-y-2">
-                      {(tradeRequests || []).filter(trade => trade?.offeredCards || trade?.requestedCards).map((trade) => (
+                      {(tradeRequests || []).filter(Boolean).filter(trade => trade?.offeredCards || trade?.requestedCards).map((trade) => (
                         <div key={trade.id} className="p-3 bg-slate-700/50 rounded">
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-white font-bold">{trade.fromUsername}</span>
@@ -2003,7 +2008,7 @@ export default function PokemonWilds() {
                     <p className="text-cyan-100/50 text-center py-4">No battle requests</p>
                   ) : (
                     <div className="space-y-2">
-                      {battleRequests.map(request => (
+                      {battleRequests.filter(Boolean).map(request => (
                         <div key={request.id} className="flex items-center justify-between p-3 bg-slate-700/50 rounded">
                           <div>
                             <p className="text-white font-bold">{request.from.username}</p>
