@@ -20,7 +20,7 @@ const HS_SETS = ['hgss1', 'hgss2', 'hgss3', 'hgss4'];
 const HS_SET_NAMES = ['HeartGold & SoulSilver', 'HS—Unleashed', 'HS—Undaunted', 'HS—Triumphant'];
 
 
-function openPack(cards, setId = null) {
+export function openPack(cards, setId = null) {
   const nonEnergyCards = cards.filter(card => card.supertype !== 'Energy');
   if (nonEnergyCards.length < 10) {
     const pulledCards = [];
@@ -62,7 +62,19 @@ function openPack(cards, setId = null) {
     return godPack;
   };
 
-  const rarityValue = (card) => String(card?.rarity || '').toLowerCase();
+  const rarityValue = (card) => String(card?.rarity || '').trim().toLowerCase();
+  const subtypeValues = (card) => Array.isArray(card?.subtypes) ? card.subtypes.map(subtype => String(subtype).trim().toLowerCase()) : [];
+  const isRegularRareShinyCard = (card) => {
+    const rarity = rarityValue(card);
+    const subtypes = subtypeValues(card);
+    const isShiningFatesVault = card?.set?.id === 'swsh45sv';
+    const isFullArtStyle = subtypes.some(subtype => ['v', 'vmax', 'gx', 'ex', 'ultra beast'].includes(subtype));
+    return (rarity === 'rare shiny' || rarity === 'shiny rare' || subtypes.includes('shiny rare') || (isShiningFatesVault && rarity.includes('shiny'))) && !isFullArtStyle;
+  };
+  const isRareHoloVFamilyCard = (card) => {
+    const rarity = String(card?.rarity || '').trim();
+    return rarity.includes('Rare Holo VMAX') || rarity.includes('Rare Holo V');
+  };
   const isStandardRareCard = (card) => {
     const rarity = rarityValue(card);
     return rarity === 'rare' || rarity === 'rare holo';
@@ -73,12 +85,13 @@ function openPack(cards, setId = null) {
     if (rarity === 'rare' || rarity === 'rare holo') return false;
     return (
       rarity.includes('double rare') ||
-      rarity.includes('shiny rare') ||
+      isRegularRareShinyCard(card) ||
       (rarity.includes('illustration rare') && !rarity.includes('special')) ||
       rarity.includes('special illustration rare') ||
       rarity.includes('ultra rare') ||
       rarity.includes('rare ultra') ||
       rarity.includes('rare holo ex') ||
+      isRareHoloVFamilyCard(card) ||
       rarity.includes('rare rainbow') ||
       rarity.includes('hyper rare') ||
       rarity.includes('secret rare') ||
@@ -104,7 +117,7 @@ function openPack(cards, setId = null) {
     illustrationRare: nonEnergyCards.filter(card => rarityValue(card).includes('illustration rare') && !rarityValue(card).includes('special')),
     specialIllustrationRare: nonEnergyCards.filter(card => rarityValue(card).includes('special illustration rare')),
     ultraRare: nonEnergyCards.filter(card => rarityValue(card).includes('ultra rare') || rarityValue(card).includes('rare ultra')),
-    shinyRare: nonEnergyCards.filter(card => rarityValue(card).includes('shiny rare')),
+    shinyRare: nonEnergyCards.filter(isRegularRareShinyCard),
     amazingRare: nonEnergyCards.filter(card => rarityValue(card).includes('amazing rare')),
     radiantRare: nonEnergyCards.filter(card => rarityValue(card).includes('radiant rare')),
     rarePrismStar: nonEnergyCards.filter(card => rarityValue(card).includes('rare prism star')),
@@ -113,7 +126,10 @@ function openPack(cards, setId = null) {
     legend: nonEnergyCards.filter(card => rarityValue(card).includes('legend')),
     rainbowRare: nonEnergyCards.filter(card => rarityValue(card).includes('rare rainbow')),
     hyperRare: nonEnergyCards.filter(card => rarityValue(card).includes('hyper rare')),
-    secretRare: nonEnergyCards.filter(card => rarityValue(card).includes('secret rare') || rarityValue(card).includes('rare secret')),
+    secretRare: nonEnergyCards.filter(card => {
+      const rarity = rarityValue(card);
+      return rarity.includes('secret rare') || rarity.includes('rare secret') || isRareHoloVFamilyCard(card);
+    }),
   };
 
   const godPackPool = [
@@ -240,6 +256,13 @@ function openPack(cards, setId = null) {
 
   if (rareSlotCard) {
     pulledCards.push(rareSlotCard);
+  }
+
+  if (setId === 'swsh45' && specialPools.shinyRare.length > 0 && pulledCards.length >= 9 && Math.random() < 0.25) {
+    const shinyVaultCard = getUniqueCard(specialPools.shinyRare) || getRandomCard(specialPools.shinyRare);
+    if (shinyVaultCard) {
+      pulledCards[pulledCards.length - 2] = shinyVaultCard;
+    }
   }
 
   return pulledCards.filter(Boolean).slice(0, 10);
