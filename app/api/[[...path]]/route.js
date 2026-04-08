@@ -3,6 +3,7 @@ import { ObjectId } from 'mongodb';
 import { connectDB as sharedConnectDB } from '@/lib/mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
+import { getPointRegenState as sharedGetPointRegenState, refreshAllUsersPointsIfDue as sharedRefreshAllUsersPointsIfDue } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -213,34 +214,20 @@ function logAuth(event, details = {}) {
   }
 }
 
-// Calculate regenerated points based on time elapsed
-function calculateRegeneratedPoints(user) {
-  if (user.username === 'Spheal') {
-    return 999999; // Unlimited points for owner
-  }
-  
-  const now = new Date().getTime();
-  const lastRefresh = new Date(user.lastPointsRefresh || user.createdAt).getTime();
-  const timeElapsed = now - lastRefresh;
-  const hoursElapsed = timeElapsed / POINTS_REGEN_INTERVAL;
-  const pointsToAdd = Math.floor(hoursElapsed * POINTS_REGEN_RATE);
-  
-  return user.points + pointsToAdd;
+function getPointRegenState(user, nowMs = Date.now()) {
+  return sharedGetPointRegenState(user, nowMs);
 }
 
-// Calculate time until next point regeneration
+function calculateRegeneratedPoints(user) {
+  return getPointRegenState(user).points;
+}
+
 function calculateNextPointsTime(user) {
-  if (user.username === 'Spheal') {
-    return 0; // No waiting for owner
-  }
-  
-  const now = new Date().getTime();
-  const lastRefresh = new Date(user.lastPointsRefresh || user.createdAt).getTime();
-  const timeElapsed = now - lastRefresh;
-  const timeSinceLastPoint = timeElapsed % POINTS_REGEN_INTERVAL;
-  const timeUntilNext = POINTS_REGEN_INTERVAL - timeSinceLastPoint;
-  
-  return Math.ceil(timeUntilNext / 1000); // Return seconds until next point
+  return getPointRegenState(user).nextPointsIn;
+}
+
+async function refreshAllUsersPointsIfDue(database, nowMs = Date.now()) {
+  return sharedRefreshAllUsersPointsIfDue(database, nowMs);
 }
 
 // Check and award achievements for a specific set (single-fire guaranteed)
