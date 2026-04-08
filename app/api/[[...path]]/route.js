@@ -352,12 +352,27 @@ function openPack(cards, setId = null) {
   const rares = nonEnergyCards.filter(c => c.rarity === 'Rare' || c.rarity === 'Rare Holo');
   const doubleRares = nonEnergyCards.filter(c => c.rarity && (c.rarity.includes('Double Rare') || c.rarity.toLowerCase().includes(' ex')));
   const illustrationRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Illustration Rare') && !c.rarity.includes('Special'));
-  const shinyRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Shiny Rare'));
+  const shinyRares = nonEnergyCards.filter(c => {
+    const rarity = String(c.rarity || '').toLowerCase();
+    const subtypes = Array.isArray(c.subtypes) ? c.subtypes.map(s => String(s).toLowerCase()) : [];
+    const isRegularRareShiny = rarity === 'rare shiny' || rarity === 'shiny rare' || subtypes.includes('shiny rare');
+    const isShiningFatesVault = c.set?.id === 'swsh45sv';
+    const isFullArtStyle = subtypes.some(s => ['v', 'vmax', 'gx', 'ex', 'ultra beast'].includes(s));
+    return (isRegularRareShiny || (isShiningFatesVault && rarity.includes('shiny'))) && !isFullArtStyle;
+  });
   const ultraRares = nonEnergyCards.filter(c => c.rarity && (c.rarity.includes('Ultra Rare') || c.rarity.includes('Rare Ultra')));
   const rainbowRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Rare Rainbow'));
   const specialIllustrationRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Special Illustration Rare'));
   const hyperRares = nonEnergyCards.filter(c => c.rarity && c.rarity.includes('Hyper Rare'));
-  const secretRares = nonEnergyCards.filter(c => c.rarity && (c.rarity.includes('Rare Secret') || c.rarity.includes('Secret Rare')));
+  const secretRares = nonEnergyCards.filter(c => {
+    const rarity = String(c.rarity || '');
+    return (
+      rarity.includes('Rare Secret') ||
+      rarity.includes('Secret Rare') ||
+      rarity.includes('Rare Holo V') ||
+      rarity.includes('Rare Holo VMAX')
+    );
+  });
 
   const pulledCards = [];
   const pulledCardIds = new Set(); // Track pulled card IDs to prevent duplicates
@@ -522,17 +537,11 @@ function openPack(cards, setId = null) {
   }
 
   // Shining Fates special rule:
-  // 25% chance to replace the last non-rare, non-reverse slot with a Shiny Rare.
+  // 25% chance to replace ONLY the second-last card with a regular Rare Shiny.
   if (setId === 'swsh45' && shinyRares.length > 0 && Math.random() < 0.25) {
     const shinyCard = getUniqueCard(shinyRares);
-    if (shinyCard) {
-      for (let i = pulledCards.length - 1; i >= 0; i -= 1) {
-        const card = pulledCards[i];
-        if (!card?.isReverseHolo && (card?.rarity === 'Common' || card?.rarity === 'Uncommon')) {
-          pulledCards[i] = shinyCard;
-          break;
-        }
-      }
+    if (shinyCard && pulledCards.length >= 9) {
+      pulledCards[pulledCards.length - 2] = shinyCard;
     }
   }
 
