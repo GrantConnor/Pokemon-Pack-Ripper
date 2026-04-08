@@ -1,0 +1,12 @@
+{
+  "status": "passed",
+  "checked": [
+    "offline accrual every 2 hours",
+    "max points cap enforcement",
+    "Spheal exemption",
+    "global sweep updates all users",
+    "global sweep cooldown lock",
+    "per-user refresh before mutations",
+    "scheduled Netlify sweep presence"
+  ]
+}

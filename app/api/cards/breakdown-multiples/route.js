@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
+import { refreshAllUsersPointsIfDue, refreshUserPoints } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,11 +29,14 @@ export async function POST(request) {
     }
 
     const database = await connectDB();
+    await refreshAllUsersPointsIfDue(database);
     const users = database.collection('users');
-    const user = await users.findOne({ id: userId }, { projection: { collection: 1 } });
+    let user = await users.findOne({ id: userId }, { projection: { _id: 1, id: 1, username: 1, points: 1, createdAt: 1, lastPointsRefresh: 1, collection: 1 } });
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
+
+    user = await refreshUserPoints(users, user);
 
     const collection = Array.isArray(user.collection) ? user.collection : [];
     const grouped = new Map();
