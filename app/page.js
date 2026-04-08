@@ -74,7 +74,7 @@ function clearLocalCache(key) {
 function setsCacheKey() { return 'cache:sets:v1'; }
 function collectionCacheKey(userId) { return `cache:collection:${userId}:v1`; }
 function friendsCacheKey(userId) { return `cache:friends:${userId}:v1`; }
-function previewCardsCacheKey(setId) { return `cache:preview-cards:${setId}:v1`; }
+function previewCardsCacheKey(setId) { return `cache:preview-cards:${setId}:v2`; }
 
 export default function App() {
   const [user, setUser] = useState(null);

@@ -2039,6 +2039,17 @@ if (pathname.includes('/api/auth/signin')) {
           timeout: EXTERNAL_API_TIMEOUT,
         });
         allCards = [...allCards, ...shinyVaultResponse.data.data];
+      } else if (setId === 'swsh45') {
+        // Merge Shining Fates + Shiny Vault
+        const shiningFatesResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:swsh45&pageSize=250`, {
+          timeout: EXTERNAL_API_TIMEOUT,
+        });
+        allCards = [...shiningFatesResponse.data.data];
+
+        const shinyVaultResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:swsh45sv&pageSize=250`, {
+          timeout: EXTERNAL_API_TIMEOUT,
+        });
+        allCards = [...allCards, ...shinyVaultResponse.data.data];
       } else if (setId === 'swsh12pt5') {
         // Merge Crown Zenith + Crown Zenith Galarian Gallery
         const crownZenithResponse = await axios.get(`${POKEMON_TCG_API}/cards?q=set.id:swsh12pt5&pageSize=250`, {
