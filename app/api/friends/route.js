@@ -48,10 +48,18 @@ export async function GET(request) {
     ]);
 
     const onlineThreshold = Date.now() - 60 * 1000;
-    const friendsWithPresence = friends.map((friend) => ({
-      ...friend,
-      isOnline: !!friend.lastSeenAt && new Date(friend.lastSeenAt).getTime() >= onlineThreshold,
-    }));
+    const friendsWithPresence = friends
+      .map((friend) => ({
+        ...friend,
+        isOnline: !!friend.lastSeenAt && new Date(friend.lastSeenAt).getTime() >= onlineThreshold,
+      }))
+      .sort((a, b) => {
+        if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
+        const aSeen = a.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0;
+        const bSeen = b.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0;
+        if (aSeen !== bSeen) return bSeen - aSeen;
+        return (a.username || '').localeCompare(b.username || '');
+      });
 
     return NextResponse.json({
       friends: friendsWithPresence,

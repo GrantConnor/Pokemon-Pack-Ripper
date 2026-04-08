@@ -10,6 +10,16 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sparkles, ArrowLeft, Clock, Users } from 'lucide-react';
 import Link from 'next/link';
 
+function sortFriendsByOnline(friends = []) {
+  return [...friends].sort((a, b) => {
+    if (!!a?.isOnline !== !!b?.isOnline) return a?.isOnline ? -1 : 1;
+    const aSeen = a?.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0;
+    const bSeen = b?.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0;
+    if (aSeen !== bSeen) return bSeen - aSeen;
+    return (a?.username || '').localeCompare(b?.username || '');
+  });
+}
+
 export default function PokemonWilds() {
   const [user, setUser] = useState(null);
   const [spawn, setSpawn] = useState(null);
@@ -100,7 +110,7 @@ export default function PokemonWilds() {
               .then(res => res.json())
               .then(friendsData => {
                 console.log('📥 Friends loaded on page load:', friendsData);
-                setFriends((friendsData.friends || []).filter(Boolean));
+                setFriends(sortFriendsByOnline((friendsData.friends || []).filter(Boolean)));
                 setBattleRequests((friendsData.battleRequests || []).filter(Boolean));
                 setTradeRequests((friendsData.tradeRequests || []).filter(Boolean));
                 setActiveBattle(friendsData.activeBattleId || null);
@@ -281,7 +291,7 @@ export default function PokemonWilds() {
       const data = await response.json();
       console.log('📥 Friends API response:', data);
       console.log('👥 Friends array:', data.friends);
-      setFriends((data.friends || []).filter(Boolean));
+      setFriends(sortFriendsByOnline((data.friends || []).filter(Boolean)));
       setPendingRequests((data.pendingRequests || []).filter(Boolean));
       setBattleRequests((data.battleRequests || []).filter(Boolean));
       setTradeRequests((data.tradeRequests || []).filter(Boolean));

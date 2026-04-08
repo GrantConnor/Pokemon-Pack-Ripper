@@ -1525,10 +1525,18 @@ export async function GET(request) {
         .find({ id: { $in: friendIds } })
         .project({ id: 1, username: 1, tradesCompleted: 1, lastSeenAt: 1 })
         .toArray();
-      const friendsWithPresence = friends.map(friend => ({
-        ...friend,
-        isOnline: !!friend.lastSeenAt && new Date(friend.lastSeenAt).getTime() >= onlineThreshold,
-      }));
+      const friendsWithPresence = friends
+        .map(friend => ({
+          ...friend,
+          isOnline: !!friend.lastSeenAt && new Date(friend.lastSeenAt).getTime() >= onlineThreshold,
+        }))
+        .sort((a, b) => {
+          if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
+          const aSeen = a.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0;
+          const bSeen = b.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0;
+          if (aSeen !== bSeen) return bSeen - aSeen;
+          return (a.username || '').localeCompare(b.username || '');
+        });
 
       // Get pending request details
       const requestIds = user.friendRequests || [];
@@ -3875,7 +3883,11 @@ if (pathname.includes('/api/auth/signin')) {
 
       const applyStatChanges = (move, userKey, foeKey) => {
         if (!move.statChanges?.length) return;
-        const targetMode = getMoveTargetMode(move) === 'self' ? 'self' : (getMoveTargetMode(move) === 'target' ? 'target' : inferStatTarget(move));
+        const baseTargetMode = getMoveTargetMode(move);
+        const inferredTargetMode = inferStatTarget(move);
+        const targetMode = baseTargetMode === 'self'
+          ? 'self'
+          : (baseTargetMode === 'target' ? inferredTargetMode : inferredTargetMode);
         for (const statChange of move.statChanges) {
           const statKey = formatStatKey(statChange.stat);
           if (!statKey) continue;
