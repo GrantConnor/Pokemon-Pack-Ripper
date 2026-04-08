@@ -98,6 +98,7 @@ export default function App() {
   const [earnedAchievements, setEarnedAchievements] = useState(null);
   const [previewSet, setPreviewSet] = useState(null);
   const [previewCards, setPreviewCards] = useState([]);
+  const [previewSearchQuery, setPreviewSearchQuery] = useState('');
   
   // Collection filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -468,6 +469,51 @@ export default function App() {
     });
     return Array.from(sets.entries()).map(([id, name]) => ({ id, name }));
   }, [collection]);
+
+
+  const previewOwnedIds = useMemo(() => new Set(collection.map(card => card.id)), [collection]);
+
+  const sortedPreviewCards = useMemo(() => {
+    const rarityOrder = {
+      'Common': 1,
+      'Uncommon': 2,
+      'Rare': 3,
+      'Rare Holo': 4,
+      'Rare Holo EX': 5,
+      'Double Rare': 6,
+      'Illustration Rare': 7,
+      'Special Illustration Rare': 8,
+      'Ultra Rare': 9,
+      'Rare Ultra': 10,
+      'Rare Rainbow': 11,
+      'Hyper Rare': 12,
+      'Secret Rare': 13,
+      'Rare Secret': 14,
+      'Amazing Rare': 15,
+      'Rare BREAK': 16,
+      'Rare Prism Star': 17,
+      'ACE SPEC Rare': 18,
+      'Shiny Rare': 19,
+      'Radiant Rare': 20,
+      'LEGEND': 21,
+    };
+
+    const term = previewSearchQuery.trim().toLowerCase();
+    return [...previewCards]
+      .filter(card => {
+        if (!term) return true;
+        return (card.name || '').toLowerCase().includes(term)
+          || (card.number || '').toLowerCase().includes(term)
+          || (card.rarity || '').toLowerCase().includes(term)
+          || (card.types || []).some(type => type.toLowerCase().includes(term));
+      })
+      .sort((a, b) => {
+        const rarityA = rarityOrder[a.rarity] || 999;
+        const rarityB = rarityOrder[b.rarity] || 999;
+        if (rarityA !== rarityB) return rarityA - rarityB;
+        return (a.number || '').localeCompare(b.number || '', undefined, { numeric: true, sensitivity: 'base' });
+      });
+  }, [previewCards, previewSearchQuery]);
 
   const uniqueTypes = useMemo(() => {
     const types = new Set();
@@ -1361,6 +1407,7 @@ export default function App() {
   const closePreview = () => {
     setPreviewSet(null);
     setPreviewCards([]);
+    setPreviewSearchQuery('');
   };
 
   const handleCardClick = (card) => {
@@ -2476,18 +2523,35 @@ export default function App() {
             <p className="text-center text-cyan-100/70 font-medium mt-2">
               {previewCards.length} cards available in this set
             </p>
+            <p className="text-center text-cyan-300/80 text-sm mt-1">
+              Sorted by rarity
+            </p>
+            <div className="pt-4 px-2">
+              <Input
+                value={previewSearchQuery}
+                onChange={(e) => setPreviewSearchQuery(e.target.value)}
+                placeholder="Search cards in this set..."
+                className="bg-slate-800/80 border-cyan-500/40 text-white placeholder:text-cyan-200/50"
+              />
+            </div>
           </DialogHeader>
           <ScrollArea className="max-h-[70vh]">
             {previewCards.length === 0 ? (
               <div className="flex items-center justify-center py-20">
                 <Package className="h-20 w-20 text-cyan-400 animate-spin" />
               </div>
+            ) : sortedPreviewCards.length === 0 ? (
+              <div className="flex items-center justify-center py-20 text-cyan-100/70 font-medium">
+                No cards match your search.
+              </div>
             ) : (
               <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 p-4">
-                {previewCards.map((card) => (
+                {sortedPreviewCards.map((card) => {
+                  const isOwned = previewOwnedIds.has(card.id);
+                  return (
                   <Card 
                     key={card.id} 
-                    className="overflow-hidden hover:scale-105 transition-transform bg-slate-800/50 backdrop-blur-sm border-2 border-cyan-500/30 hover:border-cyan-500 hover:shadow-[0_0_20px_rgba(6,182,212,0.5)] cursor-pointer"
+                    className={`overflow-hidden hover:scale-105 transition-transform backdrop-blur-sm border-2 cursor-pointer ${isOwned ? 'bg-slate-700/40 border-slate-500/50 opacity-65 grayscale-[0.35]' : 'bg-slate-800/50 border-cyan-500/30 hover:border-cyan-500 hover:shadow-[0_0_20px_rgba(6,182,212,0.5)]'}`}
                     onClick={() => setSelectedCard(card)}
                   >
                     <div className="relative">
@@ -2496,12 +2560,17 @@ export default function App() {
                         alt={card.name}
                         className="w-full h-auto"
                       />
+                      {isOwned && (
+                        <Badge className="absolute top-1 right-1 bg-emerald-600/90 text-white border border-emerald-300/70 text-[10px] shadow-[0_0_10px_rgba(0,0,0,0.5)]">
+                          Owned
+                        </Badge>
+                      )}
                       <Badge className={`absolute bottom-1 left-1 border border-cyan-500/50 text-[10px] shadow-[0_0_10px_rgba(0,0,0,0.5)] ${getRarityColor(card.rarity)}`}>
                         {card.rarity || 'Common'}
                       </Badge>
                     </div>
                   </Card>
-                ))}
+                )})}
               </div>
             )}
           </ScrollArea>
