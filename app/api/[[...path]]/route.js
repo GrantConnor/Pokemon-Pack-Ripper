@@ -3853,7 +3853,13 @@ if (pathname.includes('/api/auth/signin')) {
           if (!destinationPokemon) continue;
           destinationPokemon.statStages = destinationPokemon.statStages || defaultStatStages();
           destinationPokemon.statStages[statKey] = clampStage((destinationPokemon.statStages[statKey] || 0) + statChange.change);
-          const changeWord = statChange.change > 0 ? 'rose' : 'fell';
+          let changeWord = 'rose';
+          if (statChange.change >= 3) changeWord = 'rose drastically';
+          else if (statChange.change === 2) changeWord = 'rose sharply';
+          else if (statChange.change === 1) changeWord = 'rose';
+          else if (statChange.change === -1) changeWord = 'fell';
+          else if (statChange.change === -2) changeWord = 'harshly fell';
+          else if (statChange.change <= -3) changeWord = 'severely fell';
           pushLog({ type: 'stat', message: `${destinationPokemon.displayName}'s ${statKey} ${changeWord}!` });
         }
       };
@@ -4054,26 +4060,31 @@ if (pathname.includes('/api/auth/signin')) {
           const previousHP = actingPokemon.currentHP;
           actingPokemon.currentHP = Math.min(actingPokemon.maxHP, actingPokemon.currentHP + healed);
           pushLog({ type: 'heal', message: `${actingPokemon.displayName} healed for ${actingPokemon.currentHP - previousHP} HP!` });
-          if (moveTypeMultiplier === 0) {
+
+          if (targetMode === 'target' && moveTypeMultiplier === 0) {
             pushLog({ type: 'effectiveness', message: `Does not affect ${defendingPokemon.displayName}.` });
             continue;
           }
+
           applyStatChanges(selectedMove, actingKey, defendingKey);
-          if (ailment && ailmentChance > 0 && Math.random() * 100 <= ailmentChance && applyAilment(defendingPokemon, ailment)) {
-            pushLog({ type: 'status', message: `${defendingPokemon.displayName} is now ${ailment}.` });
+          const ailmentTarget = targetMode === 'self' ? actingPokemon : defendingPokemon;
+          if (ailment && ailmentChance > 0 && Math.random() * 100 <= ailmentChance && applyAilment(ailmentTarget, ailment)) {
+            const ailmentLabel = ailment === 'paralysis' ? 'paralyzed' : ailment;
+            pushLog({ type: 'status', message: `${ailmentTarget.displayName} is now ${ailmentLabel}.` });
           }
           continue;
         }
 
         if ((!selectedMove.power || selectedMove.damageClass === 'status') && !healingFraction) {
-          if (moveTypeMultiplier === 0) {
+          if (targetMode === 'target' && moveTypeMultiplier === 0) {
             pushLog({ type: 'effectiveness', message: `Does not affect ${defendingPokemon.displayName}.` });
             continue;
           }
           applyStatChanges(selectedMove, actingKey, defendingKey);
-          if (ailment && ailmentChance > 0 && Math.random() * 100 <= ailmentChance && applyAilment(defendingPokemon, ailment)) {
+          const ailmentTarget = targetMode === 'self' ? actingPokemon : defendingPokemon;
+          if (ailment && ailmentChance > 0 && Math.random() * 100 <= ailmentChance && applyAilment(ailmentTarget, ailment)) {
             const ailmentLabel = ailment === 'paralysis' ? 'paralyzed' : ailment;
-            pushLog({ type: 'status', message: `${defendingPokemon.displayName} is now ${ailmentLabel}.` });
+            pushLog({ type: 'status', message: `${ailmentTarget.displayName} is now ${ailmentLabel}.` });
           }
           continue;
         }
