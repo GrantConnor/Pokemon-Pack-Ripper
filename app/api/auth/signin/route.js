@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { connectDB, getSanitizedMongoConfig } from '@/lib/mongodb';
-import { normalizeUsername, escapeRegex, verifyPassword, hashPassword, calculateRegeneratedPoints, calculateNextPointsTime, makeAuthTraceId } from '@/lib/auth';
+import { normalizeUsername, escapeRegex, verifyPassword, hashPassword, getPointRegenState, refreshAllUsersPointsIfDue, makeAuthTraceId } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -26,6 +26,7 @@ export async function POST(request) {
     }
 
     const db = await connectDB();
+    await refreshAllUsersPointsIfDue(db);
     const users = db.collection('users');
 
     let user = await users.findOne(
@@ -92,15 +93,15 @@ export async function POST(request) {
       user.id = resolvedUserId;
     }
 
-    const newPoints = calculateRegeneratedPoints(user);
-    const nextPointsIn = calculateNextPointsTime(user);
+    const regen = getPointRegenState(user);
 
-    if (newPoints !== user.points) {
+    if (regen.points !== user.points || regen.lastPointsRefresh !== (user.lastPointsRefresh || user.createdAt)) {
       await users.updateOne(
         { _id: user._id },
-        { $set: { points: newPoints, lastPointsRefresh: new Date().toISOString() } }
+        { $set: { points: regen.points, lastPointsRefresh: regen.lastPointsRefresh } }
       );
-      user.points = newPoints;
+      user.points = regen.points;
+      user.lastPointsRefresh = regen.lastPointsRefresh;
     }
 
     return NextResponse.json({
@@ -110,7 +111,7 @@ export async function POST(request) {
         id: resolvedUserId,
         username: user.username,
         points: user.points,
-        nextPointsIn,
+        nextPointsIn: regen.nextPointsIn,
         setAchievements: user.setAchievements || {},
         tradesCompleted: user.tradesCompleted || 0,
       }

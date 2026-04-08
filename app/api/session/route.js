@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
-import { calculateRegeneratedPoints, calculateNextPointsTime } from '@/lib/auth';
+import { getPointRegenState, refreshAllUsersPointsIfDue } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,6 +15,8 @@ export async function GET(request) {
     }
 
     const database = await connectDB();
+    await refreshAllUsersPointsIfDue(database);
+
     let user = await database.collection('users').findOne(
       { id: userId },
       {
@@ -34,21 +36,20 @@ export async function GET(request) {
       return NextResponse.json({ authenticated: false });
     }
 
-    const newPoints = calculateRegeneratedPoints(user);
-    const nextPointsIn = calculateNextPointsTime(user);
+    const regen = getPointRegenState(user);
 
-    if (newPoints !== user.points) {
+    if (regen.points !== user.points || regen.lastPointsRefresh !== (user.lastPointsRefresh || user.createdAt)) {
       await database.collection('users').updateOne(
         { id: userId },
         {
           $set: {
-            points: newPoints,
-            lastPointsRefresh: new Date().toISOString(),
+            points: regen.points,
+            lastPointsRefresh: regen.lastPointsRefresh,
           },
         }
       );
-      user.points = newPoints;
-      user.lastPointsRefresh = new Date().toISOString();
+      user.points = regen.points;
+      user.lastPointsRefresh = regen.lastPointsRefresh;
     }
 
     return NextResponse.json({
@@ -57,7 +58,7 @@ export async function GET(request) {
         id: user.id,
         username: user.username,
         points: user.points,
-        nextPointsIn,
+        nextPointsIn: regen.nextPointsIn,
         setAchievements: user.setAchievements || {},
         tradesCompleted: user.tradesCompleted || 0,
       },

@@ -1596,9 +1596,11 @@ export async function GET(request) {
         }
       }
       
+      await refreshAllUsersPointsIfDue(database);
+
       const users = await database.collection('users')
         .find({})
-        .project({ id: 1, username: 1, points: 1, createdAt: 1 })
+        .project({ id: 1, username: 1, points: 1, createdAt: 1, lastPointsRefresh: 1 })
         .sort({ createdAt: -1 })
         .toArray();
 
@@ -1613,6 +1615,7 @@ export async function GET(request) {
       }
 
       const database = await connectDB();
+      await refreshAllUsersPointsIfDue(database);
       let user = await database.collection('users').findOne({ id: userId });
       
       if (!user) {
@@ -1620,20 +1623,20 @@ export async function GET(request) {
       }
 
       // Calculate and update regenerated points
-      const newPoints = calculateRegeneratedPoints(user);
-      const nextPointsIn = calculateNextPointsTime(user);
+      const regen = getPointRegenState(user);
       
-      if (newPoints !== user.points) {
+      if (regen.points !== user.points || regen.lastPointsRefresh !== (user.lastPointsRefresh || user.createdAt)) {
         await database.collection('users').updateOne(
           { id: userId },
           { 
             $set: { 
-              points: newPoints,
-              lastPointsRefresh: new Date().toISOString()
+              points: regen.points,
+              lastPointsRefresh: regen.lastPointsRefresh
             } 
           }
         );
-        user.points = newPoints;
+        user.points = regen.points;
+        user.lastPointsRefresh = regen.lastPointsRefresh;
       }
 
       return NextResponse.json({ 
@@ -1642,7 +1645,7 @@ export async function GET(request) {
           id: user.id, 
           username: user.username,
           points: user.points,
-          nextPointsIn: nextPointsIn,
+          nextPointsIn: regen.nextPointsIn,
           setAchievements: user.setAchievements || {},
           tradesCompleted: user.tradesCompleted || 0
         } 
@@ -2018,6 +2021,7 @@ if (pathname.includes('/api/auth/signin')) {
       }
 
       const database = await connectDB();
+      await refreshAllUsersPointsIfDue(database);
       let user = await database.collection('users').findOne({ id: userId });
 
       if (!user) {
