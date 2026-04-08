@@ -71,7 +71,7 @@ function clearLocalCache(key) {
   try { localStorage.removeItem(key); } catch {}
 }
 
-function setsCacheKey() { return 'cache:sets:v1'; }
+function setsCacheKey() { return 'cache:sets:v2'; }
 function collectionCacheKey(userId) { return `cache:collection:${userId}:v1`; }
 function friendsCacheKey(userId) { return `cache:friends:${userId}:v1`; }
 function previewCardsCacheKey(setId) { return `cache:preview-cards:${setId}:v2`; }
