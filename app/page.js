@@ -99,6 +99,7 @@ export default function App() {
   const [previewSet, setPreviewSet] = useState(null);
   const [previewCards, setPreviewCards] = useState([]);
   const [previewSearchQuery, setPreviewSearchQuery] = useState('');
+  const [hideOwnedInPreview, setHideOwnedInPreview] = useState(false);
   
   // Collection filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -501,6 +502,7 @@ export default function App() {
     const term = previewSearchQuery.trim().toLowerCase();
     return [...previewCards]
       .filter(card => {
+        if (hideOwnedInPreview && previewOwnedIds.has(card.id)) return false;
         if (!term) return true;
         return (card.name || '').toLowerCase().includes(term)
           || (card.number || '').toLowerCase().includes(term)
@@ -513,7 +515,7 @@ export default function App() {
         if (rarityA !== rarityB) return rarityA - rarityB;
         return (a.number || '').localeCompare(b.number || '', undefined, { numeric: true, sensitivity: 'base' });
       });
-  }, [previewCards, previewSearchQuery]);
+  }, [previewCards, previewSearchQuery, hideOwnedInPreview, previewOwnedIds]);
 
   const uniqueTypes = useMemo(() => {
     const types = new Set();
@@ -1408,6 +1410,7 @@ export default function App() {
     setPreviewSet(null);
     setPreviewCards([]);
     setPreviewSearchQuery('');
+    setHideOwnedInPreview(false);
   };
 
   const handleCardClick = (card) => {
@@ -2526,13 +2529,22 @@ export default function App() {
             <p className="text-center text-cyan-300/80 text-sm mt-1">
               Sorted by rarity
             </p>
-            <div className="pt-4 px-2">
+            <div className="pt-4 px-2 space-y-3">
               <Input
                 value={previewSearchQuery}
                 onChange={(e) => setPreviewSearchQuery(e.target.value)}
                 placeholder="Search cards in this set..."
                 className="bg-slate-800/80 border-cyan-500/40 text-white placeholder:text-cyan-200/50"
               />
+              <label className="flex items-center justify-center gap-2 text-sm text-cyan-100/80 select-none">
+                <input
+                  type="checkbox"
+                  checked={hideOwnedInPreview}
+                  onChange={(e) => setHideOwnedInPreview(e.target.checked)}
+                  className="h-4 w-4 accent-cyan-400"
+                />
+                Hide/Show Owned
+              </label>
             </div>
           </DialogHeader>
           <ScrollArea className="max-h-[70vh]">
