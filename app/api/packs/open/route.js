@@ -99,6 +99,7 @@ export function openPack(cards, setId = null) {
       rarity.includes('rare secret') ||
       rarity.includes('amazing rare') ||
       rarity.includes('ace spec') ||
+      rarity.includes('legend') ||
       rarity.includes('rare')
     );
   };
@@ -195,6 +196,7 @@ export function openPack(cards, setId = null) {
       ];
   const availableSpecialPoolKeys = weightedSpecialTable.filter(entry => specialPools[entry.key]?.length > 0);
   const hitSpecialTable = Math.random() < (isHsPack ? 0.05 : 0.10);
+  const hitHsLegendOrSecretTable = isHsPack && Math.random() < 0.05;
 
   const pickWeightedSpecialPoolKey = () => {
     const totalWeight = availableSpecialPoolKeys.reduce((sum, entry) => sum + entry.weight, 0);
@@ -218,7 +220,12 @@ export function openPack(cards, setId = null) {
   }
 
   let rareSlotCard = null;
-  if (legacyHitRare && hitSpecialTable && availableSpecialPoolKeys.length) {
+  if (legacyHitRare && isHsPack && hitHsLegendOrSecretTable && availableSpecialPoolKeys.length) {
+    const selectedPoolKey = pickWeightedSpecialPoolKey();
+    if (selectedPoolKey) {
+      rareSlotCard = getUniqueCard(specialPools[selectedPoolKey]) || getRandomCard(specialPools[selectedPoolKey]);
+    }
+  } else if (legacyHitRare && !isHsPack && hitSpecialTable && availableSpecialPoolKeys.length) {
     const selectedPoolKey = pickWeightedSpecialPoolKey();
     if (selectedPoolKey) {
       rareSlotCard = getUniqueCard(specialPools[selectedPoolKey]);
@@ -231,17 +238,10 @@ export function openPack(cards, setId = null) {
       : getUniqueCard(standardRares);
   }
 
-  if (legacyHitRare && !rareSlotCard && availableSpecialPoolKeys.length) {
-    if (isHsPack) {
-      for (const entry of availableSpecialPoolKeys) {
-        rareSlotCard = getUniqueCard(specialPools[entry.key]) || getRandomCard(specialPools[entry.key]);
-        if (rareSlotCard) break;
-      }
-    } else {
-      for (const entry of availableSpecialPoolKeys) {
-        rareSlotCard = getUniqueCard(specialPools[entry.key]);
-        if (rareSlotCard) break;
-      }
+  if (legacyHitRare && !rareSlotCard && availableSpecialPoolKeys.length && !isHsPack) {
+    for (const entry of availableSpecialPoolKeys) {
+      rareSlotCard = getUniqueCard(specialPools[entry.key]);
+      if (rareSlotCard) break;
     }
   }
 
