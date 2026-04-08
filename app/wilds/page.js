@@ -34,6 +34,7 @@ export default function PokemonWilds() {
   const [friendSearchTerm, setFriendSearchTerm] = useState('');
   const [showFriendsPanel, setShowFriendsPanel] = useState(false);
   const [activeTrade, setActiveTrade] = useState(null);
+  const [activeCardTrade, setActiveCardTrade] = useState(null);
   const [selectedPokemonForTrade, setSelectedPokemonForTrade] = useState([]);
   const [viewingFriendPokemon, setViewingFriendPokemon] = useState(null);
   const [friendPokemonList, setFriendPokemonList] = useState([]);
@@ -418,6 +419,11 @@ export default function PokemonWilds() {
     }
   };
 
+
+
+  const handleViewCardTrade = (trade) => {
+    setActiveCardTrade(trade);
+  };
   const handleAcceptCardTrade = async (trade) => {
     try {
       const response = await fetch('/api/trades/accept', {
@@ -440,6 +446,7 @@ export default function PokemonWilds() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, tradeId: trade.id })
       });
+      setActiveCardTrade(null);
       loadFriends();
     } catch (err) {
       console.error('Error declining card trade:', err);
@@ -495,7 +502,7 @@ export default function PokemonWilds() {
 
       const data = await response.json();
       if (response.ok) {
-        console.log('Trade request sent!');
+        alert('Pokemon Wilds trade request sent!');
         setShowTradeDialog(false);
         setMySelectedPokemon(null);
         setPartnerSelectedPokemon(null);
@@ -1075,6 +1082,9 @@ export default function PokemonWilds() {
                 >
                   <Sparkles className="mr-2 h-4 w-4" />
                   My Pokemon ({myPokemon.length})
+                </Button>
+                <Button onClick={handleSignOut} className="bg-slate-700 hover:bg-slate-600 border border-cyan-400/40 text-white ml-auto lg:ml-0">
+                  Sign Out
                 </Button>
               </div>
             </div>
@@ -1772,6 +1782,50 @@ export default function PokemonWilds() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!activeCardTrade} onOpenChange={() => setActiveCardTrade(null)}>
+        <DialogContent className="max-w-3xl border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-purple-400">Card Trade Request</DialogTitle>
+          </DialogHeader>
+          {activeCardTrade && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Card className="border-2 border-purple-500/30 bg-slate-800/50">
+                  <CardHeader><CardTitle className="text-purple-300 text-lg">They offer</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(activeCardTrade.offeredCards || []).slice(0, 6).map((card, idx) => (
+                        <div key={`${card.id}-${idx}`} className="flex items-center gap-2 bg-slate-700/40 rounded p-2">
+                          <img src={card.images?.small || '/placeholder.png'} alt={card.name} className="w-12 h-16 object-cover rounded" />
+                          <div><p className="text-white text-xs font-bold">{card.name}</p></div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-2 border-cyan-500/30 bg-slate-800/50">
+                  <CardHeader><CardTitle className="text-cyan-300 text-lg">For your</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(activeCardTrade.requestedCards || []).slice(0, 6).map((card, idx) => (
+                        <div key={`${card.id}-${idx}`} className="flex items-center gap-2 bg-slate-700/40 rounded p-2">
+                          <img src={card.images?.small || '/placeholder.png'} alt={card.name} className="w-12 h-16 object-cover rounded" />
+                          <div><p className="text-white text-xs font-bold">{card.name}</p></div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+              <div className="flex gap-3">
+                <Button onClick={() => handleAcceptCardTrade(activeCardTrade)} className="flex-1 bg-green-600 hover:bg-green-500">Accept Trade</Button>
+                <Button onClick={() => handleDeclineCardTrade(activeCardTrade)} className="flex-1 bg-red-600 hover:bg-red-500">Decline Trade</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Friends Panel Dialog */}
       <Dialog open={showFriendsPanel} onOpenChange={setShowFriendsPanel}>
         <DialogContent className="max-w-4xl max-h-[90vh] border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
@@ -1930,8 +1984,7 @@ export default function PokemonWilds() {
                             <Badge className="bg-purple-500">{trade.offeredCards?.length || 0} Cards</Badge>
                           </div>
                           <div className="flex gap-2">
-                            <Button size="sm" onClick={() => handleAcceptCardTrade(trade)} className="flex-1 bg-green-600 hover:bg-green-500">Accept</Button>
-                            <Button size="sm" onClick={() => handleDeclineCardTrade(trade)} className="flex-1 bg-red-600 hover:bg-red-500">Decline</Button>
+                            <Button size="sm" onClick={() => handleViewCardTrade(trade)} className="w-full bg-purple-500 text-white hover:bg-purple-400">View Trade</Button>
                           </div>
                         </div>
                       ))}
