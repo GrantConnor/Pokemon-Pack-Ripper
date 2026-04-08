@@ -113,6 +113,7 @@ export default function App() {
   const [pendingRequests, setPendingRequests] = useState([]);
   const [sentRequests, setSentRequests] = useState([]);
   const [tradeRequests, setTradeRequests] = useState([]);
+  const [battleRequests, setBattleRequests] = useState([]);
   const [friendUsername, setFriendUsername] = useState('');
   const [friendMessage, setFriendMessage] = useState('');
   const [showTradeModal, setShowTradeModal] = useState(false);
@@ -472,6 +473,10 @@ export default function App() {
   }, [collection]);
 
 
+  const cardTradeRequests = useMemo(() => (tradeRequests || []).filter((trade) => trade?.offeredCards || trade?.requestedCards), [tradeRequests]);
+  const pokemonTradeRequests = useMemo(() => (tradeRequests || []).filter((trade) => trade?.type === 'pokemon-trade' || trade?.offeredPokemon || trade?.requestedPokemon), [tradeRequests]);
+
+
   const previewOwnedIds = useMemo(() => new Set(collection.map(card => card.id)), [collection]);
 
   const sortedPreviewCards = useMemo(() => {
@@ -618,6 +623,7 @@ export default function App() {
           setPendingRequests(cachedFriends.pendingRequests || []);
           setSentRequests(cachedFriends.sentRequests || []);
           setTradeRequests(cachedFriends.tradeRequests || []);
+          setBattleRequests(cachedFriends.battleRequests || []);
           return cachedFriends;
         }
       }
@@ -631,6 +637,7 @@ export default function App() {
       setPendingRequests(data.pendingRequests || []);
       setSentRequests(data.sentRequests || []);
       setTradeRequests(data.tradeRequests || []);
+      setBattleRequests(data.battleRequests || []);
       if (data.activeBattleId) {
         window.location.href = `/battle?id=${data.activeBattleId}`;
         return data;
@@ -640,6 +647,7 @@ export default function App() {
         pendingRequests: data.pendingRequests || [],
         sentRequests: data.sentRequests || [],
         tradeRequests: data.tradeRequests || [],
+        battleRequests: data.battleRequests || [],
       });
       return data;
     } catch (err) {
@@ -2217,7 +2225,7 @@ export default function App() {
               {/* Friends List */}
               <Card className="border-2 border-cyan-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(6,182,212,0.2)]">
                 <CardHeader>
-                  <CardTitle className="text-cyan-400">My Friends ({friends.length})</CardTitle>
+                  <CardTitle className="text-cyan-400">Friends ({friends.length})</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ScrollArea className="h-40">
@@ -2237,16 +2245,28 @@ export default function App() {
                                 <p className="text-xs text-cyan-400">{friend.tradesCompleted || 0} trades completed</p>
                               </div>
                             </div>
-                            <Button
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenTradeModal(friend);
-                              }}
-                              className="bg-purple-500 text-white hover:bg-purple-400 text-xs"
-                            >
-                              Trade
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenTradeModal(friend);
+                                }}
+                                className="bg-purple-500 text-white hover:bg-purple-400 text-xs"
+                              >
+                                Trade
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveFriend(friend);
+                                }}
+                                className="bg-red-600 text-white hover:bg-red-500 text-xs"
+                              >
+                                Remove
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -2296,15 +2316,15 @@ export default function App() {
               {/* Trade Requests */}
               <Card className="border-2 border-purple-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(168,85,247,0.2)]">
                 <CardHeader>
-                  <CardTitle className="text-purple-400">Trade Requests ({tradeRequests.length})</CardTitle>
+                  <CardTitle className="text-purple-400">Card Trade Requests ({cardTradeRequests.length})</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ScrollArea className="h-40">
-                    {tradeRequests.length === 0 ? (
+                    {cardTradeRequests.length === 0 ? (
                       <p className="text-cyan-100/50 text-center py-4">No trade requests</p>
                     ) : (
                       <div className="space-y-2">
-                        {tradeRequests.map((trade) => (
+                        {cardTradeRequests.map((trade) => (
                           <div key={trade.id} className="p-2 bg-slate-700/50 rounded">
                             <div className="flex items-center justify-between mb-1">
                               <span className="text-white font-semibold">{trade.fromUsername}</span>
@@ -2321,6 +2341,62 @@ export default function App() {
                             >
                               View Trade
                             </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+
+              <Card className="border-2 border-fuchsia-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(217,70,239,0.2)]">
+                <CardHeader>
+                  <CardTitle className="text-fuchsia-400">Pokemon Wilds Trade Requests ({pokemonTradeRequests.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-40">
+                    {pokemonTradeRequests.length === 0 ? (
+                      <p className="text-cyan-100/50 text-center py-4">No Pokemon Wilds trade requests</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {pokemonTradeRequests.map((trade) => (
+                          <div key={trade.id} className="p-2 bg-slate-700/50 rounded">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-white font-semibold">{trade.fromUsername}</span>
+                              <Badge className="bg-fuchsia-500">{trade.offeredPokemon?.length || 0} Pokemon</Badge>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={() => handleAcceptPokemonTrade(trade)} className="flex-1 bg-green-500 text-white hover:bg-green-400">Accept</Button>
+                              <Button size="sm" onClick={() => handleDeclinePokemonTrade(trade)} className="flex-1 bg-red-500 text-white hover:bg-red-400">Decline</Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+
+              <Card className="border-2 border-red-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(239,68,68,0.2)]">
+                <CardHeader>
+                  <CardTitle className="text-red-400">Battle Requests ({battleRequests.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-40">
+                    {battleRequests.length === 0 ? (
+                      <p className="text-cyan-100/50 text-center py-4">No battle requests</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {battleRequests.map((request) => (
+                          <div key={request.id} className="flex items-center justify-between p-2 bg-slate-700/50 rounded">
+                            <div>
+                              <span className="text-white font-semibold">{request.from.username}</span>
+                              <p className="text-xs text-cyan-100/60">wants to battle</p>
+                            </div>
+                            <div className="flex gap-1">
+                              <Button size="sm" onClick={() => handleAcceptBattleRequest(request)} className="bg-green-500 text-white hover:bg-green-400">Accept</Button>
+                              <Button size="sm" onClick={() => handleDeclineBattleRequest(request)} className="bg-red-500 text-white hover:bg-red-400">Decline</Button>
+                            </div>
                           </div>
                         ))}
                       </div>

@@ -390,6 +390,76 @@ export default function PokemonWilds() {
     }
   };
 
+
+
+  const handleAcceptFriend = async (friendId) => {
+    try {
+      await fetch('/api/friends/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, friendId })
+      });
+      loadFriends();
+    } catch (err) {
+      console.error('Error accepting friend:', err);
+    }
+  };
+
+  const handleDeclineFriend = async (friendId) => {
+    try {
+      await fetch('/api/friends/decline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, friendId })
+      });
+      loadFriends();
+    } catch (err) {
+      console.error('Error declining friend:', err);
+    }
+  };
+
+  const handleAcceptCardTrade = async (trade) => {
+    try {
+      const response = await fetch('/api/trades/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, tradeId: trade.id })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Error accepting card trade');
+      loadFriends();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeclineCardTrade = async (trade) => {
+    try {
+      await fetch('/api/trades/decline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, tradeId: trade.id })
+      });
+      loadFriends();
+    } catch (err) {
+      console.error('Error declining card trade:', err);
+    }
+  };
+
+  const handleRemoveFriend = async (friend) => {
+    if (!confirm(`Remove ${friend.username} from your friends list?`)) return;
+    try {
+      await fetch('/api/friends/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, friendId: friend.id })
+      });
+      loadFriends();
+    } catch (err) {
+      console.error('Error removing friend:', err);
+    }
+  };
+
   const handleViewFriendPokemon = async (friend) => {
     try {
       const response = await fetch(`/api/wilds/my-pokemon?userId=${friend.id}`);
@@ -1708,7 +1778,7 @@ export default function PokemonWilds() {
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold text-cyan-400 flex items-center gap-2">
               <Users className="h-6 w-6" />
-              Friends & Battles
+              Friends
             </DialogTitle>
           </DialogHeader>
 
@@ -1741,7 +1811,7 @@ export default function PokemonWilds() {
               {/* Friends List */}
               <Card className="border-2 border-cyan-500/30 bg-slate-800/50">
                 <CardHeader>
-                  <CardTitle className="text-cyan-400">My Friends ({friends.length})</CardTitle>
+                  <CardTitle className="text-cyan-400">Friends ({friends.length})</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {friends.length === 0 ? (
@@ -1774,6 +1844,64 @@ export default function PokemonWilds() {
                             >
                               ⚔️ Battle
                             </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => handleRemoveFriend(friend)}
+                              className="bg-red-700 hover:bg-red-600 text-xs"
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Friend Requests */}
+              <Card className="border-2 border-yellow-500/30 bg-slate-800/50">
+                <CardHeader>
+                  <CardTitle className="text-yellow-400">Friend Requests ({pendingRequests.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {pendingRequests.length === 0 ? (
+                    <p className="text-gray-400 text-center py-4">No pending requests</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {pendingRequests.map((req) => (
+                        <div key={req.id} className="flex items-center justify-between p-3 bg-slate-700/50 rounded">
+                          <span className="text-white font-bold">{req.username}</span>
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={() => handleAcceptFriend(req.id)} className="bg-green-600 hover:bg-green-500">Accept</Button>
+                            <Button size="sm" onClick={() => handleDeclineFriend(req.id)} className="bg-gray-600 hover:bg-gray-500">Decline</Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Card Trade Requests */}
+              <Card className="border-2 border-violet-500/30 bg-slate-800/50">
+                <CardHeader>
+                  <CardTitle className="text-violet-400">Card Trade Requests ({(tradeRequests || []).filter(trade => trade?.offeredCards || trade?.requestedCards).length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {(tradeRequests || []).filter(trade => trade?.offeredCards || trade?.requestedCards).length === 0 ? (
+                    <p className="text-gray-400 text-center py-4">No card trade requests</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {(tradeRequests || []).filter(trade => trade?.offeredCards || trade?.requestedCards).map((trade) => (
+                        <div key={trade.id} className="p-3 bg-slate-700/50 rounded">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-white font-bold">{trade.fromUsername}</span>
+                            <Badge className="bg-violet-500">{trade.offeredCards?.length || 0} Cards</Badge>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={() => handleAcceptCardTrade(trade)} className="flex-1 bg-green-600 hover:bg-green-500">Accept</Button>
+                            <Button size="sm" onClick={() => handleDeclineCardTrade(trade)} className="flex-1 bg-gray-600 hover:bg-gray-500">Decline</Button>
                           </div>
                         </div>
                       ))}
@@ -1821,10 +1949,10 @@ export default function PokemonWilds() {
                 </CardContent>
               </Card>
 
-              {/* Incoming Pokemon Trade Requests - Always visible */}
+              {/* Pokemon Wilds Trade Requests - Always visible */}
               <Card className="border-2 border-purple-500/30 bg-slate-800/50">
                 <CardHeader>
-                  <CardTitle className="text-purple-400">Incoming Pokemon Trade Requests ({tradeRequests?.length || 0})</CardTitle>
+                  <CardTitle className="text-purple-400">Pokemon Wilds Trade Requests ({tradeRequests?.length || 0})</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {!tradeRequests || tradeRequests.length === 0 ? (
