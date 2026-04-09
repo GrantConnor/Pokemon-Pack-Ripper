@@ -204,7 +204,7 @@ export default function SafariZonePage() {
               <ul className="list-disc pl-6 text-sm text-emerald-100/70 space-y-1">
                 <li>Instanced per user</li>
                 <li>Pokémon respawn every 20 to 60 seconds</li>
-                <li>1/1000 shiny odds</li>
+                <li>1/800 shiny odds</li>
                 <li>3 Poké Snacks per run for bonus catch rate</li>
               </ul>
               <Button onClick={enterSafariZone} disabled={loading || actionLoading} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
@@ -227,7 +227,7 @@ export default function SafariZonePage() {
               <Card className="border border-yellow-400/40 bg-slate-900/60">
                 <CardContent className="pt-6 space-y-2">
                   <div className="flex items-center gap-2 text-yellow-300 font-bold"><Candy className="h-4 w-4" /> Poké Snacks: {zone.snacksRemaining ?? 0}</div>
-                  <div className="flex items-center gap-2 text-cyan-300 font-bold"><Sparkles className="h-4 w-4" /> Shiny Odds: 1 / 1000</div>
+                  <div className="flex items-center gap-2 text-cyan-300 font-bold"><Sparkles className="h-4 w-4" /> Shiny Odds: 1 / 800</div>
                   {countdown && <div className="flex items-center gap-2 text-emerald-200 font-bold"><Clock className="h-4 w-4" /> Next spawn in {countdown}</div>}
                 </CardContent>
               </Card>

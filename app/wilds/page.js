@@ -2247,10 +2247,11 @@ export default function PokemonWilds() {
             <p>Spend <span className="font-bold text-yellow-300">2000 points</span> to start a private Safari Zone run.</p>
             <ul className="list-disc pl-5 space-y-1 text-slate-300">
               <li>Instanced per user</li>
-              <li>Random biome background and spawn table</li>
-              <li>Pokémon respawn every 20 to 60 seconds</li>
-              <li>3 Poké Snacks per run to boost catch rate</li>
+              <li>Random biome</li>
+              <li>Pokemon respawn every 20-60 seconds</li>
+              <li>3 poke snacks per run to boost catch rate</li>
               <li>Safari run lasts 10 minutes</li>
+              <li>Pokemon now have catch rates depending on rarity.</li>
             </ul>
             <p className="font-semibold text-lime-200">Spend 2000 points to enter Safari Zone?</p>
           </div>
