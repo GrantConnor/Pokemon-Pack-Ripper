@@ -278,7 +278,7 @@ export default function PokemonWilds() {
     loadFriends();
     const interval = setInterval(() => {
       loadFriends({ forceRefresh: true });
-    }, 5000);
+    }, 2000);
 
     return () => clearInterval(interval);
   }, [user]);
@@ -287,7 +287,7 @@ export default function PokemonWilds() {
     loadLeaderboard();
     const interval = setInterval(() => {
       loadLeaderboard();
-    }, 15000);
+    }, 12000);
 
     return () => clearInterval(interval);
   }, []);
@@ -896,7 +896,7 @@ export default function PokemonWilds() {
 
   const handleEnterSafariZone = async () => {
     if (!user?.id) return;
-    const confirmed = window.confirm('Spend 5000 points to enter a new Safari Zone instance?');
+    const confirmed = window.confirm('Spend 2000 points to enter a new Safari Zone instance?');
     if (!confirmed) return;
     try {
       const response = await fetch('/api/safari-zone/entry', {
@@ -2244,7 +2244,7 @@ export default function PokemonWilds() {
             <DialogTitle className="text-2xl font-bold text-lime-300">Safari Zone</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 text-sm text-slate-200">
-            <p>Spend <span className="font-bold text-yellow-300">5000 points</span> to start a private Safari Zone run.</p>
+            <p>Spend <span className="font-bold text-yellow-300">2000 points</span> to start a private Safari Zone run.</p>
             <ul className="list-disc pl-5 space-y-1 text-slate-300">
               <li>Instanced per user</li>
               <li>Random biome background and spawn table</li>
@@ -2252,7 +2252,7 @@ export default function PokemonWilds() {
               <li>3 Poké Snacks per run to boost catch rate</li>
               <li>Safari run lasts 10 minutes</li>
             </ul>
-            <p className="font-semibold text-lime-200">Spend 5000 points to enter Safari Zone?</p>
+            <p className="font-semibold text-lime-200">Spend 2000 points to enter Safari Zone?</p>
           </div>
           <div className="flex gap-3">
             <Button onClick={handleEnterSafariZone} className="flex-1 bg-lime-600 hover:bg-lime-500 text-white font-bold">Yes</Button>
