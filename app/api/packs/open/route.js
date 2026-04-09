@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { connectDB } from '@/lib/mongodb';
 import { getCardsForSet, getPackCost } from '@/lib/pokemon-tcg';
 import { refreshAllUsersPointsIfDue, refreshUserPoints } from '@/lib/auth';
+import { applyDailyObjectiveEvent } from '@/lib/daily-objectives';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -342,6 +343,9 @@ export async function POST(request) {
       }
     );
 
+    const dailyObjectiveResult = await applyDailyObjectiveEvent(users, userId, 'open-pack', { count: packCount });
+    const finalPointsRemaining = newPoints + (dailyObjectiveResult?.pointsAwarded || 0);
+
     const revealId = uuidv4();
     await database.collection('pack_reveals').insertOne({
       id: revealId,
@@ -349,7 +353,7 @@ export async function POST(request) {
       cards: cardsWithTimestamp,
       packs: packsWithTimestamps,
       isBulk: !!bulk,
-      pointsRemaining: newPoints,
+      pointsRemaining: finalPointsRemaining,
       createdAt: new Date().toISOString(),
       revealed: false,
     });
@@ -360,9 +364,10 @@ export async function POST(request) {
       cards: cardsWithTimestamp,
       packs: packsWithTimestamps,
       isBulk: bulk,
-      pointsRemaining: newPoints,
+      pointsRemaining: finalPointsRemaining,
       achievements: null,
       xpApplied: false,
+      dailyObjectivePointsAwarded: dailyObjectiveResult?.pointsAwarded || 0,
     });
   } catch (error) {
     return NextResponse.json({

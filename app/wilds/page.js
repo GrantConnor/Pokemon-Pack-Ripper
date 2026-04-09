@@ -52,6 +52,8 @@ export default function PokemonWilds() {
   const [massOutbreak, setMassOutbreak] = useState(null);
   const [showPlayerCard, setShowPlayerCard] = useState(false);
   const [playerCard, setPlayerCard] = useState(null);
+  const [showDailyObjectives, setShowDailyObjectives] = useState(false);
+  const [dailyObjectives, setDailyObjectives] = useState(null);
   const [viewingFriendPokemon, setViewingFriendPokemon] = useState(null);
   const [friendPokemonList, setFriendPokemonList] = useState([]);
   const [battleRequests, setBattleRequests] = useState([]);
@@ -126,6 +128,18 @@ export default function PokemonWilds() {
     }
   };
 
+
+  const loadDailyObjectives = async (resolvedUserId = user?.id) => {
+    if (!resolvedUserId) return;
+    try {
+      const response = await fetch(`/api/daily-objectives?userId=${resolvedUserId}`);
+      const data = await response.json();
+      setDailyObjectives(data.dailyObjectives || null);
+    } catch (err) {
+      console.error('Error loading daily objectives:', err);
+    }
+  };
+
   const handleSetFavoritePokemon = async (pokemon) => {
     try {
       const pokemonId = pokemon?._id || pokemon?.id;
@@ -162,6 +176,7 @@ export default function PokemonWilds() {
             loadCurrentSpawn();
             loadMyPokemon(data.user.id);
             loadLeaderboard();
+            loadDailyObjectives(data.user.id);
             
             fetch(`/api/friends?userId=${data.user.id}`)
               .then(res => res.json())
@@ -239,6 +254,16 @@ export default function PokemonWilds() {
 
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    loadDailyObjectives(user.id);
+    const interval = setInterval(() => {
+      loadDailyObjectives(user.id);
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [user?.id]);
 
   useEffect(() => {
     if (activeBattle && !showBattleScreen) {
@@ -1215,6 +1240,12 @@ export default function PokemonWilds() {
                   <Sparkles className="mr-2 h-4 w-4" />
                   My Pokemon ({myPokemon.length})
                 </Button>
+                <Button onClick={() => setShowDailyObjectives(true)} className="bg-amber-600 hover:bg-amber-500">
+                  Daily Objectives
+                  {dailyObjectives?.objectives?.some((objective) => objective.completed && objective.rewardGranted) && (
+                    <span className="ml-2 inline-flex h-2.5 w-2.5 rounded-full bg-green-300" />
+                  )}
+                </Button>
                 <Button onClick={handleSignOut} className="bg-slate-700 hover:bg-slate-600 border border-cyan-400/40 text-white ml-auto lg:ml-0">
                   Sign Out
                 </Button>
@@ -1999,6 +2030,36 @@ export default function PokemonWilds() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Daily Objectives Dialog */}
+      <Dialog open={showDailyObjectives} onOpenChange={setShowDailyObjectives}>
+        <DialogContent className="max-w-xl border-4 border-amber-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-amber-400">Daily Objectives</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {dailyObjectives?.objectives?.length ? dailyObjectives.objectives.map((objective) => (
+              <Card key={objective.id} className={`border-2 ${objective.completed ? 'border-green-500/40 bg-green-950/30' : 'border-amber-500/30 bg-slate-800/50'}`}>
+                <CardContent className="pt-4 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-white font-bold">{objective.label}</p>
+                    <p className="text-sm text-slate-300">Progress: {objective.progress}/{objective.target}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-amber-300 font-bold">+{objective.rewardPoints} pts</p>
+                    <p className={`text-xs font-semibold ${objective.completed ? 'text-green-300' : 'text-slate-400'}`}>
+                      {objective.completed ? 'Completed' : 'In progress'}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )) : (
+              <p className="text-slate-400">Loading daily objectives...</p>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 

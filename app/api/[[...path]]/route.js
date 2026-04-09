@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import { getPointRegenState as sharedGetPointRegenState, refreshAllUsersPointsIfDue as sharedRefreshAllUsersPointsIfDue } from '@/lib/auth';
 import { getBreakdownValueForRarity } from '@/lib/breakdown-values';
+import { applyDailyObjectiveEvent } from '@/lib/daily-objectives';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -2925,6 +2926,7 @@ if (pathname.includes('/api/auth/signin')) {
 
         // Grant XP to all owned Pokemon (including the newly caught one)
         await applyXPToAllPokemon(userId, XP_FROM_CATCH, database);
+        await applyDailyObjectiveEvent(database.collection('users'), userId, 'catch-pokemon', { types: caughtPokemon.types, count: 1 });
 
         // Mark spawn as caught and set next spawn time
         const outbreak = spawn.outbreak && spawn.outbreak.active && spawn.outbreak.endsAt && Date.now() < spawn.outbreak.endsAt
@@ -4284,6 +4286,7 @@ if (pathname.includes('/api/auth/signin')) {
             { id: winner },
             { $inc: { battleWins: 1 } }
           );
+          await applyDailyObjectiveEvent(database.collection('users'), winner, 'win-battle', { count: 1 });
         }
       }
 
@@ -4340,6 +4343,7 @@ if (pathname.includes('/api/auth/signin')) {
         { id: winner },
         { $inc: { battleWins: 1 } }
       );
+      await applyDailyObjectiveEvent(database.collection('users'), winner, 'win-battle', { count: 1 });
 
       return NextResponse.json({ success: true, winner });
     }

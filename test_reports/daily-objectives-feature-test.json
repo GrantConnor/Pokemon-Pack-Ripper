@@ -1,0 +1,26 @@
+{
+  "generatedAt": "2026-04-09T01:45:00Z",
+  "dailyObjectives": {
+    "rewardPerObjective": 500,
+    "objectivesPerDay": 3,
+    "trackedEvents": [
+      "catch-pokemon",
+      "open-pack",
+      "win-battle"
+    ],
+    "exampleObjectives": [
+      "Catch 3 featured-type Pokémon",
+      "Open 5 packs",
+      "Win 1 battle"
+    ],
+    "resetTimezone": "America/Toronto"
+  },
+  "routes": [
+    "app/api/daily-objectives/route.js",
+    "app/api/packs/open/route.js",
+    "app/api/[[...path]]/route.js"
+  ],
+  "ui": [
+    "app/wilds/page.js"
+  ]
+}

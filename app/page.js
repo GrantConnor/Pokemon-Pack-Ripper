@@ -128,6 +128,8 @@ export default function App() {
   const [sentRequests, setSentRequests] = useState([]);
   const [tradeRequests, setTradeRequests] = useState([]);
   const [battleRequests, setBattleRequests] = useState([]);
+  const [showDailyObjectives, setShowDailyObjectives] = useState(false);
+  const [dailyObjectives, setDailyObjectives] = useState(null);
   const [friendUsername, setFriendUsername] = useState('');
   const [friendMessage, setFriendMessage] = useState('');
   const tradeSoundCountRef = useRef(0);
@@ -139,6 +141,17 @@ export default function App() {
 
   const playBattleNotificationSound = () => {
     try { new Audio('/alert-meme.mp3').play().catch(() => {}); } catch {}
+  };
+
+  const loadDailyObjectives = async (resolvedUserId = user?.id) => {
+    if (!resolvedUserId) return;
+    try {
+      const response = await fetch(`/api/daily-objectives?userId=${resolvedUserId}`);
+      const data = await response.json();
+      setDailyObjectives(data.dailyObjectives || null);
+    } catch (err) {
+      console.error('Error loading daily objectives:', err);
+    }
   };
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [tradeFriend, setTradeFriend] = useState(null);
@@ -1131,6 +1144,16 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (!user?.id) return;
+    loadDailyObjectives(user.id);
+    const interval = setInterval(() => {
+      loadDailyObjectives(user.id);
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [user?.id]);
+
   const handleSignUp = async (e) => {
     e.preventDefault();
     setError('');
@@ -1179,6 +1202,7 @@ export default function App() {
         localStorage.setItem('userId', data.user.id);
         setUser(data.user);
         setCountdown(data.user.nextPointsIn || 0);
+        loadDailyObjectives(data.user.id);
         setUsername('');
         setPassword('');
       } else {
@@ -1244,6 +1268,7 @@ export default function App() {
         localStorage.setItem('userId', data.user.id);
         setUser(data.user);
         setCountdown(data.user.nextPointsIn || 0);
+        loadDailyObjectives(data.user.id);
         setUsername('');
         setPassword('');
       } else {
@@ -1742,6 +1767,9 @@ export default function App() {
                 Pokemon Wilds
               </Button>
             </Link>
+            <Button onClick={() => setShowDailyObjectives(true)} className="bg-amber-600 hover:bg-amber-500 border-2 border-amber-400 font-bold shadow-[0_0_15px_rgba(245,158,11,0.35)]">
+              Daily Objectives
+            </Button>
             <div className="flex items-center gap-2 bg-slate-800/50 px-4 py-2 rounded-lg border-2 border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)] backdrop-blur-sm">
               <Coins className="h-5 w-5 text-cyan-400" />
               <span className="font-bold text-cyan-400">{user.points || 0}</span>
@@ -2840,6 +2868,36 @@ export default function App() {
       </Dialog>
 
       {/* Trade Modal - Send Trade */}
+      {/* Daily Objectives Modal */}
+      <Dialog open={showDailyObjectives} onOpenChange={setShowDailyObjectives}>
+        <DialogContent className="max-w-xl border-4 border-amber-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_60px_rgba(245,158,11,0.25)]">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-amber-400">Daily Objectives</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {dailyObjectives?.objectives?.length ? dailyObjectives.objectives.map((objective) => (
+              <Card key={objective.id} className={`border-2 ${objective.completed ? 'border-green-500/40 bg-green-950/30' : 'border-amber-500/30 bg-slate-800/50'}`}>
+                <CardContent className="pt-4 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-white font-bold">{objective.label}</p>
+                    <p className="text-sm text-slate-300">Progress: {objective.progress}/{objective.target}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-amber-300 font-bold">+{objective.rewardPoints} pts</p>
+                    <p className={`text-xs font-semibold ${objective.completed ? 'text-green-300' : 'text-slate-400'}`}>
+                      {objective.completed ? 'Completed' : 'In progress'}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )) : (
+              <p className="text-slate-400">Loading daily objectives...</p>
+            )}
+            <p className="pt-2 text-center text-sm text-amber-200/80">Objectives will reset daily.</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showTradeModal} onOpenChange={setShowTradeModal}>
         <DialogContent className="max-w-7xl max-h-[90vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
           <DialogHeader>
