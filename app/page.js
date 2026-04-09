@@ -80,6 +80,16 @@ function collectionCacheKey(userId) { return `cache:collection:${userId}:v1`; }
 function friendsCacheKey(userId) { return `cache:friends:${userId}:v1`; }
 function previewCardsCacheKey(setId) { return `cache:preview-cards:${setId}:v2`; }
 
+function sortFriendsByOnline(friends = []) {
+  return [...friends].sort((a, b) => {
+    if (!!a?.isOnline !== !!b?.isOnline) return a?.isOnline ? -1 : 1;
+    const aSeen = a?.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0;
+    const bSeen = b?.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0;
+    if (aSeen !== bSeen) return bSeen - aSeen;
+    return (a?.username || '').localeCompare(b?.username || '');
+  });
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -665,7 +675,7 @@ export default function App() {
       if (!forceRefresh) {
         const cachedFriends = readLocalCache(cacheKey, CACHE_TTL.friends);
         if (cachedFriends) {
-          setFriends(cachedFriends.friends || []);
+          setFriends(sortFriendsByOnline(cachedFriends.friends || []));
           setPendingRequests(cachedFriends.pendingRequests || []);
           setSentRequests(cachedFriends.sentRequests || []);
           setTradeRequests(cachedFriends.tradeRequests || []);
@@ -679,7 +689,7 @@ export default function App() {
       if (!response.ok) {
         throw new Error(data.error || 'Failed to load friends');
       }
-      setFriends(data.friends || []);
+      setFriends(sortFriendsByOnline(data.friends || []));
       setPendingRequests(data.pendingRequests || []);
       setSentRequests(data.sentRequests || []);
       setTradeRequests(data.tradeRequests || []);

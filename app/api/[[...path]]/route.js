@@ -1525,10 +1525,18 @@ export async function GET(request) {
         .find({ id: { $in: friendIds } })
         .project({ id: 1, username: 1, tradesCompleted: 1, lastSeenAt: 1 })
         .toArray();
-      const friendsWithPresence = friends.map(friend => ({
-        ...friend,
-        isOnline: !!friend.lastSeenAt && new Date(friend.lastSeenAt).getTime() >= onlineThreshold,
-      }));
+      const friendsWithPresence = friends
+        .map(friend => ({
+          ...friend,
+          isOnline: !!friend.lastSeenAt && new Date(friend.lastSeenAt).getTime() >= onlineThreshold,
+        }))
+        .sort((a, b) => {
+          if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
+          const aSeen = a.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0;
+          const bSeen = b.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0;
+          if (aSeen !== bSeen) return bSeen - aSeen;
+          return (a.username || '').localeCompare(b.username || '');
+        });
 
       // Get pending request details
       const requestIds = user.friendRequests || [];
@@ -3760,10 +3768,18 @@ if (pathname.includes('/api/auth/signin')) {
 
     // Perform battle action (choose move / resolve round)
     if (pathname.includes('/api/battles/attack')) {
-      const { battleId, userId, moveIndex } = body;
+      const { battleId, userId, moveIndex, pokemonIndex, actionType = 'attack' } = body;
       
-      if (!battleId || !userId || moveIndex === undefined) {
+      if (!battleId || !userId) {
         return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+      }
+
+      if (actionType === 'attack' && moveIndex === undefined) {
+        return NextResponse.json({ error: 'Move index required' }, { status: 400 });
+      }
+
+      if (actionType === 'switch' && pokemonIndex === undefined) {
+        return NextResponse.json({ error: 'Pokemon index required' }, { status: 400 });
       }
 
       const database = await connectDB();
@@ -3782,22 +3798,35 @@ if (pathname.includes('/api/auth/signin')) {
       const pendingActions = battle.pendingActions || { player1: null, player2: null };
 
       if (pendingActions[playerKey]) {
-        return NextResponse.json({ error: 'You already locked in a move for this round' }, { status: 400 });
+        return NextResponse.json({ error: 'You already locked in an action for this round' }, { status: 400 });
       }
 
       const player = battle[playerKey];
       const activePokemon = player.pokemon?.[player.currentPokemonIndex];
       if (!activePokemon || activePokemon.currentHP <= 0) {
-        return NextResponse.json({ error: 'Your active Pokemon cannot move' }, { status: 400 });
+        return NextResponse.json({ error: 'Your active Pokemon cannot act' }, { status: 400 });
       }
 
-      const moveName = activePokemon.moveset?.[moveIndex];
-      const moveData = activePokemon.allMovesData?.find(m => m.name === moveName);
-      if (!moveData) {
-        return NextResponse.json({ error: 'Invalid move' }, { status: 400 });
+      if (actionType === 'switch') {
+        const chosenPokemon = player.pokemon?.[pokemonIndex];
+        if (!chosenPokemon) {
+          return NextResponse.json({ error: 'Pokemon not found' }, { status: 404 });
+        }
+        if (chosenPokemon.currentHP <= 0) {
+          return NextResponse.json({ error: 'That Pokemon has fainted' }, { status: 400 });
+        }
+        if (pokemonIndex === player.currentPokemonIndex) {
+          return NextResponse.json({ error: 'That Pokemon is already active' }, { status: 400 });
+        }
+        pendingActions[playerKey] = { type: 'switch', pokemonIndex, selectedAt: new Date().toISOString() };
+      } else {
+        const moveName = activePokemon.moveset?.[moveIndex];
+        const moveData = activePokemon.allMovesData?.find(m => m.name === moveName);
+        if (!moveData) {
+          return NextResponse.json({ error: 'Invalid move' }, { status: 400 });
+        }
+        pendingActions[playerKey] = { type: 'attack', moveIndex, selectedAt: new Date().toISOString() };
       }
-
-      pendingActions[playerKey] = { moveIndex, selectedAt: new Date().toISOString() };
 
       if (!pendingActions[opponentKey]) {
         await database.collection('battles').updateOne(
@@ -3817,12 +3846,14 @@ if (pathname.includes('/api/auth/signin')) {
       const speedOrder = ['player1', 'player2'].sort((a, b) => {
         const pokemonA = state[a].pokemon?.[state[a].currentPokemonIndex];
         const pokemonB = state[b].pokemon?.[state[b].currentPokemonIndex];
-        const moveNameA = pokemonA?.moveset?.[pendingActions[a]?.moveIndex];
-        const moveNameB = pokemonB?.moveset?.[pendingActions[b]?.moveIndex];
+        const actionA = pendingActions[a] || {};
+        const actionB = pendingActions[b] || {};
+        const moveNameA = pokemonA?.moveset?.[actionA.moveIndex];
+        const moveNameB = pokemonB?.moveset?.[actionB.moveIndex];
         const moveA = pokemonA?.allMovesData?.find((move) => move.name === moveNameA);
         const moveB = pokemonB?.allMovesData?.find((move) => move.name === moveNameB);
-        const priorityA = moveA?.priority || 0;
-        const priorityB = moveB?.priority || 0;
+        const priorityA = actionA.type === 'switch' ? 999 : (moveA?.priority || 0);
+        const priorityB = actionB.type === 'switch' ? 999 : (moveB?.priority || 0);
         if (priorityA !== priorityB) return priorityB - priorityA;
         const speedA = pokemonA ? getEffectiveStat(pokemonA, 'speed') : 0;
         const speedB = pokemonB ? getEffectiveStat(pokemonB, 'speed') : 0;
@@ -3875,7 +3906,11 @@ if (pathname.includes('/api/auth/signin')) {
 
       const applyStatChanges = (move, userKey, foeKey) => {
         if (!move.statChanges?.length) return;
-        const targetMode = getMoveTargetMode(move) === 'self' ? 'self' : (getMoveTargetMode(move) === 'target' ? 'target' : inferStatTarget(move));
+        const baseTargetMode = getMoveTargetMode(move);
+        const inferredTargetMode = inferStatTarget(move);
+        const targetMode = baseTargetMode === 'self'
+          ? 'self'
+          : (baseTargetMode === 'target' ? inferredTargetMode : inferredTargetMode);
         for (const statChange of move.statChanges) {
           const statKey = formatStatKey(statChange.stat);
           if (!statKey) continue;
@@ -3973,8 +4008,9 @@ if (pathname.includes('/api/auth/signin')) {
 
 
       const firstMover = getActive(speedOrder[0]);
-      if (firstMover) {
-        pushLog({ type: 'order', message: `${firstMover.displayName} was faster and moved first!` });
+      const firstAction = state.pendingActions?.[speedOrder[0]];
+      if (firstMover && firstAction) {
+        pushLog({ type: 'order', message: `${firstMover.displayName} acted first!` });
       }
 
       for (const actingKey of speedOrder) {
@@ -3988,6 +4024,23 @@ if (pathname.includes('/api/auth/signin')) {
 
         if (actingPokemon.currentHP <= 0) {
           pushLog({ type: 'skip', message: `${actingPokemon.displayName} fainted before it could move!` });
+          continue;
+        }
+
+        if (action.type === 'switch') {
+          const chosenPokemon = state[actingKey].pokemon?.[action.pokemonIndex];
+          if (!chosenPokemon || chosenPokemon.currentHP <= 0 || action.pokemonIndex === state[actingKey].currentPokemonIndex) {
+            pushLog({ type: 'skip', message: `${state[actingKey].username} could not switch Pokemon.` });
+            continue;
+          }
+          state[actingKey].currentPokemonIndex = action.pokemonIndex;
+          actingPokemon = getActive(actingKey);
+          pushLog({ type: 'switch', message: `${state[actingKey].username} switched to ${actingPokemon.displayName}!` });
+          applyEntryHazards(state, actingKey, pushLog);
+          if (actingPokemon.currentHP === 0) {
+            pushLog({ type: 'faint', message: `${actingPokemon.displayName} fainted!` });
+            setAwaitingSwitch(actingKey);
+          }
           continue;
         }
 
