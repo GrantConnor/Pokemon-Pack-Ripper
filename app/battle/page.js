@@ -233,7 +233,7 @@ function BattlePageContent() {
     if (!battleMusicRef.current) {
       battleMusicRef.current = new Audio('/audio/trainer-battle.mp3');
       battleMusicRef.current.loop = true;
-      battleMusicRef.current.volume = 0.35;
+      battleMusicRef.current.volume = 0.15;
     }
 
     const audio = battleMusicRef.current;
