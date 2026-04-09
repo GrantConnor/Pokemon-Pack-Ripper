@@ -1314,6 +1314,12 @@ export default function PokemonWilds() {
                   Inventory
                 </Button>
                 <Button
+                  onClick={() => setShowSafariPrompt(true)}
+                  className="bg-[#18392B] hover:bg-[#204a38] text-white"
+                >
+                  Safari Zone
+                </Button>
+                <Button
                   onClick={() => setShowLeaderboardModal(true)}
                   className="bg-cyan-700 hover:bg-cyan-600"
                 >
