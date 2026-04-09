@@ -1,0 +1,13 @@
+{
+  "summary": {
+    "total_checks": 4,
+    "passed": 4,
+    "failed": 0
+  },
+  "checks": {
+    "pack_ripper_has_view_trade_request_label": true,
+    "wilds_has_view_trade_request_label": true,
+    "wilds_no_direct_accept_decline_in_list": true,
+    "wilds_has_active_pokemon_trade_modal": true
+  }
+}

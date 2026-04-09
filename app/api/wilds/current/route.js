@@ -11,7 +11,7 @@ export async function GET() {
     const spawn = await updateGlobalSpawn(database);
 
     if (spawn.caughtBy) {
-      return NextResponse.json({ spawn: null, nextSpawnTime: spawn.nextSpawnTime });
+      return NextResponse.json({ spawn: null, nextSpawnTime: spawn.nextSpawnTime, outbreak: spawn.outbreak || null });
     }
 
     const normalizedSpawn = spawn?.pokemon ? { ...spawn, pokemon: normalizeStoredSprite(spawn.pokemon) } : spawn;
@@ -19,7 +19,7 @@ export async function GET() {
       await database.collection('global_spawn').updateOne({ id: 'current' }, { $set: { pokemon: normalizedSpawn.pokemon } });
     }
 
-    return NextResponse.json({ spawn: normalizedSpawn });
+    return NextResponse.json({ spawn: normalizedSpawn, outbreak: normalizedSpawn?.outbreak || null });
   } catch (error) {
     return NextResponse.json({ error: error?.message || 'Failed to load current spawn' }, { status: 500 });
   }

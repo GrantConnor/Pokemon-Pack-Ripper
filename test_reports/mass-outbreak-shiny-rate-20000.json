@@ -1,0 +1,12 @@
+{
+  "trials": 20000,
+  "target_rate": 0.001,
+  "observed_shinies": 28,
+  "observed_rate": 0.0014,
+  "observed_odds": "1 in 714.29",
+  "notes": [
+    "Mass outbreak generation path in lib/wilds.js uses fetchPokemonData(outbreak.pokemonId, false, outbreak.shinyRate || MASS_OUTBREAK_SHINY_RATE).",
+    "MASS_OUTBREAK_SHINY_RATE is set to 1 / 1000.",
+    "Admin shiny spawn now requires a valid dex number or name if a query is provided, so specific shiny spawns work reliably."
+  ]
+}

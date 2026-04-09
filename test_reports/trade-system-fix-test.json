@@ -1,0 +1,21 @@
+{
+  "summary": {
+    "total_checks": 12,
+    "passed": 12,
+    "failed": 0
+  },
+  "checks": {
+    "wilds_removed_broken_activeTrade_friend_send": true,
+    "wilds_has_notifications_panel": true,
+    "page_has_notifications_panel": true,
+    "route_has_mark_read_endpoint": true,
+    "route_validates_card_sender_ownership": true,
+    "route_validates_card_receiver_ownership": true,
+    "route_validates_pokemon_sender_ownership": true,
+    "route_validates_pokemon_receiver_ownership": true,
+    "route_sends_card_trade_request_notification": true,
+    "route_sends_card_trade_accept_notification": true,
+    "route_sends_pokemon_trade_request_notification": true,
+    "route_sends_pokemon_trade_accept_notification": true
+  }
+}

@@ -3,6 +3,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { connectDB } from '@/lib/mongodb';
 import { getCardsForSet, getPackCost } from '@/lib/pokemon-tcg';
 import { refreshAllUsersPointsIfDue, refreshUserPoints } from '@/lib/auth';
+import { applyDailyObjectiveEvent } from '@/lib/daily-objectives';
+import { unlockSetTitlesForUser } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -342,17 +344,43 @@ export async function POST(request) {
       }
     );
 
-    const revealId = uuidv4();
-    await database.collection('pack_reveals').insertOne({
-      id: revealId,
-      userId,
-      cards: cardsWithTimestamp,
-      packs: packsWithTimestamps,
-      isBulk: !!bulk,
-      pointsRemaining: newPoints,
-      createdAt: new Date().toISOString(),
-      revealed: false,
-    });
+    let titleUnlockResult = { newlyUnlocked: [] };
+    try {
+      titleUnlockResult = await unlockSetTitlesForUser(
+        users,
+        userId,
+        setId,
+        allCards[0]?.set?.name || setId,
+        allCards,
+      );
+    } catch (error) {
+      console.error('[PACK OPEN] Title unlock step failed:', error);
+    }
+
+    let dailyObjectiveResult = { pointsAwarded: 0 };
+    try {
+      dailyObjectiveResult = await applyDailyObjectiveEvent(users, userId, 'open-pack', { count: packCount }) || { pointsAwarded: 0 };
+    } catch (error) {
+      console.error('[PACK OPEN] Daily objective step failed:', error);
+    }
+    const finalPointsRemaining = newPoints + (dailyObjectiveResult?.pointsAwarded || 0);
+
+    let revealId = uuidv4();
+    try {
+      await database.collection('pack_reveals').insertOne({
+        id: revealId,
+        userId,
+        cards: cardsWithTimestamp,
+        packs: packsWithTimestamps,
+        isBulk: !!bulk,
+        pointsRemaining: finalPointsRemaining,
+        createdAt: new Date().toISOString(),
+        revealed: false,
+      });
+    } catch (error) {
+      console.error('[PACK OPEN] Reveal persistence failed:', error);
+      revealId = null;
+    }
 
     return NextResponse.json({
       success: true,
@@ -360,9 +388,11 @@ export async function POST(request) {
       cards: cardsWithTimestamp,
       packs: packsWithTimestamps,
       isBulk: bulk,
-      pointsRemaining: newPoints,
+      pointsRemaining: finalPointsRemaining,
       achievements: null,
+      titleUnlocks: titleUnlockResult?.newlyUnlocked || [],
       xpApplied: false,
+      dailyObjectivePointsAwarded: dailyObjectiveResult?.pointsAwarded || 0,
     });
   } catch (error) {
     return NextResponse.json({

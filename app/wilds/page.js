@@ -9,6 +9,18 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sparkles, ArrowLeft, Clock, Users } from 'lucide-react';
 import Link from 'next/link';
+import { getTrainerRank } from '@/lib/trainer-ranks';
+import { getActiveDisplayTitle } from '@/lib/set-titles';
+
+function sortFriendsByOnline(friends = []) {
+  return [...friends].sort((a, b) => {
+    if (!!a?.isOnline !== !!b?.isOnline) return a?.isOnline ? -1 : 1;
+    const aSeen = a?.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0;
+    const bSeen = b?.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0;
+    if (aSeen !== bSeen) return bSeen - aSeen;
+    return (a?.username || '').localeCompare(b?.username || '');
+  });
+}
 
 export default function PokemonWilds() {
   const [user, setUser] = useState(null);
@@ -20,6 +32,7 @@ export default function PokemonWilds() {
   const [showMyPokemon, setShowMyPokemon] = useState(false);
   const [selectedPokemon, setSelectedPokemon] = useState(null);
   const [timeUntilSpawn, setTimeUntilSpawn] = useState(null);
+  const [uiNow, setUiNow] = useState(Date.now());
   const [editingNickname, setEditingNickname] = useState(false);
   const [newNickname, setNewNickname] = useState('');
   const [editingMoveset, setEditingMoveset] = useState(false);
@@ -35,13 +48,22 @@ export default function PokemonWilds() {
   const [showFriendsPanel, setShowFriendsPanel] = useState(false);
   const [activeTrade, setActiveTrade] = useState(null);
   const [activeCardTrade, setActiveCardTrade] = useState(null);
+  const [activePokemonTrade, setActivePokemonTrade] = useState(null);
   const [selectedPokemonForTrade, setSelectedPokemonForTrade] = useState([]);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
+  const [massOutbreak, setMassOutbreak] = useState(null);
+  const [showPlayerCard, setShowPlayerCard] = useState(false);
+  const [playerCard, setPlayerCard] = useState(null);
+  const [showDailyObjectives, setShowDailyObjectives] = useState(false);
+  const [dailyObjectives, setDailyObjectives] = useState(null);
   const [viewingFriendPokemon, setViewingFriendPokemon] = useState(null);
   const [friendPokemonList, setFriendPokemonList] = useState([]);
   const [battleRequests, setBattleRequests] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [tradeRequests, setTradeRequests] = useState([]);
-  const unreadSocialCount = pendingRequests.length + tradeRequests.length;
+  const [socialNotifications, setSocialNotifications] = useState([]);
+  const unreadSocialCount = pendingRequests.length + tradeRequests.length + (socialNotifications || []).filter((notification) => !notification?.read).length;
   const [showTradeDialog, setShowTradeDialog] = useState(false);
   const [tradePartner, setTradePartner] = useState(null);
   const [mySelectedPokemon, setMySelectedPokemon] = useState(null);
@@ -55,6 +77,8 @@ export default function PokemonWilds() {
   const [fetchingEvolutionData, setFetchingEvolutionData] = useState(false);
   const [showEvolveConfirm, setShowEvolveConfirm] = useState(false);
   const [showReleaseConfirm, setShowReleaseConfirm] = useState(false);
+  const [multiReleaseMode, setMultiReleaseMode] = useState(false);
+  const [selectedForRelease, setSelectedForRelease] = useState([]);
   const [showCustomXPDialog, setShowCustomXPDialog] = useState(false);
   const [customXPAmount, setCustomXPAmount] = useState('500');
   const [showShopDialog, setShowShopDialog] = useState(false);
@@ -73,6 +97,7 @@ export default function PokemonWilds() {
   const [battleOpponent, setBattleOpponent] = useState(null);
   const [showBattleScreen, setShowBattleScreen] = useState(false);
   const [adminSpawnQuery, setAdminSpawnQuery] = useState('');
+  const [adminShinySpawnQuery, setAdminShinySpawnQuery] = useState('');
   const tradeSoundCountRef = useRef(0);
   const battleSoundCountRef = useRef(0);
 
@@ -82,6 +107,97 @@ export default function PokemonWilds() {
 
   const playBattleNotificationSound = () => {
     try { new Audio('/alert-meme.mp3').play().catch(() => {}); } catch {}
+  };
+
+  const trainerRank = getTrainerRank(user?.battleWins || 0);
+  const activeUserTitle = getActiveDisplayTitle({ battleWins: user?.battleWins || 0, unlockedTitles: user?.unlockedTitles || [], selectedTitleId: user?.selectedTitleId || null });
+
+  const loadLeaderboard = async () => {
+    try {
+      const response = await fetch('/api/battles/leaderboard?limit=10');
+      const data = await response.json();
+      setLeaderboard((data.leaderboard || []).filter(Boolean));
+    } catch (err) {
+      console.error('Error loading battle leaderboard:', err);
+    }
+  };
+
+
+  const loadPlayerCard = async (userId) => {
+    try {
+      const response = await fetch(`/api/profile/card?userId=${userId}`);
+      const raw = await response.text();
+      const data = raw ? JSON.parse(raw) : {};
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load player card');
+      }
+      if (data.profileCard) {
+        setPlayerCard(data.profileCard);
+        setShowPlayerCard(true);
+      }
+    } catch (err) {
+      console.error('Error loading player card:', err);
+      alert(err.message || 'Failed to load player card');
+    }
+  };
+
+
+  const loadDailyObjectives = async (resolvedUserId = user?.id) => {
+    if (!resolvedUserId) return;
+    try {
+      const response = await fetch(`/api/daily-objectives?userId=${resolvedUserId}`);
+      const data = await response.json();
+      setDailyObjectives(data.dailyObjectives || null);
+    } catch (err) {
+      console.error('Error loading daily objectives:', err);
+    }
+  };
+
+  const handleSetFavoritePokemon = async (pokemon) => {
+    try {
+      const pokemonId = pokemon?._id || pokemon?.id;
+      const response = await fetch('/api/profile/favorite-pokemon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, pokemonId: String(pokemonId) })
+      });
+      const data = await response.json();
+      if (!data.success) {
+        alert(data.error || 'Failed to set favorite Pokémon');
+        return;
+      }
+      setUser((prev) => prev ? { ...prev, favoritePokemonId: data.favoritePokemonId } : prev);
+      if (showPlayerCard && playerCard?.id === user.id) {
+        loadPlayerCard(user.id);
+      }
+      alert(`${pokemon.nickname || pokemon.displayName} is now featured on your player card!`);
+    } catch (err) {
+      console.error('Error setting favorite Pokémon:', err);
+      alert('Failed to set favorite Pokémon');
+    }
+  };
+
+  const handleSelectPlayerTitle = async (titleId) => {
+    if (!user?.id || !titleId) return;
+    try {
+      const response = await fetch('/api/profile/title', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, titleId })
+      });
+      const data = await response.json();
+      if (!data.success) {
+        alert(data.error || 'Failed to equip title');
+        return;
+      }
+      setUser((prev) => prev ? { ...prev, selectedTitleId: data.selectedTitleId } : prev);
+      if (showPlayerCard && playerCard?.id === user.id) {
+        loadPlayerCard(user.id);
+      }
+    } catch (err) {
+      console.error('Error selecting title:', err);
+      alert('Failed to equip title');
+    }
   };
 
   useEffect(() => {
@@ -94,13 +210,15 @@ export default function PokemonWilds() {
           if (data.authenticated) {
             setUser(data.user);
             loadCurrentSpawn();
-            loadMyPokemon();
+            loadMyPokemon(data.user.id);
+            loadLeaderboard();
+            loadDailyObjectives(data.user.id);
             
             fetch(`/api/friends?userId=${data.user.id}`)
               .then(res => res.json())
               .then(friendsData => {
                 console.log('📥 Friends loaded on page load:', friendsData);
-                setFriends((friendsData.friends || []).filter(Boolean));
+                setFriends(sortFriendsByOnline((friendsData.friends || []).filter(Boolean)));
                 setBattleRequests((friendsData.battleRequests || []).filter(Boolean));
                 setTradeRequests((friendsData.tradeRequests || []).filter(Boolean));
                 setActiveBattle(friendsData.activeBattleId || null);
@@ -121,16 +239,21 @@ export default function PokemonWilds() {
     }
   }, []);
 
-  // Poll for new spawns every 30 seconds
+  // Poll for new spawns frequently so catches/disappearances feel instant
   useEffect(() => {
     if (!user) return;
     
     const interval = setInterval(() => {
       loadCurrentSpawn();
-    }, 30000);
+    }, 1000);
 
     return () => clearInterval(interval);
   }, [user]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    loadMyPokemon(user.id);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -153,11 +276,30 @@ export default function PokemonWilds() {
 
     loadFriends();
     const interval = setInterval(() => {
-      loadFriends();
+      loadFriends({ forceRefresh: true });
     }, 5000);
 
     return () => clearInterval(interval);
   }, [user]);
+
+  useEffect(() => {
+    loadLeaderboard();
+    const interval = setInterval(() => {
+      loadLeaderboard();
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    loadDailyObjectives(user.id);
+    const interval = setInterval(() => {
+      loadDailyObjectives(user.id);
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [user?.id]);
 
   useEffect(() => {
     if (activeBattle && !showBattleScreen) {
@@ -165,33 +307,36 @@ export default function PokemonWilds() {
     }
   }, [activeBattle, showBattleScreen]);
 
-  // Countdown timer for next spawn
+  // UI ticker for spawn and outbreak countdowns
   useEffect(() => {
-    if (!timeUntilSpawn) return;
+    if (!timeUntilSpawn && !massOutbreak?.active) return;
 
     const interval = setInterval(() => {
       const now = Date.now();
-      const remaining = timeUntilSpawn - now;
-      
-      if (remaining <= 0) {
-        setTimeUntilSpawn(null);
-        loadCurrentSpawn();
-      } else {
-        setTimeUntilSpawn(timeUntilSpawn);
+      setUiNow(now);
+
+      if (timeUntilSpawn) {
+        const remaining = timeUntilSpawn - now;
+        if (remaining <= 0) {
+          setTimeUntilSpawn(null);
+          loadCurrentSpawn();
+        }
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [timeUntilSpawn]);
+  }, [timeUntilSpawn, massOutbreak?.active]);
 
 
   useEffect(() => {
     const tradeCount = Array.isArray(tradeRequests) ? tradeRequests.filter(Boolean).length : 0;
+    const notificationCount = Array.isArray(socialNotifications) ? socialNotifications.filter((notification) => notification && !notification.read).length : 0;
     const battleCount = Array.isArray(battleRequests) ? battleRequests.filter(Boolean).length : 0;
 
-    if (tradeCount > 0 && tradeSoundCountRef.current === 0) {
+    const totalSocialTradeSignals = tradeCount + notificationCount;
+    if (totalSocialTradeSignals > 0 && tradeSoundCountRef.current === 0) {
       playTradeNotificationSound();
-    } else if (tradeCount > tradeSoundCountRef.current) {
+    } else if (totalSocialTradeSignals > tradeSoundCountRef.current) {
       playTradeNotificationSound();
     }
 
@@ -201,35 +346,43 @@ export default function PokemonWilds() {
       playBattleNotificationSound();
     }
 
-    tradeSoundCountRef.current = tradeCount;
+    tradeSoundCountRef.current = tradeCount + notificationCount;
     battleSoundCountRef.current = battleCount;
-  }, [tradeRequests, battleRequests]);
+  }, [tradeRequests, socialNotifications, battleRequests]);
 
   const loadCurrentSpawn = async () => {
     try {
-      const response = await fetch('/api/wilds/current');
+      const response = await fetch(`/api/wilds/current?ts=${Date.now()}`, { cache: 'no-store' });
       const data = await response.json();
       
+      setMassOutbreak(data.outbreak || null);
+
       if (data.spawn) {
         setSpawn(data.spawn);
         setTimeUntilSpawn(null);
         
         // Show notification if new Pokemon
-        if (!spawn || spawn.pokemon.id !== data.spawn.pokemon.id) {
+        if (!spawn || spawn.pokemon.id !== data.spawn.pokemon.id || spawn.spawnedAt !== data.spawn.spawnedAt) {
           showSpawnNotification(data.spawn.pokemon);
         }
       } else if (data.nextSpawnTime) {
         setSpawn(null);
         setTimeUntilSpawn(data.nextSpawnTime);
+      } else {
+        setSpawn(null);
+        setTimeUntilSpawn(null);
       }
     } catch (err) {
       console.error('Error loading spawn:', err);
     }
   };
 
-  const loadMyPokemon = async () => {
+  const loadMyPokemon = async (userIdOverride = null) => {
+    const resolvedUserId = userIdOverride || user?.id;
+    if (!resolvedUserId) return;
+
     try {
-      const response = await fetch(`/api/wilds/my-pokemon?userId=${user.id}`);
+      const response = await fetch(`/api/wilds/my-pokemon?userId=${resolvedUserId}`);
       const data = await response.json();
       const pokemonList = (data.pokemon || []).filter(p => p && p.id); // Filter out null/invalid Pokemon
       
@@ -281,7 +434,7 @@ export default function PokemonWilds() {
       const data = await response.json();
       console.log('📥 Friends API response:', data);
       console.log('👥 Friends array:', data.friends);
-      setFriends((data.friends || []).filter(Boolean));
+      setFriends(sortFriendsByOnline((data.friends || []).filter(Boolean)));
       setPendingRequests((data.pendingRequests || []).filter(Boolean));
       setBattleRequests((data.battleRequests || []).filter(Boolean));
       setTradeRequests((data.tradeRequests || []).filter(Boolean));
@@ -418,7 +571,7 @@ export default function PokemonWilds() {
       if (response.ok) {
         console.log('Friend request sent:', data.message);
         setFriendSearchTerm('');
-        loadFriends();
+        loadFriends({ forceRefresh: true });
       } else {
         console.error('Error adding friend:', data.error);
       }
@@ -436,7 +589,7 @@ export default function PokemonWilds() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, friendId })
       });
-      loadFriends();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error accepting friend:', err);
     }
@@ -449,7 +602,7 @@ export default function PokemonWilds() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, friendId })
       });
-      loadFriends();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error declining friend:', err);
     }
@@ -460,6 +613,10 @@ export default function PokemonWilds() {
   const handleViewCardTrade = (trade) => {
     setActiveCardTrade(trade);
   };
+
+  const handleViewPokemonTrade = (trade) => {
+    setActivePokemonTrade(trade);
+  };
   const handleAcceptCardTrade = async (trade) => {
     try {
       const response = await fetch('/api/trades/accept', {
@@ -469,7 +626,8 @@ export default function PokemonWilds() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Error accepting card trade');
-      loadFriends();
+      setActiveCardTrade(null);
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error(err);
     }
@@ -483,7 +641,7 @@ export default function PokemonWilds() {
         body: JSON.stringify({ userId: user.id, tradeId: trade.id })
       });
       setActiveCardTrade(null);
-      loadFriends();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error declining card trade:', err);
     }
@@ -497,7 +655,7 @@ export default function PokemonWilds() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, friendId: friend.id })
       });
-      loadFriends();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error removing friend:', err);
     }
@@ -538,11 +696,11 @@ export default function PokemonWilds() {
 
       const data = await response.json();
       if (response.ok) {
-        alert('Pokemon Wilds trade request sent!');
+        alert(data.message || 'Pokemon Wilds trade request sent!');
         setShowTradeDialog(false);
         setMySelectedPokemon(null);
         setPartnerSelectedPokemon(null);
-        loadFriends();
+        loadFriends({ forceRefresh: true });
       } else {
         console.error(data.error);
       }
@@ -640,8 +798,9 @@ export default function PokemonWilds() {
       const data = await response.json();
       if (data.success) {
         console.log(`Trade completed! Received ${data.receivedPokemon}, sent ${data.sentPokemon}`);
-        loadFriends();
-        loadMyPokemon();
+        alert(data.message || 'Pokemon trade completed');
+        loadFriends({ forceRefresh: true });
+        loadMyPokemon(user.id);
       } else {
         console.error(data.error || 'Error accepting trade');
       }
@@ -661,50 +820,9 @@ export default function PokemonWilds() {
         })
       });
 
-      loadFriends();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error declining trade:', err);
-    }
-  };
-
-  const togglePokemonForTrade = (pokemon) => {
-    if (selectedPokemonForTrade.find(p => p._id === pokemon._id)) {
-      setSelectedPokemonForTrade(selectedPokemonForTrade.filter(p => p._id !== pokemon._id));
-    } else {
-      setSelectedPokemonForTrade([...selectedPokemonForTrade, pokemon]);
-    }
-  };
-
-  const handleSendTrade = async () => {
-    if (selectedPokemonForTrade.length === 0) {
-      alert('Please select at least one Pokemon to trade');
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/friends/trade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fromId: user.id,
-          toId: activeTrade.friend.id,
-          offeredPokemon: selectedPokemonForTrade.map(p => ({ pokemonId: p._id.toString(), pokemonData: p })),
-          requestedPokemon: [],
-          type: 'pokemon-gift'
-        })
-      });
-
-      const data = await response.json();
-      if (response.ok) {
-        alert('Pokemon gift sent!');
-        setActiveTrade(null);
-        setSelectedPokemonForTrade([]);
-        loadMyPokemon();
-      } else {
-        alert(data.error);
-      }
-    } catch (err) {
-      alert('Error sending trade');
     }
   };
 
@@ -761,7 +879,7 @@ export default function PokemonWilds() {
       const response = await fetch('/api/wilds/admin-spawn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId: user.id, pokemonId: adminSpawnQuery })
+        body: JSON.stringify({ adminId: user.id, pokemonId: adminSpawnQuery.trim() })
       });
 
       const data = await response.json();
@@ -774,6 +892,26 @@ export default function PokemonWilds() {
     }
   };
 
+
+  const handleEnterSafariZone = async () => {
+    if (!user?.id) return;
+    const confirmed = window.confirm('Spend 5000 points to enter a new Safari Zone instance?');
+    if (!confirmed) return;
+    try {
+      const response = await fetch('/api/safari-zone/entry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to enter Safari Zone');
+      setUser((prev) => prev ? { ...prev, points: data.pointsRemaining } : prev);
+      window.location.href = '/safari-zone';
+    } catch (err) {
+      alert(err.message || 'Failed to enter Safari Zone');
+    }
+  };
+
   const handleAdminSpawnShiny = async () => {
     if (!user || user.username !== 'Spheal') return;
     
@@ -781,7 +919,7 @@ export default function PokemonWilds() {
       const response = await fetch('/api/wilds/admin-spawn-shiny', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId: user.id, pokemonId: adminSpawnQuery })
+        body: JSON.stringify({ adminId: user.id, pokemonId: adminShinySpawnQuery.trim() })
       });
 
       const data = await response.json();
@@ -983,7 +1121,10 @@ export default function PokemonWilds() {
 
       const data = await response.json();
       if (data.success) {
-        alert(`Released ${selectedPokemon.nickname || selectedPokemon.displayName}`);
+        if (typeof data.pointsRemaining === 'number') {
+          setUser((prev) => ({ ...prev, points: data.pointsRemaining }));
+        }
+        alert(`Released ${selectedPokemon.nickname || selectedPokemon.displayName} for ${data.pointsAwarded || 100} points`);
         
         // Close dialog and reload
         setSelectedPokemon(null);
@@ -1000,6 +1141,47 @@ export default function PokemonWilds() {
     }
   };
 
+  const togglePokemonForRelease = (pokemon) => {
+    const pokemonKey = String(pokemon._id || pokemon.id);
+    setSelectedForRelease((prev) => prev.includes(pokemonKey) ? prev.filter((id) => id !== pokemonKey) : [...prev, pokemonKey]);
+  };
+
+  const handleReleaseSelectedPokemon = async () => {
+    if (!selectedForRelease.length || releasingPokemon) return;
+    const confirmed = window.confirm(`Release ${selectedForRelease.length} Pokémon for ${selectedForRelease.length * 100} points? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setReleasingPokemon(true);
+    try {
+      const response = await fetch('/api/wilds/release', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          pokemonIds: selectedForRelease,
+        })
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Error releasing Pokemon');
+      }
+
+      if (typeof data.pointsRemaining === 'number') {
+        setUser((prev) => ({ ...prev, points: data.pointsRemaining }));
+      }
+      setSelectedForRelease([]);
+      setMultiReleaseMode(false);
+      await loadMyPokemon();
+      alert(`Released ${data.releasedCount || 0} Pokémon for ${data.pointsAwarded || 0} points`);
+    } catch (err) {
+      console.error('Bulk release error:', err);
+      alert(err.message || 'Error releasing Pokémon');
+    } finally {
+      setReleasingPokemon(false);
+    }
+  };
+
   const formatTime = (ms) => {
     if (!ms) return '...';
     const totalSeconds = Math.floor((ms - Date.now()) / 1000);
@@ -1008,6 +1190,27 @@ export default function PokemonWilds() {
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  const formatRelativeCountdown = (targetMs) => {
+    if (!targetMs) return '0:00';
+    const totalSeconds = Math.max(0, Math.floor((targetMs - uiNow) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  const formatStartedAt = (value) => {
+    if (!value) return 'Unknown';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Unknown';
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  };
+
+  const genderSymbol = (gender) => {
+    if (gender === 'male') return '♂';
+    if (gender === 'female') return '♀';
+    return '';
   };
 
   const getTypeColor = (type) => {
@@ -1058,25 +1261,36 @@ export default function PokemonWilds() {
                 </Link>
                 {user.username === 'Spheal' && (
                   <>
-                    <Input
-                      type="text"
-                      placeholder="Dex # or name"
-                      value={adminSpawnQuery}
-                      onChange={(e) => setAdminSpawnQuery(e.target.value)}
-                      className="w-40 border-2 border-red-400/50 bg-slate-900/70 text-white"
-                    />
-                    <Button 
-                      onClick={handleAdminSpawn}
-                      className="bg-red-600 hover:bg-red-500 border-2 border-red-400 font-bold"
-                    >
-                      ⚡ Spawn Pokemon
-                    </Button>
-                    <Button 
-                      onClick={handleAdminSpawnShiny}
-                      className="bg-yellow-600 hover:bg-yellow-500 border-2 border-yellow-400 font-bold"
-                    >
-                      ✨ Spawn Shiny
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="text"
+                        placeholder="Dex # or name"
+                        value={adminSpawnQuery}
+                        onChange={(e) => setAdminSpawnQuery(e.target.value)}
+                        className="w-40 border-2 border-red-400/50 bg-slate-900/70 text-white"
+                      />
+                      <Button 
+                        onClick={handleAdminSpawn}
+                        className="bg-red-600 hover:bg-red-500 border-2 border-red-400 font-bold"
+                      >
+                        ⚡ Spawn Pokemon
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="text"
+                        placeholder="Dex # or name"
+                        value={adminShinySpawnQuery}
+                        onChange={(e) => setAdminShinySpawnQuery(e.target.value)}
+                        className="w-40 border-2 border-yellow-400/50 bg-slate-900/70 text-white"
+                      />
+                      <Button 
+                        onClick={handleAdminSpawnShiny}
+                        className="bg-yellow-600 hover:bg-yellow-500 border-2 border-yellow-400 font-bold"
+                      >
+                        ✨ Spawn Shiny
+                      </Button>
+                    </div>
                   </>
                 )}
                 <Button
@@ -1096,6 +1310,13 @@ export default function PokemonWilds() {
                   className="bg-orange-600 hover:bg-orange-500"
                 >
                   Inventory
+                </Button>
+                <Button
+                  onClick={() => setShowLeaderboardModal(true)}
+                  className="bg-cyan-700 hover:bg-cyan-600"
+                >
+                  <Users className="mr-2 h-4 w-4" />
+                  Leaderboard
                 </Button>
                 <Button 
                   onClick={() => setShowFriendsPanel(true)}
@@ -1119,22 +1340,41 @@ export default function PokemonWilds() {
                   <Sparkles className="mr-2 h-4 w-4" />
                   My Pokemon ({myPokemon.length})
                 </Button>
+                <Button onClick={() => setShowDailyObjectives(true)} className="bg-amber-600 hover:bg-amber-500">
+                  Daily Objectives
+                  {dailyObjectives?.objectives?.some((objective) => objective.completed && objective.rewardGranted) && (
+                    <span className="ml-2 inline-flex h-2.5 w-2.5 rounded-full bg-green-300" />
+                  )}
+                </Button>
                 <Button onClick={handleSignOut} className="bg-slate-700 hover:bg-slate-600 border border-cyan-400/40 text-white ml-auto lg:ml-0">
                   Sign Out
                 </Button>
               </div>
             </div>
             <div className="text-right self-start lg:self-center">
-              <p className="text-sm text-gray-400">Trainer</p>
-              <p className="text-xl font-bold text-white">{user.username}</p>
+              <p className={`text-sm font-bold ${activeUserTitle?.textClass || trainerRank.textClass}`} style={activeUserTitle?.color ? { color: activeUserTitle.color } : undefined}>{activeUserTitle?.label || trainerRank.label}</p>
+              <p className={`text-xl font-bold ${activeUserTitle?.textClass || trainerRank.textClass}`} style={activeUserTitle?.color ? { color: activeUserTitle.color } : undefined}>{user.username}</p>
               <p className="text-sm text-yellow-400 font-bold">⭐ {user.points} Points</p>
+              <p className="text-xs text-cyan-300 font-semibold">⚔️ {user.battleWins || 0} Battle Wins</p>
             </div>
           </div>
         </div>
 
         {/* Main Area */}
-        <div className="max-w-7xl mx-auto p-8 mt-12">
-          {spawn && spawn.pokemon ? (
+        <div className="max-w-7xl mx-auto p-8 mt-12 space-y-6">
+          {massOutbreak?.active && (
+            <Card className="border-2 border-red-500/60 bg-red-950/70 backdrop-blur-sm">
+              <CardContent className="p-4 text-center space-y-1">
+                <p className="text-lg font-bold text-red-200">🚨 A Mass outbreak of {massOutbreak.pokemonName} has been spotted in the wilds!</p>
+                <p className="text-sm text-red-100">For the next 10 minutes, this Pokémon respawns every 30 seconds after each catch with 1/1000 shiny odds.</p>
+                <p className="text-sm font-semibold text-amber-200">Started at: {formatStartedAt(massOutbreak.startedAt)}</p>
+                <p className="text-sm font-semibold text-cyan-200">Time remaining: {formatRelativeCountdown(massOutbreak.endsAt)}</p>
+              </CardContent>
+            </Card>
+          )}
+
+          <div>
+            {spawn && spawn.pokemon ? (
             <div className="text-center">
               {/* Pokemon Display */}
               <div className="mb-8 animate-bounce-slow relative">
@@ -1192,19 +1432,46 @@ export default function PokemonWilds() {
                 </CardContent>
               </Card>
             </div>
-          ) : (
-            <div className="text-center">
-              <Card className="bg-slate-900/90 border-cyan-500/50 border-2 max-w-md mx-auto">
-                <CardContent className="py-12">
-                  <Clock className="w-16 h-16 mx-auto mb-4 text-cyan-400 animate-pulse" />
-                  <h2 className="text-2xl font-bold text-white mb-2">No Pokemon Currently</h2>
-                  <p className="text-gray-400">The wilds are quiet... check back soon!</p>
-                </CardContent>
-              </Card>
-            </div>
-          )}
+              ) : (
+                <div className="text-center">
+                  <Card className="bg-slate-900/90 border-cyan-500/50 border-2 max-w-md mx-auto">
+                    <CardContent className="py-12">
+                      <Clock className="w-16 h-16 mx-auto mb-4 text-cyan-400 animate-pulse" />
+                      <h2 className="text-2xl font-bold text-white mb-2">No Pokemon Currently</h2>
+                      <p className="text-gray-400">The wilds are quiet... check back soon!</p>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+          </div>
         </div>
       </div>
+
+      <Dialog open={showLeaderboardModal} onOpenChange={setShowLeaderboardModal}>
+        <DialogContent className="max-w-lg border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-cyan-400 flex items-center gap-2">
+              <Users className="h-6 w-6" />
+              Battle Wins Leaderboard
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+            {leaderboard.length === 0 ? (
+              <p className="text-sm text-slate-400">No battle wins recorded yet.</p>
+            ) : leaderboard.map((entry) => (
+              <div key={entry.id} className="rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-white">#{entry.rank} {entry.username}</p>
+                    <p className={`text-xs font-semibold ${entry.trainerRank?.textClass || 'text-slate-300'}`}>{entry.trainerRank?.label || 'Trainer'}</p>
+                  </div>
+                  <p className="text-sm font-bold text-yellow-300">{entry.battleWins || 0} wins</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Catch Attempt Dialog */}
       <Dialog open={showCatchDialog} onOpenChange={setShowCatchDialog}>
@@ -1290,9 +1557,32 @@ export default function PokemonWilds() {
       <Dialog open={showMyPokemon} onOpenChange={setShowMyPokemon}>
         <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
           <DialogHeader>
-            <DialogTitle className="text-3xl font-bold text-purple-400">
+            <DialogTitle className="text-3xl font-bold text-purple-400 text-center">
               My Pokemon Collection ({myPokemon.length})
             </DialogTitle>
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+              {multiReleaseMode && selectedForRelease.length > 0 && (
+                <Button
+                  onClick={handleReleaseSelectedPokemon}
+                  disabled={releasingPokemon}
+                  className="bg-red-600 hover:bg-red-500 text-white"
+                >
+                  Release Selected ({selectedForRelease.length})
+                </Button>
+              )}
+              <Button
+                onClick={() => {
+                  setMultiReleaseMode((prev) => !prev);
+                  setSelectedForRelease([]);
+                }}
+                className={`${multiReleaseMode ? 'bg-red-700 hover:bg-red-600' : 'bg-purple-600 hover:bg-purple-500'} text-white`}
+              >
+                {multiReleaseMode ? 'Cancel Release Select' : 'Select Multiple for Release'}
+              </Button>
+            </div>
+            {multiReleaseMode && (
+              <p className="text-center text-sm text-red-300">Select multiple Pokémon to release. Each one gives 100 points.</p>
+            )}
           </DialogHeader>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto max-h-[70vh] pr-4">
@@ -1302,18 +1592,32 @@ export default function PokemonWilds() {
                 <p className="text-gray-500">Visit the wilds to catch some Pokemon.</p>
               </div>
             ) : (
-              myPokemon.map((pokemon, idx) => (
+              myPokemon.map((pokemon, idx) => {
+                const pokemonKey = String(pokemon._id || pokemon.id);
+                const isSelectedForRelease = selectedForRelease.includes(pokemonKey);
+                return (
                 <Card 
                   key={idx}
-                  className={`bg-slate-800/90 border-purple-500/30 cursor-pointer hover:border-purple-500 transition-all ${
-                    pokemon.isShiny ? 'ring-2 ring-yellow-400' : ''
-                  }`}
+                  className={`bg-slate-800/90 cursor-pointer hover:border-purple-500 transition-all ${
+                    multiReleaseMode
+                      ? (isSelectedForRelease ? 'border-red-400 ring-2 ring-red-400' : 'border-red-500/30')
+                      : 'border-purple-500/30'
+                  } ${pokemon.isShiny ? 'ring-2 ring-yellow-400' : ''}`}
                   onClick={() => {
+                    if (multiReleaseMode) {
+                      togglePokemonForRelease(pokemon);
+                      return;
+                    }
                     setSelectedPokemon(pokemon);
                     fetchEvolutionDataForPokemon(pokemon);
                   }}
                 >
                   <CardContent className="p-4 relative">
+                    {multiReleaseMode && (
+                      <div className={`absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 ${isSelectedForRelease ? 'border-red-300 bg-red-500 text-white' : 'border-white/50 bg-slate-900/70 text-transparent'}`}>
+                        ✓
+                      </div>
+                    )}
                     <img
                       src={pokemon.sprite}
                       alt={pokemon.displayName}
@@ -1322,9 +1626,11 @@ export default function PokemonWilds() {
                         filter: pokemon.isShiny ? 'brightness(1.2) drop-shadow(0 0 10px rgba(234, 179, 8, 0.6))' : 'none'
                       }}
                     />
-                    <h3 className="text-center font-bold text-white flex items-center justify-center gap-1">
+                    <h3 className="text-center font-bold text-white flex items-center justify-center gap-1 flex-wrap">
                       {pokemon.isShiny && <span className="text-yellow-400 text-sm">✨</span>}
-                      {pokemon.nickname || pokemon.displayName}
+                      <span>{pokemon.nickname || pokemon.displayName}</span>
+                      <span className="text-cyan-300 text-xs font-semibold">Lv {pokemon.level || 1}</span>
+                      {genderSymbol(pokemon.gender) && <span className="text-pink-300 text-xs font-semibold">{genderSymbol(pokemon.gender)}</span>}
                     </h3>
                     <p className="text-center text-gray-400 text-sm">
                       #{pokemon.id}
@@ -1341,7 +1647,7 @@ export default function PokemonWilds() {
                     </div>
                   </CardContent>
                 </Card>
-              ))
+              )})
             )}
           </div>
         </DialogContent>
@@ -1394,6 +1700,12 @@ export default function PokemonWilds() {
                     </Badge>
                   ))}
                 </div>
+                <Button
+                  onClick={() => handleSetFavoritePokemon(selectedPokemon)}
+                  className="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-bold"
+                >
+                  {user?.favoritePokemonId === String(selectedPokemon._id || selectedPokemon.id) ? 'Featured on Player Card' : 'Set as Favorite for Player Card'}
+                </Button>
                 
                 {/* Nickname Section */}
                 <div className="bg-slate-800 p-3 rounded-lg">
@@ -1862,6 +2174,176 @@ export default function PokemonWilds() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!activePokemonTrade} onOpenChange={() => setActivePokemonTrade(null)}>
+        <DialogContent className="max-w-3xl border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-purple-400">Pokémon Trade Request</DialogTitle>
+          </DialogHeader>
+          {activePokemonTrade && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Card className="border-2 border-purple-500/30 bg-slate-800/50">
+                  <CardHeader><CardTitle className="text-purple-300 text-lg">They offer</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(activePokemonTrade.offeredPokemon || []).filter(Boolean).slice(0, 6).map((entry, idx) => {
+                        const pokemon = entry?.pokemonData || entry;
+                        return (
+                          <div key={`${pokemon?._id || pokemon?.id || idx}-${idx}`} className="flex items-center gap-2 bg-slate-700/40 rounded p-2">
+                            <img src={pokemon?.sprite || '/placeholder.png'} alt={pokemon?.displayName || pokemon?.name || 'Pokemon'} className="w-12 h-12 object-contain rounded" />
+                            <div>
+                              <p className="text-white text-xs font-bold">{pokemon?.nickname || pokemon?.displayName || pokemon?.name}</p>
+                              <p className="text-slate-400 text-[11px]">Lv {pokemon?.level || 1}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-2 border-cyan-500/30 bg-slate-800/50">
+                  <CardHeader><CardTitle className="text-cyan-300 text-lg">For your</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(activePokemonTrade.requestedPokemon || []).filter(Boolean).slice(0, 6).map((entry, idx) => {
+                        const pokemon = entry?.pokemonData || entry;
+                        return (
+                          <div key={`${pokemon?._id || pokemon?.id || idx}-${idx}`} className="flex items-center gap-2 bg-slate-700/40 rounded p-2">
+                            <img src={pokemon?.sprite || '/placeholder.png'} alt={pokemon?.displayName || pokemon?.name || 'Pokemon'} className="w-12 h-12 object-contain rounded" />
+                            <div>
+                              <p className="text-white text-xs font-bold">{pokemon?.nickname || pokemon?.displayName || pokemon?.name}</p>
+                              <p className="text-slate-400 text-[11px]">Lv {pokemon?.level || 1}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+              <div className="flex gap-3">
+                <Button onClick={() => handleAcceptPokemonTrade(activePokemonTrade)} className="flex-1 bg-green-600 hover:bg-green-500">Accept Trade</Button>
+                <Button onClick={() => handleDeclinePokemonTrade(activePokemonTrade)} className="flex-1 bg-red-600 hover:bg-red-500">Decline Trade</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Daily Objectives Dialog */}
+      <Dialog open={showDailyObjectives} onOpenChange={setShowDailyObjectives}>
+        <DialogContent className="max-w-xl border-4 border-amber-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-amber-400">Daily Objectives</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {dailyObjectives?.objectives?.length ? dailyObjectives.objectives.map((objective) => (
+              <Card key={objective.id} className={`border-2 ${objective.completed ? 'border-green-500/40 bg-green-950/30' : 'border-amber-500/30 bg-slate-800/50'}`}>
+                <CardContent className="pt-4 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-white font-bold">{objective.label}</p>
+                    <p className="text-sm text-slate-300">Progress: {objective.progress}/{objective.target}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-amber-300 font-bold">+{objective.rewardPoints} pts</p>
+                    <p className={`text-xs font-semibold ${objective.completed ? 'text-green-300' : 'text-slate-400'}`}>
+                      {objective.completed ? 'Completed' : 'In progress'}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )) : (
+              <p className="text-slate-400">Loading daily objectives...</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Player Card Dialog */}
+      <Dialog open={showPlayerCard} onOpenChange={setShowPlayerCard}>
+        <DialogContent className="max-w-xl border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-cyan-400 flex items-center gap-2">
+              <Users className="h-6 w-6" />
+              {playerCard?.username}'s Player Card
+            </DialogTitle>
+          </DialogHeader>
+
+          {playerCard && (
+            <div className="space-y-4">
+              <Card className="border-2 border-cyan-500/30 bg-slate-800/60">
+                <CardContent className="pt-6 text-center space-y-2">
+                  <p className={`text-sm font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`} style={playerCard.trainerRank?.color ? { color: playerCard.trainerRank.color } : undefined}>{playerCard.trainerRank?.label || 'Trainer'}</p>
+                  <p className={`text-3xl font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`} style={playerCard.trainerRank?.color ? { color: playerCard.trainerRank.color } : undefined}>{playerCard.username}</p>
+                  {playerCard.baseTrainerRank && (
+                    <p className="text-xs text-slate-400">Battle Rank: <span className={playerCard.baseTrainerRank.textClass || 'text-white'} style={playerCard.baseTrainerRank?.color ? { color: playerCard.baseTrainerRank.color } : undefined}>{playerCard.baseTrainerRank.label}</span></p>
+                  )}
+                  {playerCard.id === user?.id && (
+                    <div className="pt-2">
+                      <p className="text-xs font-semibold text-cyan-300 mb-2">Displayed Title</p>
+                      <select
+                        value={playerCard.selectedTitleId || ''}
+                        onChange={(e) => handleSelectPlayerTitle(e.target.value)}
+                        className="w-full rounded-md border border-cyan-500/30 bg-slate-900/80 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+                      >
+                        {(playerCard.availableTitles || []).map((title) => (
+                          <option key={title.id} value={title.id}>
+                            {title.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Card className="border-2 border-red-500/30 bg-slate-800/50">
+                  <CardContent className="pt-6 text-center">
+                    <p className="text-4xl font-bold text-red-300">{playerCard.battleWins || 0}</p>
+                    <p className="text-sm text-red-100/70">Battles Won</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-2 border-purple-500/30 bg-slate-800/50">
+                  <CardContent className="pt-6 text-center">
+                    <p className="text-4xl font-bold text-purple-300">{playerCard.tradesCompleted || 0}</p>
+                    <p className="text-sm text-purple-100/70">Trades Completed</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card className="border-2 border-yellow-500/30 bg-slate-800/50">
+                <CardHeader>
+                  <CardTitle className="text-yellow-400">Favorite Pokémon</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {playerCard.favoritePokemon ? (
+                    <div className="flex items-center gap-4">
+                      <img src={playerCard.favoritePokemon.sprite} alt={playerCard.favoritePokemon.displayName} className="h-24 w-24 object-contain" />
+                      <div>
+                        <p className="text-xl font-bold text-white flex items-center gap-2">
+                          {playerCard.favoritePokemon.nickname || playerCard.favoritePokemon.displayName}
+                          {playerCard.favoritePokemon.isShiny && <span className="text-yellow-400">✨</span>}
+                        </p>
+                        <p className="text-sm text-slate-300">Level {playerCard.favoritePokemon.level || 1}</p>
+                        <div className="flex gap-2 mt-2 flex-wrap">
+                          {(playerCard.favoritePokemon.types || []).map((type) => (
+                            <Badge key={type} className={`${getTypeColor(type)} text-white capitalize`}>{type}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-slate-400">No favorite Pokémon selected yet.</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Friends Panel Dialog */}
       <Dialog open={showFriendsPanel} onOpenChange={setShowFriendsPanel}>
         <DialogContent className="max-w-4xl max-h-[90vh] border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
@@ -1874,6 +2356,12 @@ export default function PokemonWilds() {
 
           <ScrollArea className="max-h-[70vh]">
             <div className="space-y-4 pr-4">
+              <div className="flex justify-end">
+                <Button onClick={() => loadPlayerCard(user.id)} className="bg-cyan-700 hover:bg-cyan-600">
+                  <Users className="mr-2 h-4 w-4" />
+                  My Player Card
+                </Button>
+              </div>
               {/* Add Friend */}
               <Card className="border-2 border-green-500/30 bg-slate-800/50">
                 <CardHeader>
@@ -1915,9 +2403,16 @@ export default function PokemonWilds() {
                         >
                           <div>
                             <p className="text-white font-bold flex items-center gap-2">{friend.username}{friend.isOnline && <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-400" />}</p>
-                            <p className="text-xs text-gray-400">{friend.tradesCompleted || 0} trades completed</p>
+                            <p className="text-xs text-gray-400">Open their player card for battle and trade stats.</p>
                           </div>
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-wrap justify-end">
+                            <Button
+                              size="sm"
+                              onClick={() => loadPlayerCard(friend.id)}
+                              className="bg-cyan-700 hover:bg-cyan-600 text-xs"
+                            >
+                              Player Card
+                            </Button>
                             <Button
                               size="sm"
                               onClick={() => {
@@ -1941,6 +2436,37 @@ export default function PokemonWilds() {
                             >
                               Remove
                             </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+
+              <Card className="border-2 border-cyan-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(34,211,238,0.2)]">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle className="text-cyan-400">Trade & Social Notifications ({(socialNotifications || []).filter((notification) => !notification?.read).length})</CardTitle>
+                  {(socialNotifications || []).some((notification) => !notification?.read) && (
+                    <Button size="sm" onClick={() => handleMarkNotificationsRead([])} className="bg-cyan-700 hover:bg-cyan-600">Mark all read</Button>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  {(socialNotifications || []).length === 0 ? (
+                    <p className="text-cyan-100/50 text-center py-4">No new notifications</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {(socialNotifications || []).map((notification) => (
+                        <div key={notification.id} className={`rounded p-3 ${notification.read ? 'bg-slate-700/30' : 'bg-cyan-900/30 border border-cyan-500/30'}`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-white text-sm font-medium">{notification.message}</p>
+                              <p className="text-xs text-cyan-100/50 mt-1">{new Date(notification.createdAt).toLocaleString()}</p>
+                            </div>
+                            {!notification.read && (
+                              <Button size="sm" onClick={() => handleMarkNotificationsRead([notification.id])} className="bg-cyan-700 hover:bg-cyan-600 text-xs">Read</Button>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -1993,8 +2519,7 @@ export default function PokemonWilds() {
                             <Badge className="bg-purple-500">{trade.offeredPokemon?.length || 0} Pokemon</Badge>
                           </div>
                           <div className="flex gap-2 mt-2">
-                            <Button size="sm" onClick={() => handleAcceptPokemonTrade(trade)} className="flex-1 bg-green-600 hover:bg-green-500">Accept Trade</Button>
-                            <Button size="sm" onClick={() => handleDeclinePokemonTrade(trade)} className="flex-1 bg-red-600 hover:bg-red-500">Decline</Button>
+                            <Button size="sm" onClick={() => handleViewPokemonTrade(trade)} className="w-full bg-purple-500 text-white hover:bg-purple-400">View Trade Request</Button>
                           </div>
                         </div>
                       ))}
@@ -2020,7 +2545,7 @@ export default function PokemonWilds() {
                             <Badge className="bg-purple-500">{trade.offeredCards?.length || 0} Cards</Badge>
                           </div>
                           <div className="flex gap-2">
-                            <Button size="sm" onClick={() => handleViewCardTrade(trade)} className="w-full bg-purple-500 text-white hover:bg-purple-400">View Trade</Button>
+                            <Button size="sm" onClick={() => handleViewCardTrade(trade)} className="w-full bg-purple-500 text-white hover:bg-purple-400">View Trade Request</Button>
                           </div>
                         </div>
                       ))}

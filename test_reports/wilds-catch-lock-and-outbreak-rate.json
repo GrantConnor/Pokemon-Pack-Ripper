@@ -1,0 +1,12 @@
+{
+  "checks": [
+    {"name": "wild catch success path claims spawn atomically before awarding pokemon", "status": "passed"},
+    {"name": "wild catch fail path no longer writes attempts after another player already caught the spawn", "status": "passed"},
+    {"name": "mass outbreak respawn delay reduced to 30 seconds", "status": "passed"}
+  ],
+  "syntax_checks": [
+    "lib/wilds.js",
+    "app/api/[[...path]]/route.js"
+  ],
+  "result": "passed"
+}

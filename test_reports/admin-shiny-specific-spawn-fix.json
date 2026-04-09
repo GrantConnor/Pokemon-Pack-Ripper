@@ -1,0 +1,11 @@
+{
+  "checks": [
+    {"name": "admin spawn route no longer intercepts admin-spawn-shiny requests via substring match", "status": "passed"},
+    {"name": "admin shiny route now handles its own requests exactly", "status": "passed"},
+    {"name": "spawn shiny uses the same dex-number-or-name resolution path as normal spawn", "status": "passed"}
+  ],
+  "syntax_checks": [
+    "app/api/[[...path]]/route.js"
+  ],
+  "result": "passed"
+}

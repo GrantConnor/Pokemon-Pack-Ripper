@@ -80,6 +80,16 @@ function collectionCacheKey(userId) { return `cache:collection:${userId}:v1`; }
 function friendsCacheKey(userId) { return `cache:friends:${userId}:v1`; }
 function previewCardsCacheKey(setId) { return `cache:preview-cards:${setId}:v2`; }
 
+function sortFriendsByOnline(friends = []) {
+  return [...friends].sort((a, b) => {
+    if (!!a?.isOnline !== !!b?.isOnline) return a?.isOnline ? -1 : 1;
+    const aSeen = a?.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0;
+    const bSeen = b?.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0;
+    if (aSeen !== bSeen) return bSeen - aSeen;
+    return (a?.username || '').localeCompare(b?.username || '');
+  });
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState('');
@@ -93,6 +103,7 @@ export default function App() {
   const [pulledCards, setPulledCards] = useState([]);
   const [pendingRevealId, setPendingRevealId] = useState(null);
   const [showPackAnimation, setShowPackAnimation] = useState(false);
+  const [showPackResults, setShowPackResults] = useState(false);
   const [selectedSet, setSelectedSet] = useState(null);
   const [activeTab, setActiveTab] = useState('packs');
   const [selectedCard, setSelectedCard] = useState(null);
@@ -117,11 +128,15 @@ export default function App() {
   const [pendingRequests, setPendingRequests] = useState([]);
   const [sentRequests, setSentRequests] = useState([]);
   const [tradeRequests, setTradeRequests] = useState([]);
+  const [socialNotifications, setSocialNotifications] = useState([]);
   const [battleRequests, setBattleRequests] = useState([]);
+  const [showDailyObjectives, setShowDailyObjectives] = useState(false);
+  const [dailyObjectives, setDailyObjectives] = useState(null);
   const [friendUsername, setFriendUsername] = useState('');
   const [friendMessage, setFriendMessage] = useState('');
   const tradeSoundCountRef = useRef(0);
   const battleSoundCountRef = useRef(0);
+  const packOpenTimeoutRef = useRef(null);
 
   const playTradeNotificationSound = () => {
     try { new Audio('/pokemon-level-up.mp3').play().catch(() => {}); } catch {}
@@ -129,6 +144,59 @@ export default function App() {
 
   const playBattleNotificationSound = () => {
     try { new Audio('/alert-meme.mp3').play().catch(() => {}); } catch {}
+  };
+
+  const loadDailyObjectives = async (resolvedUserId = user?.id) => {
+    if (!resolvedUserId) return;
+    try {
+      const response = await fetch(`/api/daily-objectives?userId=${resolvedUserId}`);
+      const data = await response.json();
+      setDailyObjectives(data.dailyObjectives || null);
+    } catch (err) {
+      console.error('Error loading daily objectives:', err);
+    }
+  };
+
+
+  const loadPlayerCard = async (userId) => {
+    try {
+      const response = await fetch(`/api/profile/card?userId=${userId}`);
+      const raw = await response.text();
+      const data = raw ? JSON.parse(raw) : {};
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load player card');
+      }
+      if (data.profileCard) {
+        setPlayerCard(data.profileCard);
+        setShowPlayerCard(true);
+      }
+    } catch (err) {
+      console.error('Error loading player card:', err);
+      alert(err.message || 'Failed to load player card');
+    }
+  };
+
+  const handleSelectPlayerTitle = async (titleId) => {
+    if (!user?.id || !titleId) return;
+    try {
+      const response = await fetch('/api/profile/title', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, titleId })
+      });
+      const data = await response.json();
+      if (!data.success) {
+        alert(data.error || 'Failed to equip title');
+        return;
+      }
+      setUser((prev) => prev ? { ...prev, selectedTitleId: data.selectedTitleId } : prev);
+      if (showPlayerCard && playerCard?.id === user.id) {
+        loadPlayerCard(user.id);
+      }
+    } catch (err) {
+      console.error('Error selecting title:', err);
+      alert('Failed to equip title');
+    }
   };
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [tradeFriend, setTradeFriend] = useState(null);
@@ -141,6 +209,8 @@ export default function App() {
   const [tradeSearchOffer, setTradeSearchOffer] = useState('');
   const [viewingFriend, setViewingFriend] = useState(null);
   const [viewingFriendCollection, setViewingFriendCollection] = useState([]);
+  const [showPlayerCard, setShowPlayerCard] = useState(false);
+  const [playerCard, setPlayerCard] = useState(null);
   const [breakdownMode, setBreakdownMode] = useState(false);
   const [breakdownAllMultiples, setBreakdownAllMultiples] = useState(true);
   const [selectedForBreakdown, setSelectedForBreakdown] = useState([]);
@@ -149,7 +219,16 @@ export default function App() {
   const [breakdownQuantity, setBreakdownQuantity] = useState(1);
   const [isDissolving, setIsDissolving] = useState(false);
 
-  const unreadSocialCount = pendingRequests.length + tradeRequests.length;
+  const unreadSocialCount = pendingRequests.length + tradeRequests.length + (socialNotifications || []).filter((notification) => !notification?.read).length;
+
+
+  useEffect(() => {
+    return () => {
+      if (packOpenTimeoutRef.current) {
+        clearTimeout(packOpenTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     // Check if user is logged in
@@ -561,11 +640,13 @@ export default function App() {
 
   useEffect(() => {
     const tradeCount = Array.isArray(tradeRequests) ? tradeRequests.filter(Boolean).length : 0;
+    const notificationCount = Array.isArray(socialNotifications) ? socialNotifications.filter((notification) => notification && !notification.read).length : 0;
     const battleCount = Array.isArray(battleRequests) ? battleRequests.filter(Boolean).length : 0;
 
-    if (tradeCount > 0 && tradeSoundCountRef.current === 0) {
+    const totalSocialTradeSignals = tradeCount + notificationCount;
+    if (totalSocialTradeSignals > 0 && tradeSoundCountRef.current === 0) {
       playTradeNotificationSound();
-    } else if (tradeCount > tradeSoundCountRef.current) {
+    } else if (totalSocialTradeSignals > tradeSoundCountRef.current) {
       playTradeNotificationSound();
     }
 
@@ -575,9 +656,9 @@ export default function App() {
       playBattleNotificationSound();
     }
 
-    tradeSoundCountRef.current = tradeCount;
+    tradeSoundCountRef.current = tradeCount + notificationCount;
     battleSoundCountRef.current = battleCount;
-  }, [tradeRequests, battleRequests]);
+  }, [tradeRequests, socialNotifications, battleRequests]);
 
   const filteredPacks = useMemo(() => {
     if (!packSearchQuery) return sets;
@@ -665,10 +746,11 @@ export default function App() {
       if (!forceRefresh) {
         const cachedFriends = readLocalCache(cacheKey, CACHE_TTL.friends);
         if (cachedFriends) {
-          setFriends(cachedFriends.friends || []);
+          setFriends(sortFriendsByOnline(cachedFriends.friends || []));
           setPendingRequests(cachedFriends.pendingRequests || []);
           setSentRequests(cachedFriends.sentRequests || []);
           setTradeRequests(cachedFriends.tradeRequests || []);
+          setSocialNotifications(cachedFriends.socialNotifications || []);
           setBattleRequests(cachedFriends.battleRequests || []);
           return cachedFriends;
         }
@@ -679,10 +761,11 @@ export default function App() {
       if (!response.ok) {
         throw new Error(data.error || 'Failed to load friends');
       }
-      setFriends(data.friends || []);
+      setFriends(sortFriendsByOnline(data.friends || []));
       setPendingRequests(data.pendingRequests || []);
       setSentRequests(data.sentRequests || []);
       setTradeRequests(data.tradeRequests || []);
+      setSocialNotifications(data.socialNotifications || []);
       setBattleRequests(data.battleRequests || []);
       if (data.activeBattleId) {
         window.location.href = `/battle?id=${data.activeBattleId}`;
@@ -693,6 +776,7 @@ export default function App() {
         pendingRequests: data.pendingRequests || [],
         sentRequests: data.sentRequests || [],
         tradeRequests: data.tradeRequests || [],
+        socialNotifications: data.socialNotifications || [],
         battleRequests: data.battleRequests || [],
       });
       return data;
@@ -702,6 +786,26 @@ export default function App() {
     }
   };
 
+
+
+  const handleMarkNotificationsRead = async (notificationIds = []) => {
+    if (!user?.id) return;
+    try {
+      await fetch('/api/notifications/mark-read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, notificationIds })
+      });
+      setSocialNotifications((prev) => (prev || []).map((notification) => (
+        notificationIds.length === 0 || notificationIds.includes(notification.id)
+          ? { ...notification, read: true }
+          : notification
+      )));
+      invalidateFriendsCache?.();
+    } catch (err) {
+      console.error('Error marking notifications as read:', err);
+    }
+  };
 
   const invalidateCollectionCache = (targetUserId = user?.id) => {
     if (targetUserId) clearLocalCache(collectionCacheKey(targetUserId));
@@ -1121,6 +1225,16 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (!user?.id) return;
+    loadDailyObjectives(user.id);
+    const interval = setInterval(() => {
+      loadDailyObjectives(user.id);
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [user?.id]);
+
   const handleSignUp = async (e) => {
     e.preventDefault();
     setError('');
@@ -1169,6 +1283,7 @@ export default function App() {
         localStorage.setItem('userId', data.user.id);
         setUser(data.user);
         setCountdown(data.user.nextPointsIn || 0);
+        loadDailyObjectives(data.user.id);
         setUsername('');
         setPassword('');
       } else {
@@ -1234,6 +1349,7 @@ export default function App() {
         localStorage.setItem('userId', data.user.id);
         setUser(data.user);
         setCountdown(data.user.nextPointsIn || 0);
+        loadDailyObjectives(data.user.id);
         setUsername('');
         setPassword('');
       } else {
@@ -1382,13 +1498,44 @@ export default function App() {
 
 
 
+  const normalizePackCards = (cards = []) => (Array.isArray(cards) ? cards.filter(Boolean) : []).map((card) => ({
+    ...card,
+    images: card?.images || {},
+  }));
+
+  const normalizeRevealData = (revealData) => {
+    if (!revealData || typeof revealData !== 'object') return null;
+
+    const isBulk = !!revealData.isBulk;
+    if (isBulk) {
+      const packs = (Array.isArray(revealData.packs) ? revealData.packs : [])
+        .filter(Boolean)
+        .map((pack, index) => ({
+          packNumber: pack?.packNumber || index + 1,
+          cards: normalizePackCards(pack?.cards),
+        }))
+        .filter((pack) => pack.cards.length > 0);
+      return { ...revealData, isBulk: true, packs };
+    }
+
+    return {
+      ...revealData,
+      isBulk: false,
+      cards: normalizePackCards(revealData.cards),
+    };
+  };
+
   const hydrateRevealIntoUi = (revealData) => {
-    if (!revealData) return;
+    const normalizedReveal = normalizeRevealData(revealData);
+    if (!normalizedReveal) return false;
 
-    const ownedCardIds = new Set(collection.map(c => c.id));
+    const ownedCardIds = new Set((Array.isArray(collection) ? collection : []).filter(Boolean).map((c) => c.id));
 
-    if (revealData.isBulk && revealData.packs) {
-      const packsWithNewFlags = revealData.packs.map(pack => ({
+    if (normalizedReveal.isBulk && (!normalizedReveal.packs || normalizedReveal.packs.length === 0)) return false;
+    if (!normalizedReveal.isBulk && (!normalizedReveal.cards || normalizedReveal.cards.length === 0)) return false;
+
+    if (normalizedReveal.isBulk && normalizedReveal.packs?.length) {
+      const packsWithNewFlags = normalizedReveal.packs.map(pack => ({
         ...pack,
         cards: pack.cards.map(card => ({
           ...card,
@@ -1397,17 +1544,18 @@ export default function App() {
       }));
       setPulledCards(packsWithNewFlags);
     } else {
-      const cardsWithNewFlag = (revealData.cards || []).map(card => ({
+      const cardsWithNewFlag = (normalizedReveal.cards || []).map(card => ({
         ...card,
         isNewCard: !ownedCardIds.has(card.id)
       }));
       setPulledCards([{ packNumber: 1, cards: cardsWithNewFlag }]);
     }
 
-    setPendingRevealId(revealData.revealId || revealData.id || null);
-    if (revealData.pointsRemaining !== undefined) {
-      setUser(prev => prev ? ({ ...prev, points: revealData.pointsRemaining }) : prev);
+    setPendingRevealId(normalizedReveal.revealId || normalizedReveal.id || null);
+    if (normalizedReveal.pointsRemaining !== undefined) {
+      setUser(prev => prev ? ({ ...prev, points: normalizedReveal.pointsRemaining }) : prev);
     }
+    return true;
   };
 
   const recoverPendingPackReveal = async (targetUserId = user?.id) => {
@@ -1418,9 +1566,12 @@ export default function App() {
       const data = await response.json();
 
       if (response.ok && data.reveal) {
-        hydrateRevealIntoUi(data.reveal);
+        const hydrated = hydrateRevealIntoUi(data.reveal);
         setShowPackAnimation(false);
-        return true;
+        if (hydrated) {
+          setTimeout(() => setShowPackResults(true), 30);
+        }
+        return !!hydrated;
       }
     } catch (error) {
       console.error('Failed to recover pending pack reveal:', error);
@@ -1430,9 +1581,20 @@ export default function App() {
   };
 
   const handleOpenPack = async (set, bulk = false) => {
+    if (!user?.id || !set?.id || openingPack) return;
+
+    setError('');
+    setShowPackResults(false);
+    setPulledCards([]);
+    setPendingRevealId(null);
     setSelectedSet(set);
     setOpeningPack(true);
     setShowPackAnimation(true);
+
+    if (packOpenTimeoutRef.current) {
+      clearTimeout(packOpenTimeoutRef.current);
+      packOpenTimeoutRef.current = null;
+    }
 
     try {
       const response = await fetch('/api/packs/open', {
@@ -1444,12 +1606,19 @@ export default function App() {
       const data = await response.json();
 
       if (response.ok) {
-        // Simulate pack opening animation
-        setTimeout(() => {
-          hydrateRevealIntoUi(data);
+        packOpenTimeoutRef.current = setTimeout(() => {
+          const hydrated = hydrateRevealIntoUi(data);
           setShowPackAnimation(false);
+          packOpenTimeoutRef.current = null;
+
+          if (!hydrated) {
+            setError('Pack opened, but the reveal data was invalid. Please try reopening the results.');
+            recoverPendingPackReveal(user.id);
+            return;
+          }
+
+          setTimeout(() => setShowPackResults(true), 30);
           
-          // Check for achievements
           if (data.achievements) {
             setEarnedAchievements(data.achievements);
             setShowAchievementDialog(true);
@@ -1476,6 +1645,7 @@ export default function App() {
   const closePackResults = async () => {
     const revealIdToClaim = pendingRevealId;
 
+    setShowPackResults(false);
     setPulledCards([]);
     setPendingRevealId(null);
     setSelectedSet(null);
@@ -1732,6 +1902,9 @@ export default function App() {
                 Pokemon Wilds
               </Button>
             </Link>
+            <Button onClick={() => setShowDailyObjectives(true)} className="bg-amber-600 hover:bg-amber-500 border-2 border-amber-400 font-bold shadow-[0_0_15px_rgba(245,158,11,0.35)]">
+              Daily Objectives
+            </Button>
             <div className="flex items-center gap-2 bg-slate-800/50 px-4 py-2 rounded-lg border-2 border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)] backdrop-blur-sm">
               <Coins className="h-5 w-5 text-cyan-400" />
               <span className="font-bold text-cyan-400">{user.points || 0}</span>
@@ -2327,8 +2500,15 @@ export default function App() {
 
               {/* Friends List */}
               <Card className="border-2 border-cyan-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(6,182,212,0.2)]">
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="text-cyan-400">Friends ({friends.length})</CardTitle>
+                  <Button
+                    size="sm"
+                    onClick={() => loadPlayerCard(user.id)}
+                    className="bg-fuchsia-600 text-white hover:bg-fuchsia-500 shadow-[0_0_15px_rgba(217,70,239,0.25)]"
+                  >
+                    My Player Card
+                  </Button>
                 </CardHeader>
                 <CardContent>
                   <ScrollArea className="h-40">
@@ -2345,10 +2525,20 @@ export default function App() {
                               <Users className="h-4 w-4 text-cyan-400" />
                               <div>
                                 <p className="text-white font-medium flex items-center gap-2">{friend.username}{friend.isOnline && <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-400" />}</p>
-                                <p className="text-xs text-cyan-400">{friend.tradesCompleted || 0} trades completed</p>
+                                <p className="text-xs text-cyan-400">{friend.battleWins || 0} wins • {friend.tradesCompleted || 0} trades</p>
                               </div>
                             </div>
-                            <div className="flex gap-1">
+                            <div className="flex gap-1 flex-wrap justify-end">
+                              <Button
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  loadPlayerCard(friend.id);
+                                }}
+                                className="bg-fuchsia-600 text-white hover:bg-fuchsia-500 text-xs"
+                              >
+                                Player Card
+                              </Button>
                               <Button
                                 size="sm"
                                 onClick={(e) => {
@@ -2369,6 +2559,39 @@ export default function App() {
                               >
                                 Remove
                               </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+
+
+              <Card className="border-2 border-cyan-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(34,211,238,0.2)]">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle className="text-cyan-400">Trade & Social Notifications ({(socialNotifications || []).filter((notification) => !notification?.read).length})</CardTitle>
+                  {(socialNotifications || []).some((notification) => !notification?.read) && (
+                    <Button size="sm" onClick={() => handleMarkNotificationsRead([])} className="bg-cyan-700 hover:bg-cyan-600">Mark all read</Button>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-40">
+                    {(socialNotifications || []).length === 0 ? (
+                      <p className="text-cyan-100/50 text-center py-4">No new notifications</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {(socialNotifications || []).map((notification) => (
+                          <div key={notification.id} className={`rounded p-3 ${notification.read ? 'bg-slate-700/30' : 'bg-cyan-900/30 border border-cyan-500/30'}`}>
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-white text-sm font-medium">{notification.message}</p>
+                                <p className="text-xs text-cyan-100/50 mt-1">{new Date(notification.createdAt).toLocaleString()}</p>
+                              </div>
+                              {!notification.read && (
+                                <Button size="sm" onClick={() => handleMarkNotificationsRead([notification.id])} className="bg-cyan-700 hover:bg-cyan-600 text-xs">Read</Button>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -2469,7 +2692,7 @@ export default function App() {
                               <Badge className="bg-fuchsia-500">{trade.offeredPokemon?.length || 0} Pokemon</Badge>
                             </div>
                             <div className="flex gap-2">
-                              <Button size="sm" onClick={() => handleViewPokemonTrade(trade)} className="w-full bg-fuchsia-500 text-white hover:bg-fuchsia-400">View Trade</Button>
+                              <Button size="sm" onClick={() => handleViewPokemonTrade(trade)} className="w-full bg-fuchsia-500 text-white hover:bg-fuchsia-400">View Trade Request</Button>
                             </div>
                           </div>
                         ))}
@@ -2526,13 +2749,13 @@ export default function App() {
               <Package className="h-32 w-32 text-cyan-400 animate-bounce drop-shadow-[0_0_20px_rgba(6,182,212,0.8)]" />
               <Sparkles className="h-8 w-8 text-cyan-400 absolute -top-2 -right-2 animate-spin drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]" />
             </div>
-            <p className="mt-4 text-lg font-bold text-cyan-100">Ripping open your {selectedSet?.name} pack...</p>
+            <p className="mt-4 text-lg font-bold text-cyan-100">Ripping open your {selectedSet?.name || 'selected'} pack...</p>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Pack Results Dialog */}
-      <Dialog open={pulledCards.length > 0} onOpenChange={(open) => { if (!open) closePackResults(); }}>
+      <Dialog open={showPackResults} onOpenChange={(open) => { if (!open) closePackResults(); }}>
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_60px_rgba(6,182,212,0.6)]">
           <DialogHeader>
             <DialogTitle className="text-center text-2xl font-bold text-white bg-gradient-to-r from-cyan-500/20 to-transparent py-3 -mx-6 -mt-6 mb-4 border-b-4 border-cyan-500/50 drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]">
@@ -2541,7 +2764,7 @@ export default function App() {
           </DialogHeader>
           <ScrollArea className="max-h-[62vh] pb-2">
             <div className="space-y-6 p-4">
-              {pulledCards.map((pack, packIndex) => (
+              {(Array.isArray(pulledCards) ? pulledCards : []).filter(Boolean).map((pack, packIndex) => (
                 <div key={packIndex} className="space-y-3">
                   {pulledCards.length > 1 && (
                     <h3 className="text-lg font-bold text-cyan-400 border-b border-cyan-500/30 pb-2">
@@ -2549,7 +2772,7 @@ export default function App() {
                     </h3>
                   )}
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                    {pack.cards.map((card, cardIndex) => (
+                    {(Array.isArray(pack?.cards) ? pack.cards : []).filter(Boolean).map((card, cardIndex) => (
                       <div key={cardIndex} className="relative animate-in fade-in zoom-in duration-500" style={{ animationDelay: `${cardIndex * 50}ms` }}>
                         <Card className="overflow-hidden border-2 border-cyan-500/30 bg-slate-800/50 backdrop-blur-sm hover:border-cyan-500 hover:shadow-[0_0_20px_rgba(6,182,212,0.5)] transition-all">
                           <div className="relative">
@@ -2830,6 +3053,120 @@ export default function App() {
       </Dialog>
 
       {/* Trade Modal - Send Trade */}
+
+      <Dialog open={showPlayerCard} onOpenChange={setShowPlayerCard}>
+        <DialogContent className="max-w-xl border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-cyan-400 flex items-center gap-2">
+              <Users className="h-6 w-6" />
+              {playerCard?.username}'s Player Card
+            </DialogTitle>
+          </DialogHeader>
+
+          {playerCard && (
+            <div className="space-y-4">
+              <Card className="border-2 border-cyan-500/30 bg-slate-800/60">
+                <CardContent className="pt-6 text-center space-y-2">
+                  <p className={`text-sm font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`} style={playerCard.trainerRank?.color ? { color: playerCard.trainerRank.color } : undefined}>{playerCard.trainerRank?.label || 'Trainer'}</p>
+                  <p className={`text-3xl font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`} style={playerCard.trainerRank?.color ? { color: playerCard.trainerRank.color } : undefined}>{playerCard.username}</p>
+                  {playerCard.baseTrainerRank && (
+                    <p className="text-xs text-slate-400">Battle Rank: <span className={playerCard.baseTrainerRank.textClass || 'text-white'} style={playerCard.baseTrainerRank?.color ? { color: playerCard.baseTrainerRank.color } : undefined}>{playerCard.baseTrainerRank.label}</span></p>
+                  )}
+                  {playerCard.id === user?.id && (
+                    <div className="pt-2">
+                      <p className="text-xs font-semibold text-cyan-300 mb-2">Displayed Title</p>
+                      <select
+                        value={playerCard.selectedTitleId || ''}
+                        onChange={(e) => handleSelectPlayerTitle(e.target.value)}
+                        className="w-full rounded-md border border-cyan-500/30 bg-slate-900/80 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+                      >
+                        {(playerCard.availableTitles || []).map((title) => (
+                          <option key={title.id} value={title.id}>
+                            {title.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Card className="border-2 border-red-500/30 bg-slate-800/50">
+                  <CardContent className="pt-6 text-center">
+                    <p className="text-4xl font-bold text-red-300">{playerCard.battleWins || 0}</p>
+                    <p className="text-sm text-red-100/70">Battles Won</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-2 border-purple-500/30 bg-slate-800/50">
+                  <CardContent className="pt-6 text-center">
+                    <p className="text-4xl font-bold text-purple-300">{playerCard.tradesCompleted || 0}</p>
+                    <p className="text-sm text-purple-100/70">Trades Completed</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card className="border-2 border-yellow-500/30 bg-slate-800/50">
+                <CardHeader>
+                  <CardTitle className="text-yellow-400">Favorite Pokémon</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {playerCard.favoritePokemon ? (
+                    <div className="flex items-center gap-4">
+                      <img src={playerCard.favoritePokemon.sprite} alt={playerCard.favoritePokemon.displayName} className="h-24 w-24 object-contain" />
+                      <div>
+                        <p className="text-xl font-bold text-white flex items-center gap-2">
+                          {playerCard.favoritePokemon.nickname || playerCard.favoritePokemon.displayName}
+                          {playerCard.favoritePokemon.isShiny && <span className="text-yellow-400">✨</span>}
+                        </p>
+                        <p className="text-sm text-slate-300">Level {playerCard.favoritePokemon.level || 1}</p>
+                        <div className="flex gap-2 mt-2 flex-wrap">
+                          {(playerCard.favoritePokemon.types || []).map((type) => (
+                            <Badge key={type} className="bg-slate-700 text-white capitalize">{type}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-slate-400">No favorite Pokémon selected yet.</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Daily Objectives Modal */}
+      <Dialog open={showDailyObjectives} onOpenChange={setShowDailyObjectives}>
+        <DialogContent className="max-w-xl border-4 border-amber-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_60px_rgba(245,158,11,0.25)]">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-amber-400">Daily Objectives</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {dailyObjectives?.objectives?.length ? dailyObjectives.objectives.map((objective) => (
+              <Card key={objective.id} className={`border-2 ${objective.completed ? 'border-green-500/40 bg-green-950/30' : 'border-amber-500/30 bg-slate-800/50'}`}>
+                <CardContent className="pt-4 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-white font-bold">{objective.label}</p>
+                    <p className="text-sm text-slate-300">Progress: {objective.progress}/{objective.target}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-amber-300 font-bold">+{objective.rewardPoints} pts</p>
+                    <p className={`text-xs font-semibold ${objective.completed ? 'text-green-300' : 'text-slate-400'}`}>
+                      {objective.completed ? 'Completed' : 'In progress'}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )) : (
+              <p className="text-slate-400">Loading daily objectives...</p>
+            )}
+            <p className="pt-2 text-center text-sm text-amber-200/80">Objectives will reset daily.</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showTradeModal} onOpenChange={setShowTradeModal}>
         <DialogContent className="max-w-7xl max-h-[90vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
           <DialogHeader>

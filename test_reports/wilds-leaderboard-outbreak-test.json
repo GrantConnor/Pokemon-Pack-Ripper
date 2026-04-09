@@ -1,0 +1,22 @@
+{
+  "generatedAt": "2026-04-09T01:05:00Z",
+  "trainerRanks": [
+    { "wins": 0, "expected": "Trainer" },
+    { "wins": 5, "expected": "Ace Trainer" },
+    { "wins": 10, "expected": "Pro Trainer" },
+    { "wins": 25, "expected": "Gym Leader" },
+    { "wins": 50, "expected": "Elite Four" },
+    { "wins": 100, "expected": "Champion" }
+  ],
+  "massOutbreak": {
+    "durationMinutes": 10,
+    "respawnDelaySeconds": 60,
+    "shinyOdds": "1/1000",
+    "startChancePerFreshSpawn": 0.06,
+    "bannerText": "A Mass outbreak of {pokemon name} has been spotted in the wilds!"
+  },
+  "battleWinsAwarding": {
+    "normalBattleFinishIncrementsWinner": true,
+    "forfeitIncrementsWinner": true
+  }
+}
