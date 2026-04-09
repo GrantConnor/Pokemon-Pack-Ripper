@@ -29,6 +29,7 @@ export async function GET(request) {
           setAchievements: 1,
           tradesCompleted: 1,
           battleWins: 1,
+          favoritePokemonId: 1,
         },
       }
     );
@@ -63,6 +64,7 @@ export async function GET(request) {
         setAchievements: user.setAchievements || {},
         tradesCompleted: user.tradesCompleted || 0,
         battleWins: user.battleWins || 0,
+        favoritePokemonId: user.favoritePokemonId || null,
       },
     });
   } catch (error) {

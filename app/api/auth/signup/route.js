@@ -57,6 +57,7 @@ export async function POST(request) {
       tradeRequests: [],
       tradesCompleted: 0,
       battleWins: 0,
+      favoritePokemonId: null,
       points: trimmedUsername === 'Spheal' ? 999999 : STARTING_POINTS,
       lastPointsRefresh: new Date().toISOString(),
       createdAt: new Date().toISOString()
@@ -73,7 +74,8 @@ export async function POST(request) {
         points: newUser.points,
         nextPointsIn: calculateNextPointsTime(newUser),
         setAchievements: newUser.setAchievements || {},
-        battleWins: newUser.battleWins || 0
+        battleWins: newUser.battleWins || 0,
+        favoritePokemonId: newUser.favoritePokemonId || null
       }
     });
   } catch (error) {

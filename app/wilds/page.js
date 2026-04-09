@@ -48,7 +48,10 @@ export default function PokemonWilds() {
   const [activeCardTrade, setActiveCardTrade] = useState(null);
   const [selectedPokemonForTrade, setSelectedPokemonForTrade] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
+  const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [massOutbreak, setMassOutbreak] = useState(null);
+  const [showPlayerCard, setShowPlayerCard] = useState(false);
+  const [playerCard, setPlayerCard] = useState(null);
   const [viewingFriendPokemon, setViewingFriendPokemon] = useState(null);
   const [friendPokemonList, setFriendPokemonList] = useState([]);
   const [battleRequests, setBattleRequests] = useState([]);
@@ -106,6 +109,44 @@ export default function PokemonWilds() {
       setLeaderboard((data.leaderboard || []).filter(Boolean));
     } catch (err) {
       console.error('Error loading battle leaderboard:', err);
+    }
+  };
+
+
+  const loadPlayerCard = async (userId) => {
+    try {
+      const response = await fetch(`/api/profile/card?userId=${userId}`);
+      const data = await response.json();
+      if (data.profileCard) {
+        setPlayerCard(data.profileCard);
+        setShowPlayerCard(true);
+      }
+    } catch (err) {
+      console.error('Error loading player card:', err);
+    }
+  };
+
+  const handleSetFavoritePokemon = async (pokemon) => {
+    try {
+      const pokemonId = pokemon?._id || pokemon?.id;
+      const response = await fetch('/api/profile/favorite-pokemon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, pokemonId: String(pokemonId) })
+      });
+      const data = await response.json();
+      if (!data.success) {
+        alert(data.error || 'Failed to set favorite Pokémon');
+        return;
+      }
+      setUser((prev) => prev ? { ...prev, favoritePokemonId: data.favoritePokemonId } : prev);
+      if (showPlayerCard && playerCard?.id === user.id) {
+        loadPlayerCard(user.id);
+      }
+      alert(`${pokemon.nickname || pokemon.displayName} is now featured on your player card!`);
+    } catch (err) {
+      console.error('Error setting favorite Pokémon:', err);
+      alert('Failed to set favorite Pokémon');
     }
   };
 
@@ -1145,6 +1186,13 @@ export default function PokemonWilds() {
                 >
                   Inventory
                 </Button>
+                <Button
+                  onClick={() => setShowLeaderboardModal(true)}
+                  className="bg-cyan-700 hover:bg-cyan-600"
+                >
+                  <Users className="mr-2 h-4 w-4" />
+                  Leaderboard
+                </Button>
                 <Button 
                   onClick={() => setShowFriendsPanel(true)}
                   className="relative bg-blue-600 hover:bg-blue-500"
@@ -1192,9 +1240,8 @@ export default function PokemonWilds() {
             </Card>
           )}
 
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] items-start">
-            <div>
-              {spawn && spawn.pokemon ? (
+          <div>
+            {spawn && spawn.pokemon ? (
             <div className="text-center">
               {/* Pokemon Display */}
               <div className="mb-8 animate-bounce-slow relative">
@@ -1263,34 +1310,35 @@ export default function PokemonWilds() {
                   </Card>
                 </div>
               )}
-            </div>
-
-            <Card className="border-2 border-cyan-500/40 bg-slate-900/85 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
-                  <Users className="h-5 w-5 text-cyan-400" />
-                  Battle Wins Leaderboard
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {leaderboard.length === 0 ? (
-                  <p className="text-sm text-slate-400">No battle wins recorded yet.</p>
-                ) : leaderboard.map((entry) => (
-                  <div key={entry.id} className="rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-bold text-white">#{entry.rank} {entry.username}</p>
-                        <p className={`text-xs font-semibold ${entry.trainerRank?.textClass || 'text-slate-300'}`}>{entry.trainerRank?.label || 'Trainer'}</p>
-                      </div>
-                      <p className="text-sm font-bold text-yellow-300">{entry.battleWins || 0} wins</p>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
           </div>
         </div>
       </div>
+
+      <Dialog open={showLeaderboardModal} onOpenChange={setShowLeaderboardModal}>
+        <DialogContent className="max-w-lg border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-cyan-400 flex items-center gap-2">
+              <Users className="h-6 w-6" />
+              Battle Wins Leaderboard
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+            {leaderboard.length === 0 ? (
+              <p className="text-sm text-slate-400">No battle wins recorded yet.</p>
+            ) : leaderboard.map((entry) => (
+              <div key={entry.id} className="rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-white">#{entry.rank} {entry.username}</p>
+                    <p className={`text-xs font-semibold ${entry.trainerRank?.textClass || 'text-slate-300'}`}>{entry.trainerRank?.label || 'Trainer'}</p>
+                  </div>
+                  <p className="text-sm font-bold text-yellow-300">{entry.battleWins || 0} wins</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Catch Attempt Dialog */}
       <Dialog open={showCatchDialog} onOpenChange={setShowCatchDialog}>
@@ -1480,6 +1528,12 @@ export default function PokemonWilds() {
                     </Badge>
                   ))}
                 </div>
+                <Button
+                  onClick={() => handleSetFavoritePokemon(selectedPokemon)}
+                  className="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-bold"
+                >
+                  {user?.favoritePokemonId === String(selectedPokemon._id || selectedPokemon.id) ? 'Featured on Player Card' : 'Set as Favorite for Player Card'}
+                </Button>
                 
                 {/* Nickname Section */}
                 <div className="bg-slate-800 p-3 rounded-lg">
@@ -1948,6 +2002,71 @@ export default function PokemonWilds() {
         </DialogContent>
       </Dialog>
 
+      {/* Player Card Dialog */}
+      <Dialog open={showPlayerCard} onOpenChange={setShowPlayerCard}>
+        <DialogContent className="max-w-xl border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-cyan-400 flex items-center gap-2">
+              <Users className="h-6 w-6" />
+              {playerCard?.username}'s Player Card
+            </DialogTitle>
+          </DialogHeader>
+
+          {playerCard && (
+            <div className="space-y-4">
+              <Card className="border-2 border-cyan-500/30 bg-slate-800/60">
+                <CardContent className="pt-6 text-center space-y-2">
+                  <p className={`text-sm font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`}>{playerCard.trainerRank?.label || 'Trainer'}</p>
+                  <p className={`text-3xl font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`}>{playerCard.username}</p>
+                </CardContent>
+              </Card>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Card className="border-2 border-red-500/30 bg-slate-800/50">
+                  <CardContent className="pt-6 text-center">
+                    <p className="text-4xl font-bold text-red-300">{playerCard.battleWins || 0}</p>
+                    <p className="text-sm text-red-100/70">Battles Won</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-2 border-purple-500/30 bg-slate-800/50">
+                  <CardContent className="pt-6 text-center">
+                    <p className="text-4xl font-bold text-purple-300">{playerCard.tradesCompleted || 0}</p>
+                    <p className="text-sm text-purple-100/70">Trades Completed</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card className="border-2 border-yellow-500/30 bg-slate-800/50">
+                <CardHeader>
+                  <CardTitle className="text-yellow-400">Favorite Pokémon</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {playerCard.favoritePokemon ? (
+                    <div className="flex items-center gap-4">
+                      <img src={playerCard.favoritePokemon.sprite} alt={playerCard.favoritePokemon.displayName} className="h-24 w-24 object-contain" />
+                      <div>
+                        <p className="text-xl font-bold text-white flex items-center gap-2">
+                          {playerCard.favoritePokemon.nickname || playerCard.favoritePokemon.displayName}
+                          {playerCard.favoritePokemon.isShiny && <span className="text-yellow-400">✨</span>}
+                        </p>
+                        <p className="text-sm text-slate-300">Level {playerCard.favoritePokemon.level || 1}</p>
+                        <div className="flex gap-2 mt-2 flex-wrap">
+                          {(playerCard.favoritePokemon.types || []).map((type) => (
+                            <Badge key={type} className={`${getTypeColor(type)} text-white capitalize`}>{type}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-slate-400">No favorite Pokémon selected yet.</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Friends Panel Dialog */}
       <Dialog open={showFriendsPanel} onOpenChange={setShowFriendsPanel}>
         <DialogContent className="max-w-4xl max-h-[90vh] border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
@@ -1960,6 +2079,12 @@ export default function PokemonWilds() {
 
           <ScrollArea className="max-h-[70vh]">
             <div className="space-y-4 pr-4">
+              <div className="flex justify-end">
+                <Button onClick={() => loadPlayerCard(user.id)} className="bg-cyan-700 hover:bg-cyan-600">
+                  <Users className="mr-2 h-4 w-4" />
+                  My Player Card
+                </Button>
+              </div>
               {/* Add Friend */}
               <Card className="border-2 border-green-500/30 bg-slate-800/50">
                 <CardHeader>
@@ -2001,9 +2126,16 @@ export default function PokemonWilds() {
                         >
                           <div>
                             <p className="text-white font-bold flex items-center gap-2">{friend.username}{friend.isOnline && <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-400" />}</p>
-                            <p className="text-xs text-gray-400">{friend.tradesCompleted || 0} trades completed</p>
+                            <p className="text-xs text-gray-400">Open their player card for battle and trade stats.</p>
                           </div>
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-wrap justify-end">
+                            <Button
+                              size="sm"
+                              onClick={() => loadPlayerCard(friend.id)}
+                              className="bg-cyan-700 hover:bg-cyan-600 text-xs"
+                            >
+                              Player Card
+                            </Button>
                             <Button
                               size="sm"
                               onClick={() => {
