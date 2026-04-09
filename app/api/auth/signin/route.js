@@ -107,10 +107,10 @@ export async function POST(request) {
     if (user.username === 'Spheal') {
       computedUnlockedTitles = mergeAllSetTitles(computedUnlockedTitles, (await getSets()).sets || []);
     }
-    if (computedUnlockedTitles.length !== (user.unlockedTitles || []).length) {
+    if (JSON.stringify(computedUnlockedTitles) !== JSON.stringify(user.unlockedTitles || [])) {
       await users.updateOne({ _id: user._id }, { $set: { unlockedTitles: computedUnlockedTitles } });
-      user.unlockedTitles = computedUnlockedTitles;
     }
+    user.unlockedTitles = computedUnlockedTitles;
 
     const regen = getPointRegenState(user);
 

@@ -1241,25 +1241,36 @@ export default function PokemonWilds() {
                 </Link>
                 {user.username === 'Spheal' && (
                   <>
-                    <Input
-                      type="text"
-                      placeholder="Dex # or name"
-                      value={adminSpawnQuery}
-                      onChange={(e) => setAdminSpawnQuery(e.target.value)}
-                      className="w-40 border-2 border-red-400/50 bg-slate-900/70 text-white"
-                    />
-                    <Button 
-                      onClick={handleAdminSpawn}
-                      className="bg-red-600 hover:bg-red-500 border-2 border-red-400 font-bold"
-                    >
-                      ⚡ Spawn Pokemon
-                    </Button>
-                    <Button 
-                      onClick={handleAdminSpawnShiny}
-                      className="bg-yellow-600 hover:bg-yellow-500 border-2 border-yellow-400 font-bold"
-                    >
-                      ✨ Spawn Shiny
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="text"
+                        placeholder="Dex # or name"
+                        value={adminSpawnQuery}
+                        onChange={(e) => setAdminSpawnQuery(e.target.value)}
+                        className="w-40 border-2 border-red-400/50 bg-slate-900/70 text-white"
+                      />
+                      <Button 
+                        onClick={handleAdminSpawn}
+                        className="bg-red-600 hover:bg-red-500 border-2 border-red-400 font-bold"
+                      >
+                        ⚡ Spawn Pokemon
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="text"
+                        placeholder="Dex # or name"
+                        value={adminShinySpawnQuery}
+                        onChange={(e) => setAdminShinySpawnQuery(e.target.value)}
+                        className="w-40 border-2 border-yellow-400/50 bg-slate-900/70 text-white"
+                      />
+                      <Button 
+                        onClick={handleAdminSpawnShiny}
+                        className="bg-yellow-600 hover:bg-yellow-500 border-2 border-yellow-400 font-bold"
+                      >
+                        ✨ Spawn Shiny
+                      </Button>
+                    </div>
                   </>
                 )}
                 <Button

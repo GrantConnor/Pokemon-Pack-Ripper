@@ -27,10 +27,10 @@ export async function POST(request) {
     if (user.username === 'Spheal') {
       computedUnlockedTitles = mergeAllSetTitles(computedUnlockedTitles, (await getSets()).sets || []);
     }
-    if (computedUnlockedTitles.length !== (user.unlockedTitles || []).length) {
+    if (JSON.stringify(computedUnlockedTitles) !== JSON.stringify(user.unlockedTitles || [])) {
       await database.collection('users').updateOne({ id: userId }, { $set: { unlockedTitles: computedUnlockedTitles } });
-      user.unlockedTitles = computedUnlockedTitles;
     }
+    user.unlockedTitles = computedUnlockedTitles;
 
     const ownedTitle = getAllAvailableTitles({ battleWins: user.battleWins || 0, unlockedTitles: user.unlockedTitles || [] }).find((title) => title?.id === titleId);
     if (!ownedTitle) {

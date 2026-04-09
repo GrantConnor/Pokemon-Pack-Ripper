@@ -63,10 +63,10 @@ export async function GET(request) {
     if (user.username === 'Spheal') {
       computedUnlockedTitles = mergeAllSetTitles(computedUnlockedTitles, (await getSets()).sets || []);
     }
-    if (computedUnlockedTitles.length !== (user.unlockedTitles || []).length) {
+    if (JSON.stringify(computedUnlockedTitles) !== JSON.stringify(user.unlockedTitles || [])) {
       await users.updateOne({ id: userId }, { $set: { unlockedTitles: computedUnlockedTitles } });
-      user = { ...user, unlockedTitles: computedUnlockedTitles };
     }
+    user = { ...user, unlockedTitles: computedUnlockedTitles };
 
     const unlockedTitles = user.unlockedTitles || [];
     const availableTitles = getAllAvailableTitles({ battleWins: user.battleWins || 0, unlockedTitles });
