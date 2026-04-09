@@ -1,4 +1,5 @@
-import { getAllAvailableTitles } from '@/lib/set-titles';
+import { getAllAvailableTitles, mergeAllSetTitles } from '@/lib/set-titles';
+import { getSets } from '@/lib/pokemon-tcg';
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 
@@ -15,11 +16,19 @@ export async function POST(request) {
     const database = await connectDB();
     const user = await database.collection('users').findOne(
       { id: userId },
-      { projection: { id: 1, unlockedTitles: 1, battleWins: 1 } }
+      { projection: { id: 1, username: 1, unlockedTitles: 1, battleWins: 1 } }
     );
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    if (user.username === 'Spheal') {
+      const allTitles = mergeAllSetTitles(user.unlockedTitles || [], (await getSets()).sets || []);
+      if (allTitles.length !== (user.unlockedTitles || []).length) {
+        await database.collection('users').updateOne({ id: userId }, { $set: { unlockedTitles: allTitles } });
+        user.unlockedTitles = allTitles;
+      }
     }
 
     const ownedTitle = getAllAvailableTitles({ battleWins: user.battleWins || 0, unlockedTitles: user.unlockedTitles || [] }).find((title) => title?.id === titleId);

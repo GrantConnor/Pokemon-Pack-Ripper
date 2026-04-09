@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { getPointRegenState, refreshAllUsersPointsIfDue } from '@/lib/auth';
+import { getSets } from '@/lib/pokemon-tcg';
+import { mergeAllSetTitles } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,6 +40,14 @@ export async function GET(request) {
 
     if (!user) {
       return NextResponse.json({ authenticated: false });
+    }
+
+    if (user.username === 'Spheal') {
+      const allTitles = mergeAllSetTitles(user.unlockedTitles || [], (await getSets()).sets || []);
+      if (allTitles.length !== (user.unlockedTitles || []).length) {
+        await database.collection('users').updateOne({ id: userId }, { $set: { unlockedTitles: allTitles } });
+        user.unlockedTitles = allTitles;
+      }
     }
 
     const regen = getPointRegenState(user);
