@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { connectDB, getSanitizedMongoConfig } from '@/lib/mongodb';
 import { normalizeUsername, escapeRegex, verifyPassword, hashPassword, getPointRegenState, refreshAllUsersPointsIfDue, makeAuthTraceId } from '@/lib/auth';
+import { getSets } from '@/lib/pokemon-tcg';
+import { mergeAllSetTitles, mergeSpecialTitlesForUsername } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -42,6 +44,10 @@ export async function POST(request) {
           createdAt: 1,
           setAchievements: 1,
           tradesCompleted: 1,
+          battleWins: 1,
+          favoritePokemonId: 1,
+          unlockedTitles: 1,
+          selectedTitleId: 1,
         },
       }
     );
@@ -59,6 +65,10 @@ export async function POST(request) {
             createdAt: 1,
             setAchievements: 1,
             tradesCompleted: 1,
+          battleWins: 1,
+          favoritePokemonId: 1,
+          unlockedTitles: 1,
+          selectedTitleId: 1,
           },
         }
       );
@@ -93,6 +103,15 @@ export async function POST(request) {
       user.id = resolvedUserId;
     }
 
+    let computedUnlockedTitles = mergeSpecialTitlesForUsername(user.username, user.unlockedTitles || []);
+    if (user.username === 'Spheal') {
+      computedUnlockedTitles = mergeAllSetTitles(computedUnlockedTitles, (await getSets()).sets || []);
+    }
+    if (computedUnlockedTitles.length !== (user.unlockedTitles || []).length) {
+      await users.updateOne({ _id: user._id }, { $set: { unlockedTitles: computedUnlockedTitles } });
+      user.unlockedTitles = computedUnlockedTitles;
+    }
+
     const regen = getPointRegenState(user);
 
     if (regen.points !== user.points || regen.lastPointsRefresh !== (user.lastPointsRefresh || user.createdAt)) {
@@ -114,6 +133,10 @@ export async function POST(request) {
         nextPointsIn: regen.nextPointsIn,
         setAchievements: user.setAchievements || {},
         tradesCompleted: user.tradesCompleted || 0,
+        battleWins: user.battleWins || 0,
+        favoritePokemonId: user.favoritePokemonId || null,
+        unlockedTitles: user.unlockedTitles || [],
+        selectedTitleId: user.selectedTitleId || null,
       }
     });
   } catch (error) {
