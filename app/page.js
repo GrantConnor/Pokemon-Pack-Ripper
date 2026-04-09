@@ -1902,9 +1902,6 @@ export default function App() {
                 Pokemon Wilds
               </Button>
             </Link>
-            <Button onClick={() => loadPlayerCard(user.id)} className="bg-fuchsia-600 hover:bg-fuchsia-500 border-2 border-fuchsia-400 font-bold shadow-[0_0_15px_rgba(217,70,239,0.35)]">
-              My Player Card
-            </Button>
             <Button onClick={() => setShowDailyObjectives(true)} className="bg-amber-600 hover:bg-amber-500 border-2 border-amber-400 font-bold shadow-[0_0_15px_rgba(245,158,11,0.35)]">
               Daily Objectives
             </Button>
@@ -2498,21 +2495,20 @@ export default function App() {
                       {friendMessage}
                     </p>
                   )}
-                  <div className="mt-4 pt-4 border-t border-cyan-500/20">
-                    <Button
-                      onClick={() => loadPlayerCard(user.id)}
-                      className="w-full bg-fuchsia-600 text-white hover:bg-fuchsia-500 shadow-[0_0_15px_rgba(217,70,239,0.35)]"
-                    >
-                      My Player Card
-                    </Button>
-                  </div>
                 </CardContent>
               </Card>
 
               {/* Friends List */}
               <Card className="border-2 border-cyan-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(6,182,212,0.2)]">
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="text-cyan-400">Friends ({friends.length})</CardTitle>
+                  <Button
+                    size="sm"
+                    onClick={() => loadPlayerCard(user.id)}
+                    className="bg-fuchsia-600 text-white hover:bg-fuchsia-500 shadow-[0_0_15px_rgba(217,70,239,0.25)]"
+                  >
+                    My Player Card
+                  </Button>
                 </CardHeader>
                 <CardContent>
                   <ScrollArea className="h-40">

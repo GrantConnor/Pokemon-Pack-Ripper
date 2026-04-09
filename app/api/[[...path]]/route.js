@@ -3576,32 +3576,65 @@ if (pathname.includes('/api/auth/signin')) {
 
     // Release a Pokemon (delete from collection)
     if (pathname.includes('/api/wilds/release')) {
-      const { userId, pokemonId, xpAmount } = body;
-      
-      console.log(`🗑️ Release request - userId: ${userId}, pokemonId: ${pokemonId}`);
-      
-      if (!userId || !pokemonId) {
+      const { userId, pokemonId, pokemonIds } = body;
+      const normalizedPokemonIds = Array.isArray(pokemonIds)
+        ? pokemonIds.filter(Boolean)
+        : (pokemonId ? [pokemonId] : []);
+
+      console.log(`🗑️ Release request - userId: ${userId}, pokemonIds: ${normalizedPokemonIds.join(',')}`);
+
+      if (!userId || normalizedPokemonIds.length === 0) {
         return NextResponse.json({ error: 'User ID and Pokemon ID required' }, { status: 400 });
       }
 
       const database = await connectDB();
-      
-      // Delete the Pokemon
-      const result = await database.collection('caught_pokemon').deleteOne({
-        _id: new ObjectId(pokemonId),
-        userId: userId
-      });
+      const objectIds = normalizedPokemonIds.map((id) => {
+        try {
+          return new ObjectId(id);
+        } catch {
+          return null;
+        }
+      }).filter(Boolean);
 
-      if (result.deletedCount === 0) {
-        console.log(`❌ Pokemon not found for release - pokemonId: ${pokemonId}`);
+      if (!objectIds.length) {
+        return NextResponse.json({ error: 'Invalid Pokemon ID(s)' }, { status: 400 });
+      }
+
+      const ownedPokemon = await database.collection('caught_pokemon').find({
+        _id: { $in: objectIds },
+        userId,
+      }).toArray();
+
+      if (!ownedPokemon.length) {
         return NextResponse.json({ error: 'Pokemon not found' }, { status: 404 });
       }
 
-      console.log(`✅ Pokemon released successfully`);
+      const releaseIds = ownedPokemon.map((pokemon) => pokemon._id);
+      const result = await database.collection('caught_pokemon').deleteMany({
+        _id: { $in: releaseIds },
+        userId,
+      });
+
+      const releasedCount = result.deletedCount || 0;
+      const pointsAwarded = releasedCount * 100;
+
+      const userDoc = await database.collection('users').findOne({ id: userId }, { projection: { id: 1, points: 1, favoritePokemonId: 1 } });
+      const shouldClearFavorite = userDoc?.favoritePokemonId && releaseIds.some((id) => String(id) === String(userDoc.favoritePokemonId));
+      const userUpdate = {
+        $inc: { points: pointsAwarded },
+        ...(shouldClearFavorite ? { $unset: { favoritePokemonId: '' } } : {}),
+      };
+      await database.collection('users').updateOne({ id: userId }, userUpdate);
+      const updatedUser = await database.collection('users').findOne({ id: userId }, { projection: { points: 1 } });
+
+      console.log(`✅ Released ${releasedCount} Pokémon for ${pointsAwarded} points`);
 
       return NextResponse.json({
         success: true,
-        message: 'Pokemon released'
+        message: releasedCount === 1 ? 'Pokemon released' : 'Pokemon released',
+        releasedCount,
+        pointsAwarded,
+        pointsRemaining: updatedUser?.points || 0,
       });
     }
 

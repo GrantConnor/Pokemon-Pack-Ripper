@@ -76,6 +76,8 @@ export default function PokemonWilds() {
   const [fetchingEvolutionData, setFetchingEvolutionData] = useState(false);
   const [showEvolveConfirm, setShowEvolveConfirm] = useState(false);
   const [showReleaseConfirm, setShowReleaseConfirm] = useState(false);
+  const [multiReleaseMode, setMultiReleaseMode] = useState(false);
+  const [selectedForRelease, setSelectedForRelease] = useState([]);
   const [showCustomXPDialog, setShowCustomXPDialog] = useState(false);
   const [customXPAmount, setCustomXPAmount] = useState('500');
   const [showShopDialog, setShowShopDialog] = useState(false);
@@ -1095,7 +1097,10 @@ export default function PokemonWilds() {
 
       const data = await response.json();
       if (data.success) {
-        alert(`Released ${selectedPokemon.nickname || selectedPokemon.displayName}`);
+        if (typeof data.pointsRemaining === 'number') {
+          setUser((prev) => ({ ...prev, points: data.pointsRemaining }));
+        }
+        alert(`Released ${selectedPokemon.nickname || selectedPokemon.displayName} for ${data.pointsAwarded || 100} points`);
         
         // Close dialog and reload
         setSelectedPokemon(null);
@@ -1107,6 +1112,47 @@ export default function PokemonWilds() {
     } catch (err) {
       console.error('Release error:', err);
       alert('Error releasing Pokemon: ' + err.message);
+    } finally {
+      setReleasingPokemon(false);
+    }
+  };
+
+  const togglePokemonForRelease = (pokemon) => {
+    const pokemonKey = String(pokemon._id || pokemon.id);
+    setSelectedForRelease((prev) => prev.includes(pokemonKey) ? prev.filter((id) => id !== pokemonKey) : [...prev, pokemonKey]);
+  };
+
+  const handleReleaseSelectedPokemon = async () => {
+    if (!selectedForRelease.length || releasingPokemon) return;
+    const confirmed = window.confirm(`Release ${selectedForRelease.length} Pokémon for ${selectedForRelease.length * 100} points? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setReleasingPokemon(true);
+    try {
+      const response = await fetch('/api/wilds/release', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          pokemonIds: selectedForRelease,
+        })
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Error releasing Pokemon');
+      }
+
+      if (typeof data.pointsRemaining === 'number') {
+        setUser((prev) => ({ ...prev, points: data.pointsRemaining }));
+      }
+      setSelectedForRelease([]);
+      setMultiReleaseMode(false);
+      await loadMyPokemon();
+      alert(`Released ${data.releasedCount || 0} Pokémon for ${data.pointsAwarded || 0} points`);
+    } catch (err) {
+      console.error('Bulk release error:', err);
+      alert(err.message || 'Error releasing Pokémon');
     } finally {
       setReleasingPokemon(false);
     }
@@ -1453,9 +1499,34 @@ export default function PokemonWilds() {
       <Dialog open={showMyPokemon} onOpenChange={setShowMyPokemon}>
         <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
           <DialogHeader>
-            <DialogTitle className="text-3xl font-bold text-purple-400">
-              My Pokemon Collection ({myPokemon.length})
-            </DialogTitle>
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle className="text-3xl font-bold text-purple-400">
+                My Pokemon Collection ({myPokemon.length})
+              </DialogTitle>
+              <div className="flex gap-2">
+                {multiReleaseMode && selectedForRelease.length > 0 && (
+                  <Button
+                    onClick={handleReleaseSelectedPokemon}
+                    disabled={releasingPokemon}
+                    className="bg-red-600 hover:bg-red-500 text-white"
+                  >
+                    Release Selected ({selectedForRelease.length})
+                  </Button>
+                )}
+                <Button
+                  onClick={() => {
+                    setMultiReleaseMode((prev) => !prev);
+                    setSelectedForRelease([]);
+                  }}
+                  className={`${multiReleaseMode ? 'bg-red-700 hover:bg-red-600' : 'bg-purple-600 hover:bg-purple-500'} text-white`}
+                >
+                  {multiReleaseMode ? 'Cancel Release Select' : 'Select for Release'}
+                </Button>
+              </div>
+            </div>
+            {multiReleaseMode && (
+              <p className="text-sm text-red-300">Select multiple Pokémon to release. Each one gives 100 points.</p>
+            )}
           </DialogHeader>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto max-h-[70vh] pr-4">
@@ -1465,18 +1536,32 @@ export default function PokemonWilds() {
                 <p className="text-gray-500">Visit the wilds to catch some Pokemon.</p>
               </div>
             ) : (
-              myPokemon.map((pokemon, idx) => (
+              myPokemon.map((pokemon, idx) => {
+                const pokemonKey = String(pokemon._id || pokemon.id);
+                const isSelectedForRelease = selectedForRelease.includes(pokemonKey);
+                return (
                 <Card 
                   key={idx}
-                  className={`bg-slate-800/90 border-purple-500/30 cursor-pointer hover:border-purple-500 transition-all ${
-                    pokemon.isShiny ? 'ring-2 ring-yellow-400' : ''
-                  }`}
+                  className={`bg-slate-800/90 cursor-pointer hover:border-purple-500 transition-all ${
+                    multiReleaseMode
+                      ? (isSelectedForRelease ? 'border-red-400 ring-2 ring-red-400' : 'border-red-500/30')
+                      : 'border-purple-500/30'
+                  } ${pokemon.isShiny ? 'ring-2 ring-yellow-400' : ''}`}
                   onClick={() => {
+                    if (multiReleaseMode) {
+                      togglePokemonForRelease(pokemon);
+                      return;
+                    }
                     setSelectedPokemon(pokemon);
                     fetchEvolutionDataForPokemon(pokemon);
                   }}
                 >
                   <CardContent className="p-4 relative">
+                    {multiReleaseMode && (
+                      <div className={`absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 ${isSelectedForRelease ? 'border-red-300 bg-red-500 text-white' : 'border-white/50 bg-slate-900/70 text-transparent'}`}>
+                        ✓
+                      </div>
+                    )}
                     <img
                       src={pokemon.sprite}
                       alt={pokemon.displayName}
@@ -1504,7 +1589,7 @@ export default function PokemonWilds() {
                     </div>
                   </CardContent>
                 </Card>
-              ))
+              )})
             )}
           </div>
         </DialogContent>

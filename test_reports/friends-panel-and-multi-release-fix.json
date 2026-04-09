@@ -1,0 +1,16 @@
+{
+  "checks": [
+    {"name": "pack ripper header no longer contains My Player Card button", "status": "passed"},
+    {"name": "friends block header contains My Player Card button", "status": "passed"},
+    {"name": "friend rows still contain friend Player Card buttons", "status": "passed"},
+    {"name": "wilds my pokemon dialog supports multi-select release mode", "status": "passed"},
+    {"name": "wilds release endpoint accepts single and multiple pokemon ids", "status": "passed"},
+    {"name": "wilds release awards 100 points per released pokemon", "status": "passed"}
+  ],
+  "syntax_checks": [
+    "app/page.js",
+    "app/wilds/page.js",
+    "app/api/[[...path]]/route.js"
+  ],
+  "result": "passed"
+}
