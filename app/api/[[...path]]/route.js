@@ -3187,7 +3187,7 @@ if (pathname.includes('/api/auth/signin')) {
     }
 
     // Admin: Force spawn a new Pokemon (Spheal only)
-    if (pathname.includes('/api/wilds/admin-spawn')) {
+    if (pathname === '/api/wilds/admin-spawn') {
       const { adminId, pokemonId } = body;
       
       if (!adminId) {
@@ -3235,7 +3235,7 @@ if (pathname.includes('/api/auth/signin')) {
     }
 
     // Admin: Force spawn a SHINY Pokemon (Spheal only)
-    if (pathname.includes('/api/wilds/admin-spawn-shiny')) {
+    if (pathname === '/api/wilds/admin-spawn-shiny') {
       const { adminId, pokemonId } = body;
       
       if (!adminId) {
