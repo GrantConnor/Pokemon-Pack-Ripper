@@ -1,0 +1,12 @@
+{
+  "summary": {
+    "total_checks": 3,
+    "passed": 3,
+    "failed": 0
+  },
+  "checks": {
+    "view_trade_request_button_exists": true,
+    "active_pokemon_trade_state_exists": true,
+    "pokemon_trade_modal_exists": true
+  }
+}

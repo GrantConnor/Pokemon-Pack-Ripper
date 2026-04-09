@@ -135,6 +135,7 @@ export default function App() {
   const [friendMessage, setFriendMessage] = useState('');
   const tradeSoundCountRef = useRef(0);
   const battleSoundCountRef = useRef(0);
+  const packOpenTimeoutRef = useRef(null);
 
   const playTradeNotificationSound = () => {
     try { new Audio('/pokemon-level-up.mp3').play().catch(() => {}); } catch {}
@@ -174,6 +175,15 @@ export default function App() {
   const [isDissolving, setIsDissolving] = useState(false);
 
   const unreadSocialCount = pendingRequests.length + tradeRequests.length + (socialNotifications || []).filter((notification) => !notification?.read).length;
+
+
+  useEffect(() => {
+    return () => {
+      if (packOpenTimeoutRef.current) {
+        clearTimeout(packOpenTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     // Check if user is logged in
@@ -1443,13 +1453,41 @@ export default function App() {
 
 
 
+  const normalizePackCards = (cards = []) => (Array.isArray(cards) ? cards.filter(Boolean) : []).map((card) => ({
+    ...card,
+    images: card?.images || {},
+  }));
+
+  const normalizeRevealData = (revealData) => {
+    if (!revealData || typeof revealData !== 'object') return null;
+
+    const isBulk = !!revealData.isBulk;
+    if (isBulk) {
+      const packs = (Array.isArray(revealData.packs) ? revealData.packs : [])
+        .filter(Boolean)
+        .map((pack, index) => ({
+          packNumber: pack?.packNumber || index + 1,
+          cards: normalizePackCards(pack?.cards),
+        }))
+        .filter((pack) => pack.cards.length > 0);
+      return { ...revealData, isBulk: true, packs };
+    }
+
+    return {
+      ...revealData,
+      isBulk: false,
+      cards: normalizePackCards(revealData.cards),
+    };
+  };
+
   const hydrateRevealIntoUi = (revealData) => {
-    if (!revealData) return;
+    const normalizedReveal = normalizeRevealData(revealData);
+    if (!normalizedReveal) return false;
 
-    const ownedCardIds = new Set(collection.map(c => c.id));
+    const ownedCardIds = new Set((Array.isArray(collection) ? collection : []).filter(Boolean).map((c) => c.id));
 
-    if (revealData.isBulk && revealData.packs) {
-      const packsWithNewFlags = revealData.packs.map(pack => ({
+    if (normalizedReveal.isBulk && normalizedReveal.packs?.length) {
+      const packsWithNewFlags = normalizedReveal.packs.map(pack => ({
         ...pack,
         cards: pack.cards.map(card => ({
           ...card,
@@ -1458,17 +1496,21 @@ export default function App() {
       }));
       setPulledCards(packsWithNewFlags);
     } else {
-      const cardsWithNewFlag = (revealData.cards || []).map(card => ({
+      const cardsWithNewFlag = (normalizedReveal.cards || []).map(card => ({
         ...card,
         isNewCard: !ownedCardIds.has(card.id)
       }));
       setPulledCards([{ packNumber: 1, cards: cardsWithNewFlag }]);
     }
 
-    setPendingRevealId(revealData.revealId || revealData.id || null);
-    if (revealData.pointsRemaining !== undefined) {
-      setUser(prev => prev ? ({ ...prev, points: revealData.pointsRemaining }) : prev);
+    if (normalizedReveal.isBulk && (!normalizedReveal.packs || normalizedReveal.packs.length === 0)) return false;
+    if (!normalizedReveal.isBulk && (!normalizedReveal.cards || normalizedReveal.cards.length === 0)) return false;
+
+    setPendingRevealId(normalizedReveal.revealId || normalizedReveal.id || null);
+    if (normalizedReveal.pointsRemaining !== undefined) {
+      setUser(prev => prev ? ({ ...prev, points: normalizedReveal.pointsRemaining }) : prev);
     }
+    return true;
   };
 
   const recoverPendingPackReveal = async (targetUserId = user?.id) => {
@@ -1479,9 +1521,9 @@ export default function App() {
       const data = await response.json();
 
       if (response.ok && data.reveal) {
-        hydrateRevealIntoUi(data.reveal);
+        const hydrated = hydrateRevealIntoUi(data.reveal);
         setShowPackAnimation(false);
-        return true;
+        return !!hydrated;
       }
     } catch (error) {
       console.error('Failed to recover pending pack reveal:', error);
@@ -1491,9 +1533,19 @@ export default function App() {
   };
 
   const handleOpenPack = async (set, bulk = false) => {
+    if (!user?.id || !set?.id || openingPack) return;
+
+    setError('');
+    setPulledCards([]);
+    setPendingRevealId(null);
     setSelectedSet(set);
     setOpeningPack(true);
     setShowPackAnimation(true);
+
+    if (packOpenTimeoutRef.current) {
+      clearTimeout(packOpenTimeoutRef.current);
+      packOpenTimeoutRef.current = null;
+    }
 
     try {
       const response = await fetch('/api/packs/open', {
@@ -1505,12 +1557,17 @@ export default function App() {
       const data = await response.json();
 
       if (response.ok) {
-        // Simulate pack opening animation
-        setTimeout(() => {
-          hydrateRevealIntoUi(data);
+        packOpenTimeoutRef.current = setTimeout(() => {
+          const hydrated = hydrateRevealIntoUi(data);
           setShowPackAnimation(false);
+          packOpenTimeoutRef.current = null;
+
+          if (!hydrated) {
+            setError('Pack opened, but the reveal data was invalid. Please try reopening the results.');
+            recoverPendingPackReveal(user.id);
+            return;
+          }
           
-          // Check for achievements
           if (data.achievements) {
             setEarnedAchievements(data.achievements);
             setShowAchievementDialog(true);
@@ -2623,7 +2680,7 @@ export default function App() {
               <Package className="h-32 w-32 text-cyan-400 animate-bounce drop-shadow-[0_0_20px_rgba(6,182,212,0.8)]" />
               <Sparkles className="h-8 w-8 text-cyan-400 absolute -top-2 -right-2 animate-spin drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]" />
             </div>
-            <p className="mt-4 text-lg font-bold text-cyan-100">Ripping open your {selectedSet?.name} pack...</p>
+            <p className="mt-4 text-lg font-bold text-cyan-100">Ripping open your {selectedSet?.name || 'selected'} pack...</p>
           </div>
         </DialogContent>
       </Dialog>
@@ -2638,7 +2695,7 @@ export default function App() {
           </DialogHeader>
           <ScrollArea className="max-h-[62vh] pb-2">
             <div className="space-y-6 p-4">
-              {pulledCards.map((pack, packIndex) => (
+              {(Array.isArray(pulledCards) ? pulledCards : []).filter(Boolean).map((pack, packIndex) => (
                 <div key={packIndex} className="space-y-3">
                   {pulledCards.length > 1 && (
                     <h3 className="text-lg font-bold text-cyan-400 border-b border-cyan-500/30 pb-2">
@@ -2646,7 +2703,7 @@ export default function App() {
                     </h3>
                   )}
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                    {pack.cards.map((card, cardIndex) => (
+                    {(Array.isArray(pack?.cards) ? pack.cards : []).filter(Boolean).map((card, cardIndex) => (
                       <div key={cardIndex} className="relative animate-in fade-in zoom-in duration-500" style={{ animationDelay: `${cardIndex * 50}ms` }}>
                         <Card className="overflow-hidden border-2 border-cyan-500/30 bg-slate-800/50 backdrop-blur-sm hover:border-cyan-500 hover:shadow-[0_0_20px_rgba(6,182,212,0.5)] transition-all">
                           <div className="relative">
