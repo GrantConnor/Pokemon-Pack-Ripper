@@ -161,13 +161,18 @@ export default function App() {
   const loadPlayerCard = async (userId) => {
     try {
       const response = await fetch(`/api/profile/card?userId=${userId}`);
-      const data = await response.json();
+      const raw = await response.text();
+      const data = raw ? JSON.parse(raw) : {};
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load player card');
+      }
       if (data.profileCard) {
         setPlayerCard(data.profileCard);
         setShowPlayerCard(true);
       }
     } catch (err) {
       console.error('Error loading player card:', err);
+      alert(err.message || 'Failed to load player card');
     }
   };
 
@@ -2493,6 +2498,14 @@ export default function App() {
                       {friendMessage}
                     </p>
                   )}
+                  <div className="mt-4 pt-4 border-t border-cyan-500/20">
+                    <Button
+                      onClick={() => loadPlayerCard(user.id)}
+                      className="w-full bg-fuchsia-600 text-white hover:bg-fuchsia-500 shadow-[0_0_15px_rgba(217,70,239,0.35)]"
+                    >
+                      My Player Card
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -2516,10 +2529,20 @@ export default function App() {
                               <Users className="h-4 w-4 text-cyan-400" />
                               <div>
                                 <p className="text-white font-medium flex items-center gap-2">{friend.username}{friend.isOnline && <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-400" />}</p>
-                                <p className="text-xs text-cyan-400">{friend.tradesCompleted || 0} trades completed</p>
+                                <p className="text-xs text-cyan-400">{friend.battleWins || 0} wins • {friend.tradesCompleted || 0} trades</p>
                               </div>
                             </div>
-                            <div className="flex gap-1">
+                            <div className="flex gap-1 flex-wrap justify-end">
+                              <Button
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  loadPlayerCard(friend.id);
+                                }}
+                                className="bg-fuchsia-600 text-white hover:bg-fuchsia-500 text-xs"
+                              >
+                                Player Card
+                              </Button>
                               <Button
                                 size="sm"
                                 onClick={(e) => {

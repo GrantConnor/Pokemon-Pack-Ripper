@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { connectDB } from '@/lib/mongodb';
 import { normalizeStoredSprite } from '@/lib/wilds';
-import { getCardsForSet } from '@/lib/pokemon-tcg';
-import { getActiveDisplayTitle, getAllAvailableTitles, getSelectedUnlockedTitle, slugifyTitleLabel, unlockSetTitlesForUser } from '@/lib/set-titles';
+import { getActiveDisplayTitle, getAllAvailableTitles, getSelectedUnlockedTitle, slugifyTitleLabel, syncSetTitlesFromCollection } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,22 +27,15 @@ export async function GET(request) {
     }
 
 
-    const setIdsToSync = Array.from(new Set((user.collection || []).map((card) => card?.set?.id).filter(Boolean)));
-    for (const setId of setIdsToSync) {
-      try {
-        const { cards } = await getCardsForSet(setId);
-        if (cards?.length) {
-          await unlockSetTitlesForUser(users, userId, setId, cards[0]?.set?.name || setId, cards);
-        }
-      } catch (error) {
-        console.error('[PLAYER CARD] Failed syncing set titles for', setId, error);
-      }
+    const syncedTitles = syncSetTitlesFromCollection(user);
+    const existingCount = Array.isArray(user.unlockedTitles) ? user.unlockedTitles.length : 0;
+    if (syncedTitles.unlockedTitles.length !== existingCount) {
+      await users.updateOne(
+        { id: userId },
+        { $set: { unlockedTitles: syncedTitles.unlockedTitles } }
+      );
+      user = { ...user, unlockedTitles: syncedTitles.unlockedTitles };
     }
-
-    user = await users.findOne(
-      { id: userId },
-      { projection: { id: 1, username: 1, battleWins: 1, tradesCompleted: 1, favoritePokemonId: 1, unlockedTitles: 1, selectedTitleId: 1, collection: 1 } }
-    );
 
     let favoritePokemon = null;
     if (user.favoritePokemonId) {

@@ -122,13 +122,18 @@ export default function PokemonWilds() {
   const loadPlayerCard = async (userId) => {
     try {
       const response = await fetch(`/api/profile/card?userId=${userId}`);
-      const data = await response.json();
+      const raw = await response.text();
+      const data = raw ? JSON.parse(raw) : {};
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load player card');
+      }
       if (data.profileCard) {
         setPlayerCard(data.profileCard);
         setShowPlayerCard(true);
       }
     } catch (err) {
       console.error('Error loading player card:', err);
+      alert(err.message || 'Failed to load player card');
     }
   };
 
