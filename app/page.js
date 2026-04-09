@@ -103,6 +103,7 @@ export default function App() {
   const [pulledCards, setPulledCards] = useState([]);
   const [pendingRevealId, setPendingRevealId] = useState(null);
   const [showPackAnimation, setShowPackAnimation] = useState(false);
+  const [showPackResults, setShowPackResults] = useState(false);
   const [selectedSet, setSelectedSet] = useState(null);
   const [activeTab, setActiveTab] = useState('packs');
   const [selectedCard, setSelectedCard] = useState(null);
@@ -1486,6 +1487,9 @@ export default function App() {
 
     const ownedCardIds = new Set((Array.isArray(collection) ? collection : []).filter(Boolean).map((c) => c.id));
 
+    if (normalizedReveal.isBulk && (!normalizedReveal.packs || normalizedReveal.packs.length === 0)) return false;
+    if (!normalizedReveal.isBulk && (!normalizedReveal.cards || normalizedReveal.cards.length === 0)) return false;
+
     if (normalizedReveal.isBulk && normalizedReveal.packs?.length) {
       const packsWithNewFlags = normalizedReveal.packs.map(pack => ({
         ...pack,
@@ -1502,9 +1506,6 @@ export default function App() {
       }));
       setPulledCards([{ packNumber: 1, cards: cardsWithNewFlag }]);
     }
-
-    if (normalizedReveal.isBulk && (!normalizedReveal.packs || normalizedReveal.packs.length === 0)) return false;
-    if (!normalizedReveal.isBulk && (!normalizedReveal.cards || normalizedReveal.cards.length === 0)) return false;
 
     setPendingRevealId(normalizedReveal.revealId || normalizedReveal.id || null);
     if (normalizedReveal.pointsRemaining !== undefined) {
@@ -1523,6 +1524,9 @@ export default function App() {
       if (response.ok && data.reveal) {
         const hydrated = hydrateRevealIntoUi(data.reveal);
         setShowPackAnimation(false);
+        if (hydrated) {
+          setTimeout(() => setShowPackResults(true), 30);
+        }
         return !!hydrated;
       }
     } catch (error) {
@@ -1536,6 +1540,7 @@ export default function App() {
     if (!user?.id || !set?.id || openingPack) return;
 
     setError('');
+    setShowPackResults(false);
     setPulledCards([]);
     setPendingRevealId(null);
     setSelectedSet(set);
@@ -1567,6 +1572,8 @@ export default function App() {
             recoverPendingPackReveal(user.id);
             return;
           }
+
+          setTimeout(() => setShowPackResults(true), 30);
           
           if (data.achievements) {
             setEarnedAchievements(data.achievements);
@@ -1594,6 +1601,7 @@ export default function App() {
   const closePackResults = async () => {
     const revealIdToClaim = pendingRevealId;
 
+    setShowPackResults(false);
     setPulledCards([]);
     setPendingRevealId(null);
     setSelectedSet(null);
@@ -2686,7 +2694,7 @@ export default function App() {
       </Dialog>
 
       {/* Pack Results Dialog */}
-      <Dialog open={pulledCards.length > 0} onOpenChange={(open) => { if (!open) closePackResults(); }}>
+      <Dialog open={showPackResults} onOpenChange={(open) => { if (!open) closePackResults(); }}>
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_60px_rgba(6,182,212,0.6)]">
           <DialogHeader>
             <DialogTitle className="text-center text-2xl font-bold text-white bg-gradient-to-r from-cyan-500/20 to-transparent py-3 -mx-6 -mt-6 mb-4 border-b-4 border-cyan-500/50 drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]">

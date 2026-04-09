@@ -1,0 +1,13 @@
+{
+  "summary": {
+    "total_checks": 4,
+    "passed": 4,
+    "failed": 0
+  },
+  "checks": {
+    "explicit_results_modal_state_exists": true,
+    "results_dialog_uses_explicit_state": true,
+    "results_modal_opens_after_animation_delay": true,
+    "handle_open_pack_clears_previous_results": true
+  }
+}
