@@ -53,6 +53,8 @@ export async function GET(request) {
       ? {
           ...instance.currentSpawn,
           catchRate: getSafariCatchRate(instance.currentSpawn, instance.currentSpawn.snackApplied),
+          attemptsUsed: instance.currentSpawn.attemptsUsed || 0,
+          maxAttempts: instance.currentSpawn.maxAttempts || ((instance.currentSpawn.safariRarity === 'legendary' || instance.currentSpawn.safariRarity === 'mythical') ? 3 : 1),
         }
       : null;
 

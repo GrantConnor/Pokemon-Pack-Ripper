@@ -155,11 +155,40 @@ export default function SafariZonePage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Safari Zone catch failed');
-      setSpawn(null);
-      setNextSpawnAt(data.nextSpawnAt || null);
+      if (data.caught) {
+        setSpawn(null);
+        setNextSpawnAt(data.nextSpawnAt || null);
+      } else if (data.spawn) {
+        setSpawn(data.spawn);
+        setNextSpawnAt(null);
+      } else {
+        setSpawn(null);
+        setNextSpawnAt(data.nextSpawnAt || null);
+      }
       setMessage(data.message || (data.caught ? 'Caught!' : 'It got away!'));
     } catch (error) {
       setMessage(error.message || 'Safari Zone catch failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const runFromPokemon = async () => {
+    if (!user?.id || !spawn || actionLoading) return;
+    setActionLoading(true);
+    try {
+      const response = await fetch('/api/safari-zone/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to run from Pokémon');
+      setSpawn(null);
+      setNextSpawnAt(data.nextSpawnAt || null);
+      setMessage(data.message || 'You ran away.');
+    } catch (error) {
+      setMessage(error.message || 'Failed to run from Pokémon');
     } finally {
       setActionLoading(false);
     }
