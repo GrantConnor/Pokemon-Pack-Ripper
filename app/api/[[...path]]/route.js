@@ -233,9 +233,18 @@ async function pushUserNotification(database, userId, type, message, extra = {})
   return notification;
 }
 
+function cardTradeLockKey(card) {
+  return `${card?.id || 'unknown'}::${card?.pulledAt || 'unknown'}`;
+}
+
 function userOwnsAllCards(user, cards = []) {
   const collection = user?.collection || [];
   return cards.every((card) => collection.some((owned) => owned?.id === card?.id && owned?.pulledAt === card?.pulledAt));
+}
+
+function userHasLockedTradeCards(user, cards = []) {
+  const locked = new Set((user?.lockedTradeCards || []).map((entry) => entry?.key).filter(Boolean));
+  return cards.some((card) => locked.has(cardTradeLockKey(card)));
 }
 
 async function userOwnsAllPokemon(database, userId, pokemonEntries = []) {
@@ -2728,6 +2737,10 @@ if (pathname.includes('/api/auth/signin')) {
         return NextResponse.json({ error: 'You do not own all offered cards' }, { status: 400 });
       }
 
+      if (userHasLockedTradeCards(user, offeredCards)) {
+        return NextResponse.json({ error: 'One or more offered cards are already reserved in another pending trade' }, { status: 409 });
+      }
+
       if (!userOwnsAllCards(friend, requestedCards)) {
         return NextResponse.json({ error: `${friend.username} no longer owns one of the requested cards` }, { status: 400 });
       }
@@ -2755,10 +2768,37 @@ if (pathname.includes('/api/auth/signin')) {
         createdAt: new Date().toISOString()
       };
 
-      await database.collection('users').updateOne(
-        { id: friendId },
-        { $push: { tradeRequests: tradeRequest } }
+      const senderLocks = offeredCards.map((card) => ({
+        key: cardTradeLockKey(card),
+        tradeId: tradeRequest.id,
+        toUserId: friendId,
+        createdAt: new Date().toISOString(),
+      }));
+
+      const senderLockResult = await database.collection('users').updateOne(
+        {
+          id: userId,
+          lockedTradeCards: { $not: { $elemMatch: { key: { $in: senderLocks.map((entry) => entry.key) } } } },
+        },
+        { $push: { lockedTradeCards: { $each: senderLocks } } }
       );
+
+      if (!senderLockResult.modifiedCount) {
+        return NextResponse.json({ error: 'One or more offered cards were reserved in another pending trade' }, { status: 409 });
+      }
+
+      try {
+        await database.collection('users').updateOne(
+          { id: friendId },
+          { $push: { tradeRequests: tradeRequest } }
+        );
+      } catch (error) {
+        await database.collection('users').updateOne(
+          { id: userId },
+          { $pull: { lockedTradeCards: { tradeId: tradeRequest.id } } }
+        );
+        throw error;
+      }
 
       await pushUserNotification(
         database,
@@ -2795,15 +2835,32 @@ if (pathname.includes('/api/auth/signin')) {
         return NextResponse.json({ error: 'Trade request not found' }, { status: 404 });
       }
 
+      const claimTradeResult = await database.collection('users').updateOne(
+        { id: userId, 'tradeRequests.id': tradeId },
+        { $pull: { tradeRequests: { id: tradeId } } }
+      );
+
+      if (!claimTradeResult.modifiedCount) {
+        return NextResponse.json({ error: 'Trade request was already processed' }, { status: 409 });
+      }
+
       const fromUser = await database.collection('users').findOne({ id: trade.from });
       if (!fromUser) {
         return NextResponse.json({ error: 'Sender not found' }, { status: 404 });
       }
 
       if (!userOwnsAllCards(fromUser, trade.offeredCards || [])) {
+        await database.collection('users').updateOne(
+          { id: trade.from },
+          { $pull: { lockedTradeCards: { tradeId } } }
+        );
         return NextResponse.json({ error: 'Sender no longer owns one or more offered cards' }, { status: 409 });
       }
       if (!userOwnsAllCards(user, trade.requestedCards || [])) {
+        await database.collection('users').updateOne(
+          { id: trade.from },
+          { $pull: { lockedTradeCards: { tradeId } } }
+        );
         return NextResponse.json({ error: 'You no longer own one or more requested cards' }, { status: 409 });
       }
 
@@ -2812,7 +2869,12 @@ if (pathname.includes('/api/auth/signin')) {
       // Step 1: Remove offered cards from sender
       await database.collection('users').updateOne(
         { id: trade.from },
-        { $pull: { collection: { $or: trade.offeredCards.map(card => ({ id: card.id, pulledAt: card.pulledAt })) } } }
+        { 
+          $pull: { 
+            collection: { $or: trade.offeredCards.map(card => ({ id: card.id, pulledAt: card.pulledAt })) },
+            lockedTradeCards: { tradeId }
+          } 
+        }
       );
 
       // Step 2: Add requested cards to sender (if any)
@@ -2837,13 +2899,7 @@ if (pathname.includes('/api/auth/signin')) {
         { $push: { collection: { $each: trade.offeredCards } } }
       );
 
-      // Step 5: Remove the trade request
-      await database.collection('users').updateOne(
-        { id: userId },
-        { $pull: { tradeRequests: { id: tradeId } } }
-      );
-
-      // Step 6: Increment trade counter for both users
+      // Step 5: Increment trade counter for both users
       await database.collection('users').updateOne(
         { id: trade.from },
         { $inc: { tradesCompleted: 1 } }
@@ -3044,6 +3100,30 @@ if (pathname.includes('/api/auth/signin')) {
       };
 
       if (caught) {
+        const outbreak = spawn.outbreak && spawn.outbreak.active && spawn.outbreak.endsAt && Date.now() < spawn.outbreak.endsAt
+          ? spawn.outbreak
+          : null;
+        const nextInterval = outbreak?.respawnDelayMs || (MIN_SPAWN_INTERVAL + Math.random() * (MAX_SPAWN_INTERVAL - MIN_SPAWN_INTERVAL));
+
+        const claimResult = await database.collection('global_spawn').updateOne(
+          { id: 'current', caughtBy: null, spawnedAt: spawn.spawnedAt },
+          {
+            $set: {
+              caughtBy: userId,
+              nextSpawnTime: Date.now() + nextInterval,
+              outbreak: outbreak,
+            }
+          }
+        );
+
+        if (!claimResult.modifiedCount) {
+          return NextResponse.json({
+            success: false,
+            caught: false,
+            message: 'That Pokémon was caught by another trainer just before your throw landed.'
+          }, { status: 409 });
+        }
+
         // Pokemon caught!
         const caughtPokemon = {
           ...spawn.pokemon,
@@ -3057,28 +3137,12 @@ if (pathname.includes('/api/auth/signin')) {
         console.log(`   isShiny: ${caughtPokemon.isShiny}`);
         console.log(`   Sprite: ${caughtPokemon.sprite}`);
 
-        // Save to user's caught Pokemon
+        // Save to user's caught Pokemon only after the global spawn is claimed
         await database.collection('caught_pokemon').insertOne(caughtPokemon);
 
         // Grant XP to all owned Pokemon (including the newly caught one)
         await applyXPToAllPokemon(userId, XP_FROM_CATCH, database);
         await applyDailyObjectiveEvent(database.collection('users'), userId, 'catch-pokemon', { types: caughtPokemon.types, count: 1 });
-
-        // Mark spawn as caught and set next spawn time
-        const outbreak = spawn.outbreak && spawn.outbreak.active && spawn.outbreak.endsAt && Date.now() < spawn.outbreak.endsAt
-          ? spawn.outbreak
-          : null;
-        const nextInterval = outbreak?.respawnDelayMs || (MIN_SPAWN_INTERVAL + Math.random() * (MAX_SPAWN_INTERVAL - MIN_SPAWN_INTERVAL));
-        await database.collection('global_spawn').updateOne(
-          { id: 'current' },
-          { 
-            $set: { 
-              caughtBy: userId,
-              nextSpawnTime: Date.now() + nextInterval,
-              outbreak: outbreak,
-            }
-          }
-        );
 
         return NextResponse.json({ 
           success: true, 
@@ -3088,10 +3152,18 @@ if (pathname.includes('/api/auth/signin')) {
         });
       } else {
         // Failed attempt
-        await database.collection('global_spawn').updateOne(
-          { id: 'current' },
+        const attemptResult = await database.collection('global_spawn').updateOne(
+          { id: 'current', caughtBy: null, spawnedAt: spawn.spawnedAt },
           { $set: updateData }
         );
+
+        if (!attemptResult.modifiedCount) {
+          return NextResponse.json({
+            success: false,
+            caught: false,
+            message: 'That Pokémon was caught by another trainer before your attempt resolved.'
+          }, { status: 409 });
+        }
 
         if (newAttempts >= MAX_CATCH_ATTEMPTS) {
           return NextResponse.json({ 

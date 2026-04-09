@@ -32,6 +32,7 @@ export default function PokemonWilds() {
   const [showMyPokemon, setShowMyPokemon] = useState(false);
   const [selectedPokemon, setSelectedPokemon] = useState(null);
   const [timeUntilSpawn, setTimeUntilSpawn] = useState(null);
+  const [uiNow, setUiNow] = useState(Date.now());
   const [editingNickname, setEditingNickname] = useState(false);
   const [newNickname, setNewNickname] = useState('');
   const [editingMoveset, setEditingMoveset] = useState(false);
@@ -305,24 +306,25 @@ export default function PokemonWilds() {
     }
   }, [activeBattle, showBattleScreen]);
 
-  // Countdown timer for next spawn
+  // UI ticker for spawn and outbreak countdowns
   useEffect(() => {
-    if (!timeUntilSpawn) return;
+    if (!timeUntilSpawn && !massOutbreak?.active) return;
 
     const interval = setInterval(() => {
       const now = Date.now();
-      const remaining = timeUntilSpawn - now;
-      
-      if (remaining <= 0) {
-        setTimeUntilSpawn(null);
-        loadCurrentSpawn();
-      } else {
-        setTimeUntilSpawn(timeUntilSpawn);
+      setUiNow(now);
+
+      if (timeUntilSpawn) {
+        const remaining = timeUntilSpawn - now;
+        if (remaining <= 0) {
+          setTimeUntilSpawn(null);
+          loadCurrentSpawn();
+        }
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [timeUntilSpawn]);
+  }, [timeUntilSpawn, massOutbreak?.active]);
 
 
   useEffect(() => {
@@ -623,6 +625,7 @@ export default function PokemonWilds() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Error accepting card trade');
+      setActiveCardTrade(null);
       loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error(err);
@@ -1168,6 +1171,27 @@ export default function PokemonWilds() {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  const formatRelativeCountdown = (targetMs) => {
+    if (!targetMs) return '0:00';
+    const totalSeconds = Math.max(0, Math.floor((targetMs - uiNow) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  const formatStartedAt = (value) => {
+    if (!value) return 'Unknown';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Unknown';
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  };
+
+  const genderSymbol = (gender) => {
+    if (gender === 'male') return '♂';
+    if (gender === 'female') return '♀';
+    return '';
+  };
+
   const getTypeColor = (type) => {
     const colors = {
       normal: 'bg-gray-400', fire: 'bg-red-500', water: 'bg-blue-500',
@@ -1308,9 +1332,11 @@ export default function PokemonWilds() {
         <div className="max-w-7xl mx-auto p-8 mt-12 space-y-6">
           {massOutbreak?.active && (
             <Card className="border-2 border-red-500/60 bg-red-950/70 backdrop-blur-sm">
-              <CardContent className="p-4 text-center">
+              <CardContent className="p-4 text-center space-y-1">
                 <p className="text-lg font-bold text-red-200">🚨 A Mass outbreak of {massOutbreak.pokemonName} has been spotted in the wilds!</p>
-                <p className="text-sm text-red-100 mt-1">For the next 10 minutes, this Pokémon respawns 1 minute after each catch with 1/1000 shiny odds.</p>
+                <p className="text-sm text-red-100">For the next 10 minutes, this Pokémon respawns every 30 seconds after each catch with 1/1000 shiny odds.</p>
+                <p className="text-sm font-semibold text-amber-200">Started at: {formatStartedAt(massOutbreak.startedAt)}</p>
+                <p className="text-sm font-semibold text-cyan-200">Time remaining: {formatRelativeCountdown(massOutbreak.endsAt)}</p>
               </CardContent>
             </Card>
           )}
@@ -1568,9 +1594,11 @@ export default function PokemonWilds() {
                         filter: pokemon.isShiny ? 'brightness(1.2) drop-shadow(0 0 10px rgba(234, 179, 8, 0.6))' : 'none'
                       }}
                     />
-                    <h3 className="text-center font-bold text-white flex items-center justify-center gap-1">
+                    <h3 className="text-center font-bold text-white flex items-center justify-center gap-1 flex-wrap">
                       {pokemon.isShiny && <span className="text-yellow-400 text-sm">✨</span>}
-                      {pokemon.nickname || pokemon.displayName}
+                      <span>{pokemon.nickname || pokemon.displayName}</span>
+                      <span className="text-cyan-300 text-xs font-semibold">Lv {pokemon.level || 1}</span>
+                      {genderSymbol(pokemon.gender) && <span className="text-pink-300 text-xs font-semibold">{genderSymbol(pokemon.gender)}</span>}
                     </h3>
                     <p className="text-center text-gray-400 text-sm">
                       #{pokemon.id}
