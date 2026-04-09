@@ -179,6 +179,7 @@ export default function SafariZonePage() {
         <div className="flex flex-col items-start gap-3">
           <h1 className="text-4xl font-bold text-emerald-300">Safari Zone</h1>
           {zone?.biomeName && <p className="text-2xl font-semibold text-emerald-100">{zone.biomeName}</p>}
+          {runTimeRemaining && <p className="text-lg font-bold text-yellow-200">Time Remaining: {runTimeRemaining}</p>}
           <Link href="/wilds">
             <Button className="bg-slate-800 hover:bg-slate-700 border border-emerald-400/40">
               <ArrowLeft className="mr-2 h-4 w-4" />
@@ -220,7 +221,7 @@ export default function SafariZonePage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-emerald-100/80">{zone.biomeDescription}</p>
-                  {runTimeRemaining && <p className="mt-2 text-sm font-semibold text-yellow-200">Safari ends in {runTimeRemaining}</p>}
+
                 </CardContent>
               </Card>
               <Card className="border border-yellow-400/40 bg-slate-900/60">

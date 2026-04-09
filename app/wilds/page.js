@@ -56,6 +56,7 @@ export default function PokemonWilds() {
   const [showPlayerCard, setShowPlayerCard] = useState(false);
   const [playerCard, setPlayerCard] = useState(null);
   const [showDailyObjectives, setShowDailyObjectives] = useState(false);
+  const [showSafariPrompt, setShowSafariPrompt] = useState(false);
   const [dailyObjectives, setDailyObjectives] = useState(null);
   const [viewingFriendPokemon, setViewingFriendPokemon] = useState(null);
   const [friendPokemonList, setFriendPokemonList] = useState([]);
@@ -906,6 +907,7 @@ export default function PokemonWilds() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to enter Safari Zone');
       setUser((prev) => prev ? { ...prev, points: data.pointsRemaining } : prev);
+      setShowSafariPrompt(false);
       window.location.href = '/safari-zone';
     } catch (err) {
       alert(err.message || 'Failed to enter Safari Zone');
@@ -2227,6 +2229,29 @@ export default function PokemonWilds() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showSafariPrompt} onOpenChange={setShowSafariPrompt}>
+        <DialogContent className="max-w-xl border-4 border-lime-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-lime-300">Safari Zone</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm text-slate-200">
+            <p>Spend <span className="font-bold text-yellow-300">5000 points</span> to start a private Safari Zone run.</p>
+            <ul className="list-disc pl-5 space-y-1 text-slate-300">
+              <li>Instanced per user</li>
+              <li>Random biome background and spawn table</li>
+              <li>Pokémon respawn every 20 to 60 seconds</li>
+              <li>3 Poké Snacks per run to boost catch rate</li>
+              <li>Safari run lasts 10 minutes</li>
+            </ul>
+            <p className="font-semibold text-lime-200">Spend 5000 points to enter Safari Zone?</p>
+          </div>
+          <div className="flex gap-3">
+            <Button onClick={handleEnterSafariZone} className="flex-1 bg-lime-600 hover:bg-lime-500 text-white font-bold">Yes</Button>
+            <Button onClick={() => setShowSafariPrompt(false)} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold">No</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
