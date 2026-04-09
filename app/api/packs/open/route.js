@@ -4,6 +4,7 @@ import { connectDB } from '@/lib/mongodb';
 import { getCardsForSet, getPackCost } from '@/lib/pokemon-tcg';
 import { refreshAllUsersPointsIfDue, refreshUserPoints } from '@/lib/auth';
 import { applyDailyObjectiveEvent } from '@/lib/daily-objectives';
+import { unlockSetTitlesForUser } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -343,6 +344,7 @@ export async function POST(request) {
       }
     );
 
+    const titleUnlockResult = await unlockSetTitlesForUser(users, userId, setId, cards[0]?.set?.name || setId, cards);
     const dailyObjectiveResult = await applyDailyObjectiveEvent(users, userId, 'open-pack', { count: packCount });
     const finalPointsRemaining = newPoints + (dailyObjectiveResult?.pointsAwarded || 0);
 
@@ -366,6 +368,7 @@ export async function POST(request) {
       isBulk: bulk,
       pointsRemaining: finalPointsRemaining,
       achievements: null,
+      titleUnlocks: titleUnlockResult?.newlyUnlocked || [],
       xpApplied: false,
       dailyObjectivePointsAwarded: dailyObjectiveResult?.pointsAwarded || 0,
     });

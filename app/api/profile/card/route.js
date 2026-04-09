@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { connectDB } from '@/lib/mongodb';
-import { getTrainerRank } from '@/lib/trainer-ranks';
 import { normalizeStoredSprite } from '@/lib/wilds';
+import { getActiveDisplayTitle, getSelectedUnlockedTitle } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,7 +18,7 @@ export async function GET(request) {
     const database = await connectDB();
     const user = await database.collection('users').findOne(
       { id: userId },
-      { projection: { id: 1, username: 1, battleWins: 1, tradesCompleted: 1, favoritePokemonId: 1 } }
+      { projection: { id: 1, username: 1, battleWins: 1, tradesCompleted: 1, favoritePokemonId: 1, unlockedTitles: 1, selectedTitleId: 1 } }
     );
 
     if (!user) {
@@ -46,14 +46,26 @@ export async function GET(request) {
       } catch {}
     }
 
+    const unlockedTitles = user.unlockedTitles || [];
+    const selectedTitle = getSelectedUnlockedTitle(unlockedTitles, user.selectedTitleId);
+    const activeTitle = getActiveDisplayTitle({
+      battleWins: user.battleWins || 0,
+      unlockedTitles,
+      selectedTitleId: user.selectedTitleId,
+    });
+
     return NextResponse.json({
       profileCard: {
         id: user.id,
         username: user.username,
         battleWins: user.battleWins || 0,
         tradesCompleted: user.tradesCompleted || 0,
-        trainerRank: getTrainerRank(user.battleWins || 0),
+        trainerRank: activeTitle,
+        baseTrainerRank: getActiveDisplayTitle({ battleWins: user.battleWins || 0, unlockedTitles: [], selectedTitleId: null }),
         favoritePokemon,
+        selectedTitle,
+        selectedTitleId: user.selectedTitleId || null,
+        unlockedTitles,
       }
     });
   } catch (error) {

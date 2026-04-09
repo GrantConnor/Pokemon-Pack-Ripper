@@ -215,6 +215,42 @@ async function refreshAllUsersPointsIfDue(database, nowMs = Date.now()) {
   return sharedRefreshAllUsersPointsIfDue(database, nowMs);
 }
 
+
+async function pushUserNotification(database, userId, type, message, extra = {}) {
+  if (!userId || !message) return null;
+  const notification = {
+    id: uuidv4(),
+    type,
+    message,
+    read: false,
+    createdAt: new Date().toISOString(),
+    ...extra,
+  };
+  await database.collection('users').updateOne(
+    { id: userId },
+    { $push: { socialNotifications: { $each: [notification], $slice: -50 } } }
+  );
+  return notification;
+}
+
+function userOwnsAllCards(user, cards = []) {
+  const collection = user?.collection || [];
+  return cards.every((card) => collection.some((owned) => owned?.id === card?.id && owned?.pulledAt === card?.pulledAt));
+}
+
+async function userOwnsAllPokemon(database, userId, pokemonEntries = []) {
+  if (!Array.isArray(pokemonEntries) || pokemonEntries.length === 0) return true;
+  for (const entry of pokemonEntries) {
+    if (!entry?.pokemonId || !ObjectId.isValid(String(entry.pokemonId))) return false;
+    const owned = await database.collection('caught_pokemon').findOne({
+      _id: new ObjectId(String(entry.pokemonId)),
+      userId,
+    }, { projection: { _id: 1 } });
+    if (!owned) return false;
+  }
+  return true;
+}
+
 // Check and award achievements for a specific set (single-fire guaranteed)
 async function checkAchievements(user, database, setId, setName, totalCardsInSet) {
   // Get unique cards for this specific set
@@ -1559,9 +1595,11 @@ export async function GET(request) {
         sentRequests,
         tradeRequests: user.tradeRequests || [],
         battleRequests: user.battleRequests || [],
-        activeBattleId: user.activeBattleId || null
+        activeBattleId: user.activeBattleId || null,
+        socialNotifications: (user.socialNotifications || []).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
       });
     }
+
 
     // Admin: Get all users (Spheal only)
     if (pathname.includes('/api/admin/users')) {
@@ -1701,6 +1739,31 @@ export async function POST(request) {
 
   try {
     const body = await request.json();
+
+
+    if (pathname.includes('/api/notifications/mark-read')) {
+      const { userId, notificationIds } = body;
+      if (!userId) {
+        return NextResponse.json({ error: 'User ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const targetIds = Array.isArray(notificationIds) ? notificationIds.filter(Boolean) : [];
+      if (targetIds.length > 0) {
+        await database.collection('users').updateOne(
+          { id: userId },
+          { $set: { 'socialNotifications.$[notif].read': true } },
+          { arrayFilters: [{ 'notif.id': { $in: targetIds } }] }
+        );
+      } else {
+        await database.collection('users').updateOne(
+          { id: userId },
+          { $set: { 'socialNotifications.$[].read': true } }
+        );
+      }
+
+      return NextResponse.json({ success: true });
+    }
 
     // Sign up
 if (pathname.includes('/api/auth/signup')) {
@@ -2450,6 +2513,21 @@ if (pathname.includes('/api/auth/signin')) {
         { $inc: { tradesCompleted: 1 } }
       );
 
+      await pushUserNotification(
+        database,
+        tradeRequest.fromId,
+        'pokemon-trade-accepted',
+        `${user.username} accepted your Pokémon trade request.`,
+        { tradeId, fromUsername: user.username }
+      );
+      await pushUserNotification(
+        database,
+        userId,
+        'pokemon-trade-completed',
+        `Your Pokémon trade with ${tradeRequest.fromUsername} was completed.`,
+        { tradeId, fromUsername: tradeRequest.fromUsername }
+      );
+
       console.log('✅ Trade completed successfully!');
 
       return NextResponse.json({ 
@@ -2496,6 +2574,18 @@ if (pathname.includes('/api/auth/signin')) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
 
+      if (!fromUser.friends?.includes(toId)) {
+        return NextResponse.json({ error: 'Can only trade Pokémon with friends' }, { status: 403 });
+      }
+
+      if (!(await userOwnsAllPokemon(database, fromId, offeredPokemon))) {
+        return NextResponse.json({ error: 'You do not own all offered Pokémon' }, { status: 400 });
+      }
+
+      if (!(await userOwnsAllPokemon(database, toId, requestedPokemon))) {
+        return NextResponse.json({ error: `${toUser.username} no longer owns one of the requested Pokémon` }, { status: 400 });
+      }
+
       const existingPokemonTrade = [...(toUser.tradeRequests || []), ...(fromUser.tradeRequests || [])].find((request) =>
         request.status === 'pending' && (
           (request.fromId === fromId && request.toId === toId) ||
@@ -2525,6 +2615,14 @@ if (pathname.includes('/api/auth/signin')) {
       await database.collection('users').updateOne(
         { id: toId },
         { $push: { tradeRequests: tradeRequest } }
+      );
+
+      await pushUserNotification(
+        database,
+        toId,
+        'pokemon-trade-request',
+        `${fromUser.username} sent you a Pokémon trade request.`,
+        { tradeId: tradeRequest.id, fromUsername: fromUser.username }
       );
 
       return NextResponse.json({ 
@@ -2626,6 +2724,14 @@ if (pathname.includes('/api/auth/signin')) {
         return NextResponse.json({ error: 'Can only trade with friends' }, { status: 403 });
       }
 
+      if (!userOwnsAllCards(user, offeredCards)) {
+        return NextResponse.json({ error: 'You do not own all offered cards' }, { status: 400 });
+      }
+
+      if (!userOwnsAllCards(friend, requestedCards)) {
+        return NextResponse.json({ error: `${friend.username} no longer owns one of the requested cards` }, { status: 400 });
+      }
+
       const existingCardTrade = [...(friend.tradeRequests || []), ...(user.tradeRequests || [])].find((trade) =>
         trade.status === 'pending' && 'offeredCards' in trade && (
           (trade.from === userId && trade.to === friendId) ||
@@ -2652,6 +2758,14 @@ if (pathname.includes('/api/auth/signin')) {
       await database.collection('users').updateOne(
         { id: friendId },
         { $push: { tradeRequests: tradeRequest } }
+      );
+
+      await pushUserNotification(
+        database,
+        friendId,
+        'card-trade-request',
+        `${user.username} sent you a card trade request.`,
+        { tradeId: tradeRequest.id, fromUsername: user.username }
       );
 
       return NextResponse.json({ 
@@ -2684,6 +2798,13 @@ if (pathname.includes('/api/auth/signin')) {
       const fromUser = await database.collection('users').findOne({ id: trade.from });
       if (!fromUser) {
         return NextResponse.json({ error: 'Sender not found' }, { status: 404 });
+      }
+
+      if (!userOwnsAllCards(fromUser, trade.offeredCards || [])) {
+        return NextResponse.json({ error: 'Sender no longer owns one or more offered cards' }, { status: 409 });
+      }
+      if (!userOwnsAllCards(user, trade.requestedCards || [])) {
+        return NextResponse.json({ error: 'You no longer own one or more requested cards' }, { status: 409 });
       }
 
       // Execute the trade in separate operations to avoid MongoDB conflicts
@@ -2731,6 +2852,21 @@ if (pathname.includes('/api/auth/signin')) {
       await database.collection('users').updateOne(
         { id: userId },
         { $inc: { tradesCompleted: 1 } }
+      );
+
+      await pushUserNotification(
+        database,
+        trade.from,
+        'card-trade-accepted',
+        `${user.username} accepted your card trade request.`,
+        { tradeId, fromUsername: user.username }
+      );
+      await pushUserNotification(
+        database,
+        userId,
+        'card-trade-completed',
+        `Your card trade with ${trade.fromUsername} was completed.`,
+        { tradeId, fromUsername: trade.fromUsername }
       );
 
       return NextResponse.json({ 

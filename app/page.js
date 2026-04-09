@@ -127,6 +127,7 @@ export default function App() {
   const [pendingRequests, setPendingRequests] = useState([]);
   const [sentRequests, setSentRequests] = useState([]);
   const [tradeRequests, setTradeRequests] = useState([]);
+  const [socialNotifications, setSocialNotifications] = useState([]);
   const [battleRequests, setBattleRequests] = useState([]);
   const [showDailyObjectives, setShowDailyObjectives] = useState(false);
   const [dailyObjectives, setDailyObjectives] = useState(null);
@@ -172,7 +173,7 @@ export default function App() {
   const [breakdownQuantity, setBreakdownQuantity] = useState(1);
   const [isDissolving, setIsDissolving] = useState(false);
 
-  const unreadSocialCount = pendingRequests.length + tradeRequests.length;
+  const unreadSocialCount = pendingRequests.length + tradeRequests.length + (socialNotifications || []).filter((notification) => !notification?.read).length;
 
   useEffect(() => {
     // Check if user is logged in
@@ -584,11 +585,13 @@ export default function App() {
 
   useEffect(() => {
     const tradeCount = Array.isArray(tradeRequests) ? tradeRequests.filter(Boolean).length : 0;
+    const notificationCount = Array.isArray(socialNotifications) ? socialNotifications.filter((notification) => notification && !notification.read).length : 0;
     const battleCount = Array.isArray(battleRequests) ? battleRequests.filter(Boolean).length : 0;
 
-    if (tradeCount > 0 && tradeSoundCountRef.current === 0) {
+    const totalSocialTradeSignals = tradeCount + notificationCount;
+    if (totalSocialTradeSignals > 0 && tradeSoundCountRef.current === 0) {
       playTradeNotificationSound();
-    } else if (tradeCount > tradeSoundCountRef.current) {
+    } else if (totalSocialTradeSignals > tradeSoundCountRef.current) {
       playTradeNotificationSound();
     }
 
@@ -598,9 +601,9 @@ export default function App() {
       playBattleNotificationSound();
     }
 
-    tradeSoundCountRef.current = tradeCount;
+    tradeSoundCountRef.current = tradeCount + notificationCount;
     battleSoundCountRef.current = battleCount;
-  }, [tradeRequests, battleRequests]);
+  }, [tradeRequests, socialNotifications, battleRequests]);
 
   const filteredPacks = useMemo(() => {
     if (!packSearchQuery) return sets;
@@ -692,6 +695,7 @@ export default function App() {
           setPendingRequests(cachedFriends.pendingRequests || []);
           setSentRequests(cachedFriends.sentRequests || []);
           setTradeRequests(cachedFriends.tradeRequests || []);
+          setSocialNotifications(cachedFriends.socialNotifications || []);
           setBattleRequests(cachedFriends.battleRequests || []);
           return cachedFriends;
         }
@@ -706,6 +710,7 @@ export default function App() {
       setPendingRequests(data.pendingRequests || []);
       setSentRequests(data.sentRequests || []);
       setTradeRequests(data.tradeRequests || []);
+      setSocialNotifications(data.socialNotifications || []);
       setBattleRequests(data.battleRequests || []);
       if (data.activeBattleId) {
         window.location.href = `/battle?id=${data.activeBattleId}`;
@@ -716,6 +721,7 @@ export default function App() {
         pendingRequests: data.pendingRequests || [],
         sentRequests: data.sentRequests || [],
         tradeRequests: data.tradeRequests || [],
+        socialNotifications: data.socialNotifications || [],
         battleRequests: data.battleRequests || [],
       });
       return data;
@@ -725,6 +731,26 @@ export default function App() {
     }
   };
 
+
+
+  const handleMarkNotificationsRead = async (notificationIds = []) => {
+    if (!user?.id) return;
+    try {
+      await fetch('/api/notifications/mark-read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, notificationIds })
+      });
+      setSocialNotifications((prev) => (prev || []).map((notification) => (
+        notificationIds.length === 0 || notificationIds.includes(notification.id)
+          ? { ...notification, read: true }
+          : notification
+      )));
+      invalidateFriendsCache?.();
+    } catch (err) {
+      console.error('Error marking notifications as read:', err);
+    }
+  };
 
   const invalidateCollectionCache = (targetUserId = user?.id) => {
     if (targetUserId) clearLocalCache(collectionCacheKey(targetUserId));
@@ -2416,6 +2442,39 @@ export default function App() {
                 </CardContent>
               </Card>
 
+
+              <Card className="border-2 border-cyan-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(34,211,238,0.2)]">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle className="text-cyan-400">Trade & Social Notifications ({(socialNotifications || []).filter((notification) => !notification?.read).length})</CardTitle>
+                  {(socialNotifications || []).some((notification) => !notification?.read) && (
+                    <Button size="sm" onClick={() => handleMarkNotificationsRead([])} className="bg-cyan-700 hover:bg-cyan-600">Mark all read</Button>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-40">
+                    {(socialNotifications || []).length === 0 ? (
+                      <p className="text-cyan-100/50 text-center py-4">No new notifications</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {(socialNotifications || []).map((notification) => (
+                          <div key={notification.id} className={`rounded p-3 ${notification.read ? 'bg-slate-700/30' : 'bg-cyan-900/30 border border-cyan-500/30'}`}>
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-white text-sm font-medium">{notification.message}</p>
+                                <p className="text-xs text-cyan-100/50 mt-1">{new Date(notification.createdAt).toLocaleString()}</p>
+                              </div>
+                              {!notification.read && (
+                                <Button size="sm" onClick={() => handleMarkNotificationsRead([notification.id])} className="bg-cyan-700 hover:bg-cyan-600 text-xs">Read</Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+
               {/* Pending Requests */}
               <Card className="border-2 border-yellow-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(234,179,8,0.2)]">
                 <CardHeader>
@@ -2507,7 +2566,7 @@ export default function App() {
                               <Badge className="bg-fuchsia-500">{trade.offeredPokemon?.length || 0} Pokemon</Badge>
                             </div>
                             <div className="flex gap-2">
-                              <Button size="sm" onClick={() => handleViewPokemonTrade(trade)} className="w-full bg-fuchsia-500 text-white hover:bg-fuchsia-400">View Trade</Button>
+                              <Button size="sm" onClick={() => handleViewPokemonTrade(trade)} className="w-full bg-fuchsia-500 text-white hover:bg-fuchsia-400">View Trade Request</Button>
                             </div>
                           </div>
                         ))}

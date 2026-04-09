@@ -10,6 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sparkles, ArrowLeft, Clock, Users } from 'lucide-react';
 import Link from 'next/link';
 import { getTrainerRank } from '@/lib/trainer-ranks';
+import { getActiveDisplayTitle } from '@/lib/set-titles';
 
 function sortFriendsByOnline(friends = []) {
   return [...friends].sort((a, b) => {
@@ -46,6 +47,7 @@ export default function PokemonWilds() {
   const [showFriendsPanel, setShowFriendsPanel] = useState(false);
   const [activeTrade, setActiveTrade] = useState(null);
   const [activeCardTrade, setActiveCardTrade] = useState(null);
+  const [activePokemonTrade, setActivePokemonTrade] = useState(null);
   const [selectedPokemonForTrade, setSelectedPokemonForTrade] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
@@ -59,7 +61,8 @@ export default function PokemonWilds() {
   const [battleRequests, setBattleRequests] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [tradeRequests, setTradeRequests] = useState([]);
-  const unreadSocialCount = pendingRequests.length + tradeRequests.length;
+  const [socialNotifications, setSocialNotifications] = useState([]);
+  const unreadSocialCount = pendingRequests.length + tradeRequests.length + (socialNotifications || []).filter((notification) => !notification?.read).length;
   const [showTradeDialog, setShowTradeDialog] = useState(false);
   const [tradePartner, setTradePartner] = useState(null);
   const [mySelectedPokemon, setMySelectedPokemon] = useState(null);
@@ -103,6 +106,7 @@ export default function PokemonWilds() {
   };
 
   const trainerRank = getTrainerRank(user?.battleWins || 0);
+  const activeUserTitle = getActiveDisplayTitle({ battleWins: user?.battleWins || 0, unlockedTitles: user?.unlockedTitles || [], selectedTitleId: user?.selectedTitleId || null });
 
   const loadLeaderboard = async () => {
     try {
@@ -161,6 +165,29 @@ export default function PokemonWilds() {
     } catch (err) {
       console.error('Error setting favorite Pokémon:', err);
       alert('Failed to set favorite Pokémon');
+    }
+  };
+
+  const handleSelectPlayerTitle = async (titleId) => {
+    if (!user?.id || !titleId) return;
+    try {
+      const response = await fetch('/api/profile/title', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, titleId })
+      });
+      const data = await response.json();
+      if (!data.success) {
+        alert(data.error || 'Failed to equip title');
+        return;
+      }
+      setUser((prev) => prev ? { ...prev, selectedTitleId: data.selectedTitleId } : prev);
+      if (showPlayerCard && playerCard?.id === user.id) {
+        loadPlayerCard(user.id);
+      }
+    } catch (err) {
+      console.error('Error selecting title:', err);
+      alert('Failed to equip title');
     }
   };
 
@@ -240,7 +267,7 @@ export default function PokemonWilds() {
 
     loadFriends();
     const interval = setInterval(() => {
-      loadFriends();
+      loadFriends({ forceRefresh: true });
     }, 5000);
 
     return () => clearInterval(interval);
@@ -293,11 +320,13 @@ export default function PokemonWilds() {
 
   useEffect(() => {
     const tradeCount = Array.isArray(tradeRequests) ? tradeRequests.filter(Boolean).length : 0;
+    const notificationCount = Array.isArray(socialNotifications) ? socialNotifications.filter((notification) => notification && !notification.read).length : 0;
     const battleCount = Array.isArray(battleRequests) ? battleRequests.filter(Boolean).length : 0;
 
-    if (tradeCount > 0 && tradeSoundCountRef.current === 0) {
+    const totalSocialTradeSignals = tradeCount + notificationCount;
+    if (totalSocialTradeSignals > 0 && tradeSoundCountRef.current === 0) {
       playTradeNotificationSound();
-    } else if (tradeCount > tradeSoundCountRef.current) {
+    } else if (totalSocialTradeSignals > tradeSoundCountRef.current) {
       playTradeNotificationSound();
     }
 
@@ -307,9 +336,9 @@ export default function PokemonWilds() {
       playBattleNotificationSound();
     }
 
-    tradeSoundCountRef.current = tradeCount;
+    tradeSoundCountRef.current = tradeCount + notificationCount;
     battleSoundCountRef.current = battleCount;
-  }, [tradeRequests, battleRequests]);
+  }, [tradeRequests, socialNotifications, battleRequests]);
 
   const loadCurrentSpawn = async () => {
     try {
@@ -532,7 +561,7 @@ export default function PokemonWilds() {
       if (response.ok) {
         console.log('Friend request sent:', data.message);
         setFriendSearchTerm('');
-        loadFriends();
+        loadFriends({ forceRefresh: true });
       } else {
         console.error('Error adding friend:', data.error);
       }
@@ -550,7 +579,7 @@ export default function PokemonWilds() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, friendId })
       });
-      loadFriends();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error accepting friend:', err);
     }
@@ -563,7 +592,7 @@ export default function PokemonWilds() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, friendId })
       });
-      loadFriends();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error declining friend:', err);
     }
@@ -574,6 +603,10 @@ export default function PokemonWilds() {
   const handleViewCardTrade = (trade) => {
     setActiveCardTrade(trade);
   };
+
+  const handleViewPokemonTrade = (trade) => {
+    setActivePokemonTrade(trade);
+  };
   const handleAcceptCardTrade = async (trade) => {
     try {
       const response = await fetch('/api/trades/accept', {
@@ -583,7 +616,7 @@ export default function PokemonWilds() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Error accepting card trade');
-      loadFriends();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error(err);
     }
@@ -597,7 +630,7 @@ export default function PokemonWilds() {
         body: JSON.stringify({ userId: user.id, tradeId: trade.id })
       });
       setActiveCardTrade(null);
-      loadFriends();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error declining card trade:', err);
     }
@@ -611,7 +644,7 @@ export default function PokemonWilds() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, friendId: friend.id })
       });
-      loadFriends();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error removing friend:', err);
     }
@@ -652,11 +685,11 @@ export default function PokemonWilds() {
 
       const data = await response.json();
       if (response.ok) {
-        alert('Pokemon Wilds trade request sent!');
+        alert(data.message || 'Pokemon Wilds trade request sent!');
         setShowTradeDialog(false);
         setMySelectedPokemon(null);
         setPartnerSelectedPokemon(null);
-        loadFriends();
+        loadFriends({ forceRefresh: true });
       } else {
         console.error(data.error);
       }
@@ -754,8 +787,9 @@ export default function PokemonWilds() {
       const data = await response.json();
       if (data.success) {
         console.log(`Trade completed! Received ${data.receivedPokemon}, sent ${data.sentPokemon}`);
-        loadFriends();
-        loadMyPokemon();
+        alert(data.message || 'Pokemon trade completed');
+        loadFriends({ forceRefresh: true });
+        loadMyPokemon(user.id);
       } else {
         console.error(data.error || 'Error accepting trade');
       }
@@ -775,50 +809,9 @@ export default function PokemonWilds() {
         })
       });
 
-      loadFriends();
+      loadFriends({ forceRefresh: true });
     } catch (err) {
       console.error('Error declining trade:', err);
-    }
-  };
-
-  const togglePokemonForTrade = (pokemon) => {
-    if (selectedPokemonForTrade.find(p => p._id === pokemon._id)) {
-      setSelectedPokemonForTrade(selectedPokemonForTrade.filter(p => p._id !== pokemon._id));
-    } else {
-      setSelectedPokemonForTrade([...selectedPokemonForTrade, pokemon]);
-    }
-  };
-
-  const handleSendTrade = async () => {
-    if (selectedPokemonForTrade.length === 0) {
-      alert('Please select at least one Pokemon to trade');
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/friends/trade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fromId: user.id,
-          toId: activeTrade.friend.id,
-          offeredPokemon: selectedPokemonForTrade.map(p => ({ pokemonId: p._id.toString(), pokemonData: p })),
-          requestedPokemon: [],
-          type: 'pokemon-gift'
-        })
-      });
-
-      const data = await response.json();
-      if (response.ok) {
-        alert('Pokemon gift sent!');
-        setActiveTrade(null);
-        setSelectedPokemonForTrade([]);
-        loadMyPokemon();
-      } else {
-        alert(data.error);
-      }
-    } catch (err) {
-      alert('Error sending trade');
     }
   };
 
@@ -1252,8 +1245,8 @@ export default function PokemonWilds() {
               </div>
             </div>
             <div className="text-right self-start lg:self-center">
-              <p className={`text-sm font-bold ${trainerRank.textClass}`}>{trainerRank.label}</p>
-              <p className={`text-xl font-bold ${trainerRank.textClass}`}>{user.username}</p>
+              <p className={`text-sm font-bold ${activeUserTitle?.textClass || trainerRank.textClass}`}>{activeUserTitle?.label || trainerRank.label}</p>
+              <p className={`text-xl font-bold ${activeUserTitle?.textClass || trainerRank.textClass}`}>{user.username}</p>
               <p className="text-sm text-yellow-400 font-bold">⭐ {user.points} Points</p>
               <p className="text-xs text-cyan-300 font-semibold">⚔️ {user.battleWins || 0} Battle Wins</p>
             </div>
@@ -2079,6 +2072,9 @@ export default function PokemonWilds() {
                 <CardContent className="pt-6 text-center space-y-2">
                   <p className={`text-sm font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`}>{playerCard.trainerRank?.label || 'Trainer'}</p>
                   <p className={`text-3xl font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`}>{playerCard.username}</p>
+                  {playerCard.baseTrainerRank && (
+                    <p className="text-xs text-slate-400">Battle Rank: <span className={playerCard.baseTrainerRank.textClass || 'text-white'}>{playerCard.baseTrainerRank.label}</span></p>
+                  )}
                 </CardContent>
               </Card>
 
@@ -2096,6 +2092,38 @@ export default function PokemonWilds() {
                   </CardContent>
                 </Card>
               </div>
+
+              <Card className="border-2 border-fuchsia-500/30 bg-slate-800/50">
+                <CardHeader>
+                  <CardTitle className="text-fuchsia-400">Unlocked Titles</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {playerCard.unlockedTitles?.length ? (
+                    <>
+                      <div className="flex flex-wrap gap-2">
+                        {playerCard.unlockedTitles.map((title) => {
+                          const equipped = playerCard.selectedTitleId === title.id;
+                          return (
+                            <button
+                              key={title.id}
+                              type="button"
+                              onClick={() => playerCard.id === user?.id ? handleSelectPlayerTitle(title.id) : undefined}
+                              className={`rounded-full border px-3 py-1 text-sm font-semibold transition ${title.badgeClass} ${playerCard.id === user?.id ? 'hover:scale-[1.02]' : ''} ${equipped ? 'ring-2 ring-white/60' : ''}`}
+                            >
+                              {title.label}{equipped ? ' ✓' : ''}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {playerCard.id === user?.id && (
+                        <p className="text-xs text-slate-400">Click any unlocked title to equip it on your player card.</p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-slate-400">Complete full sets and master sets to unlock themed titles.</p>
+                  )}
+                </CardContent>
+              </Card>
 
               <Card className="border-2 border-yellow-500/30 bg-slate-800/50">
                 <CardHeader>
@@ -2228,6 +2256,37 @@ export default function PokemonWilds() {
                 </CardContent>
               </Card>
 
+
+              <Card className="border-2 border-cyan-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(34,211,238,0.2)]">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle className="text-cyan-400">Trade & Social Notifications ({(socialNotifications || []).filter((notification) => !notification?.read).length})</CardTitle>
+                  {(socialNotifications || []).some((notification) => !notification?.read) && (
+                    <Button size="sm" onClick={() => handleMarkNotificationsRead([])} className="bg-cyan-700 hover:bg-cyan-600">Mark all read</Button>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  {(socialNotifications || []).length === 0 ? (
+                    <p className="text-cyan-100/50 text-center py-4">No new notifications</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {(socialNotifications || []).map((notification) => (
+                        <div key={notification.id} className={`rounded p-3 ${notification.read ? 'bg-slate-700/30' : 'bg-cyan-900/30 border border-cyan-500/30'}`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-white text-sm font-medium">{notification.message}</p>
+                              <p className="text-xs text-cyan-100/50 mt-1">{new Date(notification.createdAt).toLocaleString()}</p>
+                            </div>
+                            {!notification.read && (
+                              <Button size="sm" onClick={() => handleMarkNotificationsRead([notification.id])} className="bg-cyan-700 hover:bg-cyan-600 text-xs">Read</Button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               {/* Friend Requests */}
               <Card className="border-2 border-yellow-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(234,179,8,0.2)]">
                 <CardHeader>
@@ -2272,8 +2331,7 @@ export default function PokemonWilds() {
                             <Badge className="bg-purple-500">{trade.offeredPokemon?.length || 0} Pokemon</Badge>
                           </div>
                           <div className="flex gap-2 mt-2">
-                            <Button size="sm" onClick={() => handleAcceptPokemonTrade(trade)} className="flex-1 bg-green-600 hover:bg-green-500">Accept Trade</Button>
-                            <Button size="sm" onClick={() => handleDeclinePokemonTrade(trade)} className="flex-1 bg-red-600 hover:bg-red-500">Decline</Button>
+                            <Button size="sm" onClick={() => handleViewPokemonTrade(trade)} className="w-full bg-purple-500 text-white hover:bg-purple-400">View Trade Request</Button>
                           </div>
                         </div>
                       ))}
@@ -2299,7 +2357,7 @@ export default function PokemonWilds() {
                             <Badge className="bg-purple-500">{trade.offeredCards?.length || 0} Cards</Badge>
                           </div>
                           <div className="flex gap-2">
-                            <Button size="sm" onClick={() => handleViewCardTrade(trade)} className="w-full bg-purple-500 text-white hover:bg-purple-400">View Trade</Button>
+                            <Button size="sm" onClick={() => handleViewCardTrade(trade)} className="w-full bg-purple-500 text-white hover:bg-purple-400">View Trade Request</Button>
                           </div>
                         </div>
                       ))}

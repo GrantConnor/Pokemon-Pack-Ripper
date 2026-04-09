@@ -43,6 +43,9 @@ export async function POST(request) {
           setAchievements: 1,
           tradesCompleted: 1,
           battleWins: 1,
+          favoritePokemonId: 1,
+          unlockedTitles: 1,
+          selectedTitleId: 1,
         },
       }
     );
@@ -62,7 +65,8 @@ export async function POST(request) {
             tradesCompleted: 1,
           battleWins: 1,
           favoritePokemonId: 1,
-          battleWins: 1,
+          unlockedTitles: 1,
+          selectedTitleId: 1,
           },
         }
       );
@@ -120,6 +124,8 @@ export async function POST(request) {
         tradesCompleted: user.tradesCompleted || 0,
         battleWins: user.battleWins || 0,
         favoritePokemonId: user.favoritePokemonId || null,
+        unlockedTitles: user.unlockedTitles || [],
+        selectedTitleId: user.selectedTitleId || null,
       }
     });
   } catch (error) {
