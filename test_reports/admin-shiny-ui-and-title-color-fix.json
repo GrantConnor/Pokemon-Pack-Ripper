@@ -1,0 +1,15 @@
+{
+  "checks": [
+    {"name": "wilds admin controls now have separate input for normal spawn", "status": "passed"},
+    {"name": "wilds admin controls now have separate input for shiny spawn", "status": "passed"},
+    {"name": "spawn shiny handler sends adminShinySpawnQuery instead of reusing normal spawn input state", "status": "passed"},
+    {"name": "Spheal of Approval title now includes explicit hex color metadata", "status": "passed"},
+    {"name": "player-card title rendering now respects inline color metadata", "status": "passed"}
+  ],
+  "syntax_checks": [
+    "lib/set-titles.js",
+    "app/wilds/page.js",
+    "app/page.js"
+  ],
+  "result": "passed"
+}

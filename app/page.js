@@ -3067,10 +3067,10 @@ export default function App() {
             <div className="space-y-4">
               <Card className="border-2 border-cyan-500/30 bg-slate-800/60">
                 <CardContent className="pt-6 text-center space-y-2">
-                  <p className={`text-sm font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`}>{playerCard.trainerRank?.label || 'Trainer'}</p>
-                  <p className={`text-3xl font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`}>{playerCard.username}</p>
+                  <p className={`text-sm font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`} style={playerCard.trainerRank?.color ? { color: playerCard.trainerRank.color } : undefined}>{playerCard.trainerRank?.label || 'Trainer'}</p>
+                  <p className={`text-3xl font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`} style={playerCard.trainerRank?.color ? { color: playerCard.trainerRank.color } : undefined}>{playerCard.username}</p>
                   {playerCard.baseTrainerRank && (
-                    <p className="text-xs text-slate-400">Battle Rank: <span className={playerCard.baseTrainerRank.textClass || 'text-white'}>{playerCard.baseTrainerRank.label}</span></p>
+                    <p className="text-xs text-slate-400">Battle Rank: <span className={playerCard.baseTrainerRank.textClass || 'text-white'} style={playerCard.baseTrainerRank?.color ? { color: playerCard.baseTrainerRank.color } : undefined}>{playerCard.baseTrainerRank.label}</span></p>
                   )}
                   {playerCard.id === user?.id && (
                     <div className="pt-2">

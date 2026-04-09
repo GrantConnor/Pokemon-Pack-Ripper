@@ -97,6 +97,7 @@ export default function PokemonWilds() {
   const [battleOpponent, setBattleOpponent] = useState(null);
   const [showBattleScreen, setShowBattleScreen] = useState(false);
   const [adminSpawnQuery, setAdminSpawnQuery] = useState('');
+  const [adminShinySpawnQuery, setAdminShinySpawnQuery] = useState('');
   const tradeSoundCountRef = useRef(0);
   const battleSoundCountRef = useRef(0);
 
@@ -878,7 +879,7 @@ export default function PokemonWilds() {
       const response = await fetch('/api/wilds/admin-spawn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId: user.id, pokemonId: adminSpawnQuery })
+        body: JSON.stringify({ adminId: user.id, pokemonId: adminSpawnQuery.trim() })
       });
 
       const data = await response.json();
@@ -898,7 +899,7 @@ export default function PokemonWilds() {
       const response = await fetch('/api/wilds/admin-spawn-shiny', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId: user.id, pokemonId: adminSpawnQuery })
+        body: JSON.stringify({ adminId: user.id, pokemonId: adminShinySpawnQuery.trim() })
       });
 
       const data = await response.json();
@@ -1320,8 +1321,8 @@ export default function PokemonWilds() {
               </div>
             </div>
             <div className="text-right self-start lg:self-center">
-              <p className={`text-sm font-bold ${activeUserTitle?.textClass || trainerRank.textClass}`}>{activeUserTitle?.label || trainerRank.label}</p>
-              <p className={`text-xl font-bold ${activeUserTitle?.textClass || trainerRank.textClass}`}>{user.username}</p>
+              <p className={`text-sm font-bold ${activeUserTitle?.textClass || trainerRank.textClass}`} style={activeUserTitle?.color ? { color: activeUserTitle.color } : undefined}>{activeUserTitle?.label || trainerRank.label}</p>
+              <p className={`text-xl font-bold ${activeUserTitle?.textClass || trainerRank.textClass}`} style={activeUserTitle?.color ? { color: activeUserTitle.color } : undefined}>{user.username}</p>
               <p className="text-sm text-yellow-400 font-bold">⭐ {user.points} Points</p>
               <p className="text-xs text-cyan-300 font-semibold">⚔️ {user.battleWins || 0} Battle Wins</p>
             </div>
@@ -2242,10 +2243,10 @@ export default function PokemonWilds() {
             <div className="space-y-4">
               <Card className="border-2 border-cyan-500/30 bg-slate-800/60">
                 <CardContent className="pt-6 text-center space-y-2">
-                  <p className={`text-sm font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`}>{playerCard.trainerRank?.label || 'Trainer'}</p>
-                  <p className={`text-3xl font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`}>{playerCard.username}</p>
+                  <p className={`text-sm font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`} style={playerCard.trainerRank?.color ? { color: playerCard.trainerRank.color } : undefined}>{playerCard.trainerRank?.label || 'Trainer'}</p>
+                  <p className={`text-3xl font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`} style={playerCard.trainerRank?.color ? { color: playerCard.trainerRank.color } : undefined}>{playerCard.username}</p>
                   {playerCard.baseTrainerRank && (
-                    <p className="text-xs text-slate-400">Battle Rank: <span className={playerCard.baseTrainerRank.textClass || 'text-white'}>{playerCard.baseTrainerRank.label}</span></p>
+                    <p className="text-xs text-slate-400">Battle Rank: <span className={playerCard.baseTrainerRank.textClass || 'text-white'} style={playerCard.baseTrainerRank?.color ? { color: playerCard.baseTrainerRank.color } : undefined}>{playerCard.baseTrainerRank.label}</span></p>
                   )}
                   {playerCard.id === user?.id && (
                     <div className="pt-2">
