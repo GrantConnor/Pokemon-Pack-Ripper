@@ -278,14 +278,20 @@ export default function SafariZonePage() {
                       {(spawn.types || []).map((type) => (
                         <Badge key={type} className={`${getTypeColor(type)} text-white capitalize`}>{type}</Badge>
                       ))}
+                      {(spawn.safariRarity === 'legendary' || spawn.safariRarity === 'mythical') && (
+                        <Badge variant="outline" className="border-fuchsia-300 text-fuchsia-200">Attempts Left {Math.max(0, (spawn.maxAttempts || 3) - (spawn.attemptsUsed || 0))}</Badge>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-wrap justify-center gap-3">
                     <Button onClick={catchPokemon} disabled={actionLoading} className="bg-emerald-600 hover:bg-emerald-500 font-bold text-white">
-                      {actionLoading ? 'Throwing...' : 'Catch Pokémon'}
+                      {actionLoading ? 'Throwing...' : 'Throw Safari Ball'}
                     </Button>
                     <Button onClick={useSnack} disabled={actionLoading || (zone.snacksRemaining ?? 0) <= 0 || spawn.snackApplied} className="bg-yellow-600 hover:bg-yellow-500 font-bold text-black">
                       Use Poké Snack
+                    </Button>
+                    <Button onClick={runFromPokemon} disabled={actionLoading} className="bg-slate-700 hover:bg-slate-600 font-bold text-white">
+                      Run
                     </Button>
                   </div>
                 </CardContent>
