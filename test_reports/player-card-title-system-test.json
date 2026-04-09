@@ -1,0 +1,40 @@
+{
+  "checks": [
+    {
+      "name": "profile card route exposes availableTitles",
+      "status": "passed"
+    },
+    {
+      "name": "profile card route backfills set titles from existing collection",
+      "status": "passed"
+    },
+    {
+      "name": "title selection route accepts battle rank titles and set titles",
+      "status": "passed"
+    },
+    {
+      "name": "wilds player card uses dropdown selector instead of unlocked titles panel",
+      "status": "passed"
+    },
+    {
+      "name": "pack ripper page exposes My Player Card entry point",
+      "status": "passed"
+    },
+    {
+      "name": "pack ripper player card supports displayed title dropdown",
+      "status": "passed"
+    },
+    {
+      "name": "set title generator provides themed titles for special cases and deterministic unique fallbacks for every set",
+      "status": "passed"
+    }
+  ],
+  "syntax_checks": [
+    "lib/set-titles.js",
+    "app/api/profile/card/route.js",
+    "app/api/profile/title/route.js",
+    "app/page.js",
+    "app/wilds/page.js"
+  ],
+  "result": "passed"
+}

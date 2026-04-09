@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import { getPointRegenState as sharedGetPointRegenState, refreshAllUsersPointsIfDue as sharedRefreshAllUsersPointsIfDue } from '@/lib/auth';
 import { getBreakdownValueForRarity } from '@/lib/breakdown-values';
+import { applyDailyObjectiveEvent } from '@/lib/daily-objectives';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,7 +16,7 @@ const STARTING_POINTS = 1000;
 const PACK_COST = 100; // Default cost
 const BULK_PACK_COUNT = 10;
 const POINTS_REGEN_RATE = 1000; // Points per regeneration
-const POINTS_REGEN_INTERVAL = 7200000; // 2 hours in milliseconds (2 * 60 * 60 * 1000)
+const POINTS_REGEN_INTERVAL = 4.5 * 60 * 60 * 1000; // 4.5 hours in milliseconds
 
 const EXTERNAL_API_TIMEOUT = 15000;
 const SETS_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
@@ -212,6 +213,51 @@ function calculateNextPointsTime(user) {
 
 async function refreshAllUsersPointsIfDue(database, nowMs = Date.now()) {
   return sharedRefreshAllUsersPointsIfDue(database, nowMs);
+}
+
+
+async function pushUserNotification(database, userId, type, message, extra = {}) {
+  if (!userId || !message) return null;
+  const notification = {
+    id: uuidv4(),
+    type,
+    message,
+    read: false,
+    createdAt: new Date().toISOString(),
+    ...extra,
+  };
+  await database.collection('users').updateOne(
+    { id: userId },
+    { $push: { socialNotifications: { $each: [notification], $slice: -50 } } }
+  );
+  return notification;
+}
+
+function cardTradeLockKey(card) {
+  return `${card?.id || 'unknown'}::${card?.pulledAt || 'unknown'}`;
+}
+
+function userOwnsAllCards(user, cards = []) {
+  const collection = user?.collection || [];
+  return cards.every((card) => collection.some((owned) => owned?.id === card?.id && owned?.pulledAt === card?.pulledAt));
+}
+
+function userHasLockedTradeCards(user, cards = []) {
+  const locked = new Set((user?.lockedTradeCards || []).map((entry) => entry?.key).filter(Boolean));
+  return cards.some((card) => locked.has(cardTradeLockKey(card)));
+}
+
+async function userOwnsAllPokemon(database, userId, pokemonEntries = []) {
+  if (!Array.isArray(pokemonEntries) || pokemonEntries.length === 0) return true;
+  for (const entry of pokemonEntries) {
+    if (!entry?.pokemonId || !ObjectId.isValid(String(entry.pokemonId))) return false;
+    const owned = await database.collection('caught_pokemon').findOne({
+      _id: new ObjectId(String(entry.pokemonId)),
+      userId,
+    }, { projection: { _id: 1 } });
+    if (!owned) return false;
+  }
+  return true;
 }
 
 // Check and award achievements for a specific set (single-fire guaranteed)
@@ -1525,10 +1571,18 @@ export async function GET(request) {
         .find({ id: { $in: friendIds } })
         .project({ id: 1, username: 1, tradesCompleted: 1, lastSeenAt: 1 })
         .toArray();
-      const friendsWithPresence = friends.map(friend => ({
-        ...friend,
-        isOnline: !!friend.lastSeenAt && new Date(friend.lastSeenAt).getTime() >= onlineThreshold,
-      }));
+      const friendsWithPresence = friends
+        .map(friend => ({
+          ...friend,
+          isOnline: !!friend.lastSeenAt && new Date(friend.lastSeenAt).getTime() >= onlineThreshold,
+        }))
+        .sort((a, b) => {
+          if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
+          const aSeen = a.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0;
+          const bSeen = b.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0;
+          if (aSeen !== bSeen) return bSeen - aSeen;
+          return (a.username || '').localeCompare(b.username || '');
+        });
 
       // Get pending request details
       const requestIds = user.friendRequests || [];
@@ -1550,9 +1604,11 @@ export async function GET(request) {
         sentRequests,
         tradeRequests: user.tradeRequests || [],
         battleRequests: user.battleRequests || [],
-        activeBattleId: user.activeBattleId || null
+        activeBattleId: user.activeBattleId || null,
+        socialNotifications: (user.socialNotifications || []).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
       });
     }
+
 
     // Admin: Get all users (Spheal only)
     if (pathname.includes('/api/admin/users')) {
@@ -1692,6 +1748,31 @@ export async function POST(request) {
 
   try {
     const body = await request.json();
+
+
+    if (pathname.includes('/api/notifications/mark-read')) {
+      const { userId, notificationIds } = body;
+      if (!userId) {
+        return NextResponse.json({ error: 'User ID required' }, { status: 400 });
+      }
+
+      const database = await connectDB();
+      const targetIds = Array.isArray(notificationIds) ? notificationIds.filter(Boolean) : [];
+      if (targetIds.length > 0) {
+        await database.collection('users').updateOne(
+          { id: userId },
+          { $set: { 'socialNotifications.$[notif].read': true } },
+          { arrayFilters: [{ 'notif.id': { $in: targetIds } }] }
+        );
+      } else {
+        await database.collection('users').updateOne(
+          { id: userId },
+          { $set: { 'socialNotifications.$[].read': true } }
+        );
+      }
+
+      return NextResponse.json({ success: true });
+    }
 
     // Sign up
 if (pathname.includes('/api/auth/signup')) {
@@ -2441,6 +2522,21 @@ if (pathname.includes('/api/auth/signin')) {
         { $inc: { tradesCompleted: 1 } }
       );
 
+      await pushUserNotification(
+        database,
+        tradeRequest.fromId,
+        'pokemon-trade-accepted',
+        `${user.username} accepted your Pokémon trade request.`,
+        { tradeId, fromUsername: user.username }
+      );
+      await pushUserNotification(
+        database,
+        userId,
+        'pokemon-trade-completed',
+        `Your Pokémon trade with ${tradeRequest.fromUsername} was completed.`,
+        { tradeId, fromUsername: tradeRequest.fromUsername }
+      );
+
       console.log('✅ Trade completed successfully!');
 
       return NextResponse.json({ 
@@ -2487,6 +2583,18 @@ if (pathname.includes('/api/auth/signin')) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
 
+      if (!fromUser.friends?.includes(toId)) {
+        return NextResponse.json({ error: 'Can only trade Pokémon with friends' }, { status: 403 });
+      }
+
+      if (!(await userOwnsAllPokemon(database, fromId, offeredPokemon))) {
+        return NextResponse.json({ error: 'You do not own all offered Pokémon' }, { status: 400 });
+      }
+
+      if (!(await userOwnsAllPokemon(database, toId, requestedPokemon))) {
+        return NextResponse.json({ error: `${toUser.username} no longer owns one of the requested Pokémon` }, { status: 400 });
+      }
+
       const existingPokemonTrade = [...(toUser.tradeRequests || []), ...(fromUser.tradeRequests || [])].find((request) =>
         request.status === 'pending' && (
           (request.fromId === fromId && request.toId === toId) ||
@@ -2516,6 +2624,14 @@ if (pathname.includes('/api/auth/signin')) {
       await database.collection('users').updateOne(
         { id: toId },
         { $push: { tradeRequests: tradeRequest } }
+      );
+
+      await pushUserNotification(
+        database,
+        toId,
+        'pokemon-trade-request',
+        `${fromUser.username} sent you a Pokémon trade request.`,
+        { tradeId: tradeRequest.id, fromUsername: fromUser.username }
       );
 
       return NextResponse.json({ 
@@ -2617,6 +2733,18 @@ if (pathname.includes('/api/auth/signin')) {
         return NextResponse.json({ error: 'Can only trade with friends' }, { status: 403 });
       }
 
+      if (!userOwnsAllCards(user, offeredCards)) {
+        return NextResponse.json({ error: 'You do not own all offered cards' }, { status: 400 });
+      }
+
+      if (userHasLockedTradeCards(user, offeredCards)) {
+        return NextResponse.json({ error: 'One or more offered cards are already reserved in another pending trade' }, { status: 409 });
+      }
+
+      if (!userOwnsAllCards(friend, requestedCards)) {
+        return NextResponse.json({ error: `${friend.username} no longer owns one of the requested cards` }, { status: 400 });
+      }
+
       const existingCardTrade = [...(friend.tradeRequests || []), ...(user.tradeRequests || [])].find((trade) =>
         trade.status === 'pending' && 'offeredCards' in trade && (
           (trade.from === userId && trade.to === friendId) ||
@@ -2640,9 +2768,44 @@ if (pathname.includes('/api/auth/signin')) {
         createdAt: new Date().toISOString()
       };
 
-      await database.collection('users').updateOne(
-        { id: friendId },
-        { $push: { tradeRequests: tradeRequest } }
+      const senderLocks = offeredCards.map((card) => ({
+        key: cardTradeLockKey(card),
+        tradeId: tradeRequest.id,
+        toUserId: friendId,
+        createdAt: new Date().toISOString(),
+      }));
+
+      const senderLockResult = await database.collection('users').updateOne(
+        {
+          id: userId,
+          lockedTradeCards: { $not: { $elemMatch: { key: { $in: senderLocks.map((entry) => entry.key) } } } },
+        },
+        { $push: { lockedTradeCards: { $each: senderLocks } } }
+      );
+
+      if (!senderLockResult.modifiedCount) {
+        return NextResponse.json({ error: 'One or more offered cards were reserved in another pending trade' }, { status: 409 });
+      }
+
+      try {
+        await database.collection('users').updateOne(
+          { id: friendId },
+          { $push: { tradeRequests: tradeRequest } }
+        );
+      } catch (error) {
+        await database.collection('users').updateOne(
+          { id: userId },
+          { $pull: { lockedTradeCards: { tradeId: tradeRequest.id } } }
+        );
+        throw error;
+      }
+
+      await pushUserNotification(
+        database,
+        friendId,
+        'card-trade-request',
+        `${user.username} sent you a card trade request.`,
+        { tradeId: tradeRequest.id, fromUsername: user.username }
       );
 
       return NextResponse.json({ 
@@ -2672,9 +2835,33 @@ if (pathname.includes('/api/auth/signin')) {
         return NextResponse.json({ error: 'Trade request not found' }, { status: 404 });
       }
 
+      const claimTradeResult = await database.collection('users').updateOne(
+        { id: userId, 'tradeRequests.id': tradeId },
+        { $pull: { tradeRequests: { id: tradeId } } }
+      );
+
+      if (!claimTradeResult.modifiedCount) {
+        return NextResponse.json({ error: 'Trade request was already processed' }, { status: 409 });
+      }
+
       const fromUser = await database.collection('users').findOne({ id: trade.from });
       if (!fromUser) {
         return NextResponse.json({ error: 'Sender not found' }, { status: 404 });
+      }
+
+      if (!userOwnsAllCards(fromUser, trade.offeredCards || [])) {
+        await database.collection('users').updateOne(
+          { id: trade.from },
+          { $pull: { lockedTradeCards: { tradeId } } }
+        );
+        return NextResponse.json({ error: 'Sender no longer owns one or more offered cards' }, { status: 409 });
+      }
+      if (!userOwnsAllCards(user, trade.requestedCards || [])) {
+        await database.collection('users').updateOne(
+          { id: trade.from },
+          { $pull: { lockedTradeCards: { tradeId } } }
+        );
+        return NextResponse.json({ error: 'You no longer own one or more requested cards' }, { status: 409 });
       }
 
       // Execute the trade in separate operations to avoid MongoDB conflicts
@@ -2682,7 +2869,12 @@ if (pathname.includes('/api/auth/signin')) {
       // Step 1: Remove offered cards from sender
       await database.collection('users').updateOne(
         { id: trade.from },
-        { $pull: { collection: { $or: trade.offeredCards.map(card => ({ id: card.id, pulledAt: card.pulledAt })) } } }
+        { 
+          $pull: { 
+            collection: { $or: trade.offeredCards.map(card => ({ id: card.id, pulledAt: card.pulledAt })) },
+            lockedTradeCards: { tradeId }
+          } 
+        }
       );
 
       // Step 2: Add requested cards to sender (if any)
@@ -2707,13 +2899,7 @@ if (pathname.includes('/api/auth/signin')) {
         { $push: { collection: { $each: trade.offeredCards } } }
       );
 
-      // Step 5: Remove the trade request
-      await database.collection('users').updateOne(
-        { id: userId },
-        { $pull: { tradeRequests: { id: tradeId } } }
-      );
-
-      // Step 6: Increment trade counter for both users
+      // Step 5: Increment trade counter for both users
       await database.collection('users').updateOne(
         { id: trade.from },
         { $inc: { tradesCompleted: 1 } }
@@ -2722,6 +2908,21 @@ if (pathname.includes('/api/auth/signin')) {
       await database.collection('users').updateOne(
         { id: userId },
         { $inc: { tradesCompleted: 1 } }
+      );
+
+      await pushUserNotification(
+        database,
+        trade.from,
+        'card-trade-accepted',
+        `${user.username} accepted your card trade request.`,
+        { tradeId, fromUsername: user.username }
+      );
+      await pushUserNotification(
+        database,
+        userId,
+        'card-trade-completed',
+        `Your card trade with ${trade.fromUsername} was completed.`,
+        { tradeId, fromUsername: trade.fromUsername }
       );
 
       return NextResponse.json({ 
@@ -2899,6 +3100,30 @@ if (pathname.includes('/api/auth/signin')) {
       };
 
       if (caught) {
+        const outbreak = spawn.outbreak && spawn.outbreak.active && spawn.outbreak.endsAt && Date.now() < spawn.outbreak.endsAt
+          ? spawn.outbreak
+          : null;
+        const nextInterval = outbreak?.respawnDelayMs || (MIN_SPAWN_INTERVAL + Math.random() * (MAX_SPAWN_INTERVAL - MIN_SPAWN_INTERVAL));
+
+        const claimResult = await database.collection('global_spawn').updateOne(
+          { id: 'current', caughtBy: null, spawnedAt: spawn.spawnedAt },
+          {
+            $set: {
+              caughtBy: userId,
+              nextSpawnTime: Date.now() + nextInterval,
+              outbreak: outbreak,
+            }
+          }
+        );
+
+        if (!claimResult.modifiedCount) {
+          return NextResponse.json({
+            success: false,
+            caught: false,
+            message: 'That Pokémon was caught by another trainer just before your throw landed.'
+          }, { status: 409 });
+        }
+
         // Pokemon caught!
         const caughtPokemon = {
           ...spawn.pokemon,
@@ -2912,23 +3137,12 @@ if (pathname.includes('/api/auth/signin')) {
         console.log(`   isShiny: ${caughtPokemon.isShiny}`);
         console.log(`   Sprite: ${caughtPokemon.sprite}`);
 
-        // Save to user's caught Pokemon
+        // Save to user's caught Pokemon only after the global spawn is claimed
         await database.collection('caught_pokemon').insertOne(caughtPokemon);
 
         // Grant XP to all owned Pokemon (including the newly caught one)
         await applyXPToAllPokemon(userId, XP_FROM_CATCH, database);
-
-        // Mark spawn as caught and set next spawn time
-        const nextInterval = MIN_SPAWN_INTERVAL + Math.random() * (MAX_SPAWN_INTERVAL - MIN_SPAWN_INTERVAL);
-        await database.collection('global_spawn').updateOne(
-          { id: 'current' },
-          { 
-            $set: { 
-              caughtBy: userId,
-              nextSpawnTime: Date.now() + nextInterval,
-            }
-          }
-        );
+        await applyDailyObjectiveEvent(database.collection('users'), userId, 'catch-pokemon', { types: caughtPokemon.types, count: 1 });
 
         return NextResponse.json({ 
           success: true, 
@@ -2938,10 +3152,18 @@ if (pathname.includes('/api/auth/signin')) {
         });
       } else {
         // Failed attempt
-        await database.collection('global_spawn').updateOne(
-          { id: 'current' },
+        const attemptResult = await database.collection('global_spawn').updateOne(
+          { id: 'current', caughtBy: null, spawnedAt: spawn.spawnedAt },
           { $set: updateData }
         );
+
+        if (!attemptResult.modifiedCount) {
+          return NextResponse.json({
+            success: false,
+            caught: false,
+            message: 'That Pokémon was caught by another trainer before your attempt resolved.'
+          }, { status: 409 });
+        }
 
         if (newAttempts >= MAX_CATCH_ATTEMPTS) {
           return NextResponse.json({ 
@@ -2965,7 +3187,7 @@ if (pathname.includes('/api/auth/signin')) {
     }
 
     // Admin: Force spawn a new Pokemon (Spheal only)
-    if (pathname.includes('/api/wilds/admin-spawn')) {
+    if (pathname === '/api/wilds/admin-spawn') {
       const { adminId, pokemonId } = body;
       
       if (!adminId) {
@@ -2980,6 +3202,9 @@ if (pathname.includes('/api/auth/signin')) {
       }
 
       const resolvedPokemonId = await resolvePokemonIdFromQuery(pokemonId);
+      if (pokemonId && !resolvedPokemonId) {
+        return NextResponse.json({ error: 'Could not find a Pokémon matching that dex number or name' }, { status: 404 });
+      }
       const spawnId = resolvedPokemonId || (Math.floor(Math.random() * MAX_POKEMON_ID) + 1);
       const pokemonData = await fetchPokemonData(spawnId);
       
@@ -3010,7 +3235,7 @@ if (pathname.includes('/api/auth/signin')) {
     }
 
     // Admin: Force spawn a SHINY Pokemon (Spheal only)
-    if (pathname.includes('/api/wilds/admin-spawn-shiny')) {
+    if (pathname === '/api/wilds/admin-spawn-shiny') {
       const { adminId, pokemonId } = body;
       
       if (!adminId) {
@@ -3025,6 +3250,9 @@ if (pathname.includes('/api/auth/signin')) {
       }
 
       const resolvedPokemonId = await resolvePokemonIdFromQuery(pokemonId);
+      if (pokemonId && !resolvedPokemonId) {
+        return NextResponse.json({ error: 'Could not find a Pokémon matching that dex number or name' }, { status: 404 });
+      }
       const spawnId = resolvedPokemonId || (Math.floor(Math.random() * MAX_POKEMON_ID) + 1);
       const pokemonData = await fetchPokemonData(spawnId, true);
       
@@ -3426,32 +3654,65 @@ if (pathname.includes('/api/auth/signin')) {
 
     // Release a Pokemon (delete from collection)
     if (pathname.includes('/api/wilds/release')) {
-      const { userId, pokemonId, xpAmount } = body;
-      
-      console.log(`🗑️ Release request - userId: ${userId}, pokemonId: ${pokemonId}`);
-      
-      if (!userId || !pokemonId) {
+      const { userId, pokemonId, pokemonIds } = body;
+      const normalizedPokemonIds = Array.isArray(pokemonIds)
+        ? pokemonIds.filter(Boolean)
+        : (pokemonId ? [pokemonId] : []);
+
+      console.log(`🗑️ Release request - userId: ${userId}, pokemonIds: ${normalizedPokemonIds.join(',')}`);
+
+      if (!userId || normalizedPokemonIds.length === 0) {
         return NextResponse.json({ error: 'User ID and Pokemon ID required' }, { status: 400 });
       }
 
       const database = await connectDB();
-      
-      // Delete the Pokemon
-      const result = await database.collection('caught_pokemon').deleteOne({
-        _id: new ObjectId(pokemonId),
-        userId: userId
-      });
+      const objectIds = normalizedPokemonIds.map((id) => {
+        try {
+          return new ObjectId(id);
+        } catch {
+          return null;
+        }
+      }).filter(Boolean);
 
-      if (result.deletedCount === 0) {
-        console.log(`❌ Pokemon not found for release - pokemonId: ${pokemonId}`);
+      if (!objectIds.length) {
+        return NextResponse.json({ error: 'Invalid Pokemon ID(s)' }, { status: 400 });
+      }
+
+      const ownedPokemon = await database.collection('caught_pokemon').find({
+        _id: { $in: objectIds },
+        userId,
+      }).toArray();
+
+      if (!ownedPokemon.length) {
         return NextResponse.json({ error: 'Pokemon not found' }, { status: 404 });
       }
 
-      console.log(`✅ Pokemon released successfully`);
+      const releaseIds = ownedPokemon.map((pokemon) => pokemon._id);
+      const result = await database.collection('caught_pokemon').deleteMany({
+        _id: { $in: releaseIds },
+        userId,
+      });
+
+      const releasedCount = result.deletedCount || 0;
+      const pointsAwarded = releasedCount * 100;
+
+      const userDoc = await database.collection('users').findOne({ id: userId }, { projection: { id: 1, points: 1, favoritePokemonId: 1 } });
+      const shouldClearFavorite = userDoc?.favoritePokemonId && releaseIds.some((id) => String(id) === String(userDoc.favoritePokemonId));
+      const userUpdate = {
+        $inc: { points: pointsAwarded },
+        ...(shouldClearFavorite ? { $unset: { favoritePokemonId: '' } } : {}),
+      };
+      await database.collection('users').updateOne({ id: userId }, userUpdate);
+      const updatedUser = await database.collection('users').findOne({ id: userId }, { projection: { points: 1 } });
+
+      console.log(`✅ Released ${releasedCount} Pokémon for ${pointsAwarded} points`);
 
       return NextResponse.json({
         success: true,
-        message: 'Pokemon released'
+        message: releasedCount === 1 ? 'Pokemon released' : 'Pokemon released',
+        releasedCount,
+        pointsAwarded,
+        pointsRemaining: updatedUser?.points || 0,
       });
     }
 
@@ -3760,10 +4021,18 @@ if (pathname.includes('/api/auth/signin')) {
 
     // Perform battle action (choose move / resolve round)
     if (pathname.includes('/api/battles/attack')) {
-      const { battleId, userId, moveIndex } = body;
+      const { battleId, userId, moveIndex, pokemonIndex, actionType = 'attack' } = body;
       
-      if (!battleId || !userId || moveIndex === undefined) {
+      if (!battleId || !userId) {
         return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+      }
+
+      if (actionType === 'attack' && moveIndex === undefined) {
+        return NextResponse.json({ error: 'Move index required' }, { status: 400 });
+      }
+
+      if (actionType === 'switch' && pokemonIndex === undefined) {
+        return NextResponse.json({ error: 'Pokemon index required' }, { status: 400 });
       }
 
       const database = await connectDB();
@@ -3782,22 +4051,35 @@ if (pathname.includes('/api/auth/signin')) {
       const pendingActions = battle.pendingActions || { player1: null, player2: null };
 
       if (pendingActions[playerKey]) {
-        return NextResponse.json({ error: 'You already locked in a move for this round' }, { status: 400 });
+        return NextResponse.json({ error: 'You already locked in an action for this round' }, { status: 400 });
       }
 
       const player = battle[playerKey];
       const activePokemon = player.pokemon?.[player.currentPokemonIndex];
       if (!activePokemon || activePokemon.currentHP <= 0) {
-        return NextResponse.json({ error: 'Your active Pokemon cannot move' }, { status: 400 });
+        return NextResponse.json({ error: 'Your active Pokemon cannot act' }, { status: 400 });
       }
 
-      const moveName = activePokemon.moveset?.[moveIndex];
-      const moveData = activePokemon.allMovesData?.find(m => m.name === moveName);
-      if (!moveData) {
-        return NextResponse.json({ error: 'Invalid move' }, { status: 400 });
+      if (actionType === 'switch') {
+        const chosenPokemon = player.pokemon?.[pokemonIndex];
+        if (!chosenPokemon) {
+          return NextResponse.json({ error: 'Pokemon not found' }, { status: 404 });
+        }
+        if (chosenPokemon.currentHP <= 0) {
+          return NextResponse.json({ error: 'That Pokemon has fainted' }, { status: 400 });
+        }
+        if (pokemonIndex === player.currentPokemonIndex) {
+          return NextResponse.json({ error: 'That Pokemon is already active' }, { status: 400 });
+        }
+        pendingActions[playerKey] = { type: 'switch', pokemonIndex, selectedAt: new Date().toISOString() };
+      } else {
+        const moveName = activePokemon.moveset?.[moveIndex];
+        const moveData = activePokemon.allMovesData?.find(m => m.name === moveName);
+        if (!moveData) {
+          return NextResponse.json({ error: 'Invalid move' }, { status: 400 });
+        }
+        pendingActions[playerKey] = { type: 'attack', moveIndex, selectedAt: new Date().toISOString() };
       }
-
-      pendingActions[playerKey] = { moveIndex, selectedAt: new Date().toISOString() };
 
       if (!pendingActions[opponentKey]) {
         await database.collection('battles').updateOne(
@@ -3817,12 +4099,14 @@ if (pathname.includes('/api/auth/signin')) {
       const speedOrder = ['player1', 'player2'].sort((a, b) => {
         const pokemonA = state[a].pokemon?.[state[a].currentPokemonIndex];
         const pokemonB = state[b].pokemon?.[state[b].currentPokemonIndex];
-        const moveNameA = pokemonA?.moveset?.[pendingActions[a]?.moveIndex];
-        const moveNameB = pokemonB?.moveset?.[pendingActions[b]?.moveIndex];
+        const actionA = pendingActions[a] || {};
+        const actionB = pendingActions[b] || {};
+        const moveNameA = pokemonA?.moveset?.[actionA.moveIndex];
+        const moveNameB = pokemonB?.moveset?.[actionB.moveIndex];
         const moveA = pokemonA?.allMovesData?.find((move) => move.name === moveNameA);
         const moveB = pokemonB?.allMovesData?.find((move) => move.name === moveNameB);
-        const priorityA = moveA?.priority || 0;
-        const priorityB = moveB?.priority || 0;
+        const priorityA = actionA.type === 'switch' ? 999 : (moveA?.priority || 0);
+        const priorityB = actionB.type === 'switch' ? 999 : (moveB?.priority || 0);
         if (priorityA !== priorityB) return priorityB - priorityA;
         const speedA = pokemonA ? getEffectiveStat(pokemonA, 'speed') : 0;
         const speedB = pokemonB ? getEffectiveStat(pokemonB, 'speed') : 0;
@@ -3875,7 +4159,11 @@ if (pathname.includes('/api/auth/signin')) {
 
       const applyStatChanges = (move, userKey, foeKey) => {
         if (!move.statChanges?.length) return;
-        const targetMode = getMoveTargetMode(move) === 'self' ? 'self' : (getMoveTargetMode(move) === 'target' ? 'target' : inferStatTarget(move));
+        const baseTargetMode = getMoveTargetMode(move);
+        const inferredTargetMode = inferStatTarget(move);
+        const targetMode = baseTargetMode === 'self'
+          ? 'self'
+          : (baseTargetMode === 'target' ? inferredTargetMode : inferredTargetMode);
         for (const statChange of move.statChanges) {
           const statKey = formatStatKey(statChange.stat);
           if (!statKey) continue;
@@ -3973,8 +4261,9 @@ if (pathname.includes('/api/auth/signin')) {
 
 
       const firstMover = getActive(speedOrder[0]);
-      if (firstMover) {
-        pushLog({ type: 'order', message: `${firstMover.displayName} was faster and moved first!` });
+      const firstAction = state.pendingActions?.[speedOrder[0]];
+      if (firstMover && firstAction) {
+        pushLog({ type: 'order', message: `${firstMover.displayName} acted first!` });
       }
 
       for (const actingKey of speedOrder) {
@@ -3988,6 +4277,23 @@ if (pathname.includes('/api/auth/signin')) {
 
         if (actingPokemon.currentHP <= 0) {
           pushLog({ type: 'skip', message: `${actingPokemon.displayName} fainted before it could move!` });
+          continue;
+        }
+
+        if (action.type === 'switch') {
+          const chosenPokemon = state[actingKey].pokemon?.[action.pokemonIndex];
+          if (!chosenPokemon || chosenPokemon.currentHP <= 0 || action.pokemonIndex === state[actingKey].currentPokemonIndex) {
+            pushLog({ type: 'skip', message: `${state[actingKey].username} could not switch Pokemon.` });
+            continue;
+          }
+          state[actingKey].currentPokemonIndex = action.pokemonIndex;
+          actingPokemon = getActive(actingKey);
+          pushLog({ type: 'switch', message: `${state[actingKey].username} switched to ${actingPokemon.displayName}!` });
+          applyEntryHazards(state, actingKey, pushLog);
+          if (actingPokemon.currentHP === 0) {
+            pushLog({ type: 'faint', message: `${actingPokemon.displayName} fainted!` });
+            setAwaitingSwitch(actingKey);
+          }
           continue;
         }
 
@@ -4222,6 +4528,13 @@ if (pathname.includes('/api/auth/signin')) {
           { id: { $in: [battle.player1.userId, battle.player2.userId] } },
           { $unset: { activeBattleId: '' } }
         );
+        if (winner) {
+          await database.collection('users').updateOne(
+            { id: winner },
+            { $inc: { battleWins: 1 } }
+          );
+          await applyDailyObjectiveEvent(database.collection('users'), winner, 'win-battle', { count: 1 });
+        }
       }
 
       return NextResponse.json({
@@ -4272,6 +4585,12 @@ if (pathname.includes('/api/auth/signin')) {
         { id: { $in: [battle.player1.userId, battle.player2.userId] } },
         { $unset: { activeBattleId: '' } }
       );
+
+      await database.collection('users').updateOne(
+        { id: winner },
+        { $inc: { battleWins: 1 } }
+      );
+      await applyDailyObjectiveEvent(database.collection('users'), winner, 'win-battle', { count: 1 });
 
       return NextResponse.json({ success: true, winner });
     }

@@ -1,0 +1,16 @@
+{
+  "checks": [
+    {"name": "Spheal session sync grants all set titles", "status": "passed"},
+    {"name": "Spheal signin sync grants all set titles", "status": "passed"},
+    {"name": "Spheal player card exposes all set titles", "status": "passed"},
+    {"name": "Spheal can equip any set title from title selector", "status": "passed"}
+  ],
+  "syntax_checks": [
+    "lib/set-titles.js",
+    "app/api/session/route.js",
+    "app/api/auth/signin/route.js",
+    "app/api/profile/card/route.js",
+    "app/api/profile/title/route.js"
+  ],
+  "result": "passed"
+}

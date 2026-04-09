@@ -1,0 +1,17 @@
+{
+  "checks": [
+    {"name": "wilds toolbar renders two separate admin inputs", "status": "passed"},
+    {"name": "normal spawn input uses adminSpawnQuery", "status": "passed"},
+    {"name": "shiny spawn input uses adminShinySpawnQuery", "status": "passed"},
+    {"name": "Grant special title data now includes explicit hex color and routes always refresh computed special titles", "status": "passed"}
+  ],
+  "syntax_checks": [
+    "lib/set-titles.js",
+    "app/api/session/route.js",
+    "app/api/auth/signin/route.js",
+    "app/api/profile/card/route.js",
+    "app/api/profile/title/route.js",
+    "app/wilds/page.js"
+  ],
+  "result": "passed"
+}
