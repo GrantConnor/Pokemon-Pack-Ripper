@@ -344,21 +344,43 @@ export async function POST(request) {
       }
     );
 
-    const titleUnlockResult = await unlockSetTitlesForUser(users, userId, setId, cards[0]?.set?.name || setId, cards);
-    const dailyObjectiveResult = await applyDailyObjectiveEvent(users, userId, 'open-pack', { count: packCount });
+    let titleUnlockResult = { newlyUnlocked: [] };
+    try {
+      titleUnlockResult = await unlockSetTitlesForUser(
+        users,
+        userId,
+        setId,
+        allCards[0]?.set?.name || setId,
+        allCards,
+      );
+    } catch (error) {
+      console.error('[PACK OPEN] Title unlock step failed:', error);
+    }
+
+    let dailyObjectiveResult = { pointsAwarded: 0 };
+    try {
+      dailyObjectiveResult = await applyDailyObjectiveEvent(users, userId, 'open-pack', { count: packCount }) || { pointsAwarded: 0 };
+    } catch (error) {
+      console.error('[PACK OPEN] Daily objective step failed:', error);
+    }
     const finalPointsRemaining = newPoints + (dailyObjectiveResult?.pointsAwarded || 0);
 
-    const revealId = uuidv4();
-    await database.collection('pack_reveals').insertOne({
-      id: revealId,
-      userId,
-      cards: cardsWithTimestamp,
-      packs: packsWithTimestamps,
-      isBulk: !!bulk,
-      pointsRemaining: finalPointsRemaining,
-      createdAt: new Date().toISOString(),
-      revealed: false,
-    });
+    let revealId = uuidv4();
+    try {
+      await database.collection('pack_reveals').insertOne({
+        id: revealId,
+        userId,
+        cards: cardsWithTimestamp,
+        packs: packsWithTimestamps,
+        isBulk: !!bulk,
+        pointsRemaining: finalPointsRemaining,
+        createdAt: new Date().toISOString(),
+        revealed: false,
+      });
+    } catch (error) {
+      console.error('[PACK OPEN] Reveal persistence failed:', error);
+      revealId = null;
+    }
 
     return NextResponse.json({
       success: true,
