@@ -2075,6 +2075,22 @@ export default function PokemonWilds() {
                   {playerCard.baseTrainerRank && (
                     <p className="text-xs text-slate-400">Battle Rank: <span className={playerCard.baseTrainerRank.textClass || 'text-white'}>{playerCard.baseTrainerRank.label}</span></p>
                   )}
+                  {playerCard.id === user?.id && (
+                    <div className="pt-2">
+                      <p className="text-xs font-semibold text-cyan-300 mb-2">Displayed Title</p>
+                      <select
+                        value={playerCard.selectedTitleId || ''}
+                        onChange={(e) => handleSelectPlayerTitle(e.target.value)}
+                        className="w-full rounded-md border border-cyan-500/30 bg-slate-900/80 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+                      >
+                        {(playerCard.availableTitles || []).map((title) => (
+                          <option key={title.id} value={title.id}>
+                            {title.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
@@ -2092,38 +2108,6 @@ export default function PokemonWilds() {
                   </CardContent>
                 </Card>
               </div>
-
-              <Card className="border-2 border-fuchsia-500/30 bg-slate-800/50">
-                <CardHeader>
-                  <CardTitle className="text-fuchsia-400">Unlocked Titles</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {playerCard.unlockedTitles?.length ? (
-                    <>
-                      <div className="flex flex-wrap gap-2">
-                        {playerCard.unlockedTitles.map((title) => {
-                          const equipped = playerCard.selectedTitleId === title.id;
-                          return (
-                            <button
-                              key={title.id}
-                              type="button"
-                              onClick={() => playerCard.id === user?.id ? handleSelectPlayerTitle(title.id) : undefined}
-                              className={`rounded-full border px-3 py-1 text-sm font-semibold transition ${title.badgeClass} ${playerCard.id === user?.id ? 'hover:scale-[1.02]' : ''} ${equipped ? 'ring-2 ring-white/60' : ''}`}
-                            >
-                              {title.label}{equipped ? ' ✓' : ''}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {playerCard.id === user?.id && (
-                        <p className="text-xs text-slate-400">Click any unlocked title to equip it on your player card.</p>
-                      )}
-                    </>
-                  ) : (
-                    <p className="text-slate-400">Complete full sets and master sets to unlock themed titles.</p>
-                  )}
-                </CardContent>
-              </Card>
 
               <Card className="border-2 border-yellow-500/30 bg-slate-800/50">
                 <CardHeader>

@@ -156,6 +156,43 @@ export default function App() {
       console.error('Error loading daily objectives:', err);
     }
   };
+
+
+  const loadPlayerCard = async (userId) => {
+    try {
+      const response = await fetch(`/api/profile/card?userId=${userId}`);
+      const data = await response.json();
+      if (data.profileCard) {
+        setPlayerCard(data.profileCard);
+        setShowPlayerCard(true);
+      }
+    } catch (err) {
+      console.error('Error loading player card:', err);
+    }
+  };
+
+  const handleSelectPlayerTitle = async (titleId) => {
+    if (!user?.id || !titleId) return;
+    try {
+      const response = await fetch('/api/profile/title', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, titleId })
+      });
+      const data = await response.json();
+      if (!data.success) {
+        alert(data.error || 'Failed to equip title');
+        return;
+      }
+      setUser((prev) => prev ? { ...prev, selectedTitleId: data.selectedTitleId } : prev);
+      if (showPlayerCard && playerCard?.id === user.id) {
+        loadPlayerCard(user.id);
+      }
+    } catch (err) {
+      console.error('Error selecting title:', err);
+      alert('Failed to equip title');
+    }
+  };
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [tradeFriend, setTradeFriend] = useState(null);
   const [selectedTradeCards, setSelectedTradeCards] = useState([]);
@@ -167,6 +204,8 @@ export default function App() {
   const [tradeSearchOffer, setTradeSearchOffer] = useState('');
   const [viewingFriend, setViewingFriend] = useState(null);
   const [viewingFriendCollection, setViewingFriendCollection] = useState([]);
+  const [showPlayerCard, setShowPlayerCard] = useState(false);
+  const [playerCard, setPlayerCard] = useState(null);
   const [breakdownMode, setBreakdownMode] = useState(false);
   const [breakdownAllMultiples, setBreakdownAllMultiples] = useState(true);
   const [selectedForBreakdown, setSelectedForBreakdown] = useState([]);
@@ -1858,6 +1897,9 @@ export default function App() {
                 Pokemon Wilds
               </Button>
             </Link>
+            <Button onClick={() => loadPlayerCard(user.id)} className="bg-fuchsia-600 hover:bg-fuchsia-500 border-2 border-fuchsia-400 font-bold shadow-[0_0_15px_rgba(217,70,239,0.35)]">
+              My Player Card
+            </Button>
             <Button onClick={() => setShowDailyObjectives(true)} className="bg-amber-600 hover:bg-amber-500 border-2 border-amber-400 font-bold shadow-[0_0_15px_rgba(245,158,11,0.35)]">
               Daily Objectives
             </Button>
@@ -2992,6 +3034,90 @@ export default function App() {
       </Dialog>
 
       {/* Trade Modal - Send Trade */}
+
+      <Dialog open={showPlayerCard} onOpenChange={setShowPlayerCard}>
+        <DialogContent className="max-w-xl border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-cyan-400 flex items-center gap-2">
+              <Users className="h-6 w-6" />
+              {playerCard?.username}'s Player Card
+            </DialogTitle>
+          </DialogHeader>
+
+          {playerCard && (
+            <div className="space-y-4">
+              <Card className="border-2 border-cyan-500/30 bg-slate-800/60">
+                <CardContent className="pt-6 text-center space-y-2">
+                  <p className={`text-sm font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`}>{playerCard.trainerRank?.label || 'Trainer'}</p>
+                  <p className={`text-3xl font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`}>{playerCard.username}</p>
+                  {playerCard.baseTrainerRank && (
+                    <p className="text-xs text-slate-400">Battle Rank: <span className={playerCard.baseTrainerRank.textClass || 'text-white'}>{playerCard.baseTrainerRank.label}</span></p>
+                  )}
+                  {playerCard.id === user?.id && (
+                    <div className="pt-2">
+                      <p className="text-xs font-semibold text-cyan-300 mb-2">Displayed Title</p>
+                      <select
+                        value={playerCard.selectedTitleId || ''}
+                        onChange={(e) => handleSelectPlayerTitle(e.target.value)}
+                        className="w-full rounded-md border border-cyan-500/30 bg-slate-900/80 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+                      >
+                        {(playerCard.availableTitles || []).map((title) => (
+                          <option key={title.id} value={title.id}>
+                            {title.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Card className="border-2 border-red-500/30 bg-slate-800/50">
+                  <CardContent className="pt-6 text-center">
+                    <p className="text-4xl font-bold text-red-300">{playerCard.battleWins || 0}</p>
+                    <p className="text-sm text-red-100/70">Battles Won</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-2 border-purple-500/30 bg-slate-800/50">
+                  <CardContent className="pt-6 text-center">
+                    <p className="text-4xl font-bold text-purple-300">{playerCard.tradesCompleted || 0}</p>
+                    <p className="text-sm text-purple-100/70">Trades Completed</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card className="border-2 border-yellow-500/30 bg-slate-800/50">
+                <CardHeader>
+                  <CardTitle className="text-yellow-400">Favorite Pokémon</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {playerCard.favoritePokemon ? (
+                    <div className="flex items-center gap-4">
+                      <img src={playerCard.favoritePokemon.sprite} alt={playerCard.favoritePokemon.displayName} className="h-24 w-24 object-contain" />
+                      <div>
+                        <p className="text-xl font-bold text-white flex items-center gap-2">
+                          {playerCard.favoritePokemon.nickname || playerCard.favoritePokemon.displayName}
+                          {playerCard.favoritePokemon.isShiny && <span className="text-yellow-400">✨</span>}
+                        </p>
+                        <p className="text-sm text-slate-300">Level {playerCard.favoritePokemon.level || 1}</p>
+                        <div className="flex gap-2 mt-2 flex-wrap">
+                          {(playerCard.favoritePokemon.types || []).map((type) => (
+                            <Badge key={type} className="bg-slate-700 text-white capitalize">{type}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-slate-400">No favorite Pokémon selected yet.</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Daily Objectives Modal */}
       <Dialog open={showDailyObjectives} onOpenChange={setShowDailyObjectives}>
         <DialogContent className="max-w-xl border-4 border-amber-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_60px_rgba(245,158,11,0.25)]">

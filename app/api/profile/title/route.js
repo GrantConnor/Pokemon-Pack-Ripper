@@ -1,3 +1,4 @@
+import { getAllAvailableTitles } from '@/lib/set-titles';
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 
@@ -14,14 +15,14 @@ export async function POST(request) {
     const database = await connectDB();
     const user = await database.collection('users').findOne(
       { id: userId },
-      { projection: { id: 1, unlockedTitles: 1 } }
+      { projection: { id: 1, unlockedTitles: 1, battleWins: 1 } }
     );
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    const ownedTitle = (user.unlockedTitles || []).find((title) => title?.id === titleId);
+    const ownedTitle = getAllAvailableTitles({ battleWins: user.battleWins || 0, unlockedTitles: user.unlockedTitles || [] }).find((title) => title?.id === titleId);
     if (!ownedTitle) {
       return NextResponse.json({ error: 'Title is not unlocked for this user' }, { status: 400 });
     }
