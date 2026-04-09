@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { getPointRegenState, refreshAllUsersPointsIfDue } from '@/lib/auth';
 import { getSets } from '@/lib/pokemon-tcg';
-import { mergeAllSetTitles } from '@/lib/set-titles';
+import { mergeAllSetTitles, mergeSpecialTitlesForUsername } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -42,12 +42,13 @@ export async function GET(request) {
       return NextResponse.json({ authenticated: false });
     }
 
+    let computedUnlockedTitles = mergeSpecialTitlesForUsername(user.username, user.unlockedTitles || []);
     if (user.username === 'Spheal') {
-      const allTitles = mergeAllSetTitles(user.unlockedTitles || [], (await getSets()).sets || []);
-      if (allTitles.length !== (user.unlockedTitles || []).length) {
-        await database.collection('users').updateOne({ id: userId }, { $set: { unlockedTitles: allTitles } });
-        user.unlockedTitles = allTitles;
-      }
+      computedUnlockedTitles = mergeAllSetTitles(computedUnlockedTitles, (await getSets()).sets || []);
+    }
+    if (computedUnlockedTitles.length !== (user.unlockedTitles || []).length) {
+      await database.collection('users').updateOne({ id: userId }, { $set: { unlockedTitles: computedUnlockedTitles } });
+      user.unlockedTitles = computedUnlockedTitles;
     }
 
     const regen = getPointRegenState(user);

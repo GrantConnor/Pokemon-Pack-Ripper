@@ -1499,33 +1499,31 @@ export default function PokemonWilds() {
       <Dialog open={showMyPokemon} onOpenChange={setShowMyPokemon}>
         <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
           <DialogHeader>
-            <div className="flex items-center justify-between gap-4">
-              <DialogTitle className="text-3xl font-bold text-purple-400">
-                My Pokemon Collection ({myPokemon.length})
-              </DialogTitle>
-              <div className="flex gap-2">
-                {multiReleaseMode && selectedForRelease.length > 0 && (
-                  <Button
-                    onClick={handleReleaseSelectedPokemon}
-                    disabled={releasingPokemon}
-                    className="bg-red-600 hover:bg-red-500 text-white"
-                  >
-                    Release Selected ({selectedForRelease.length})
-                  </Button>
-                )}
+            <DialogTitle className="text-3xl font-bold text-purple-400 text-center">
+              My Pokemon Collection ({myPokemon.length})
+            </DialogTitle>
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+              {multiReleaseMode && selectedForRelease.length > 0 && (
                 <Button
-                  onClick={() => {
-                    setMultiReleaseMode((prev) => !prev);
-                    setSelectedForRelease([]);
-                  }}
-                  className={`${multiReleaseMode ? 'bg-red-700 hover:bg-red-600' : 'bg-purple-600 hover:bg-purple-500'} text-white`}
+                  onClick={handleReleaseSelectedPokemon}
+                  disabled={releasingPokemon}
+                  className="bg-red-600 hover:bg-red-500 text-white"
                 >
-                  {multiReleaseMode ? 'Cancel Release Select' : 'Select for Release'}
+                  Release Selected ({selectedForRelease.length})
                 </Button>
-              </div>
+              )}
+              <Button
+                onClick={() => {
+                  setMultiReleaseMode((prev) => !prev);
+                  setSelectedForRelease([]);
+                }}
+                className={`${multiReleaseMode ? 'bg-red-700 hover:bg-red-600' : 'bg-purple-600 hover:bg-purple-500'} text-white`}
+              >
+                {multiReleaseMode ? 'Cancel Release Select' : 'Select Multiple for Release'}
+              </Button>
             </div>
             {multiReleaseMode && (
-              <p className="text-sm text-red-300">Select multiple Pokémon to release. Each one gives 100 points.</p>
+              <p className="text-center text-sm text-red-300">Select multiple Pokémon to release. Each one gives 100 points.</p>
             )}
           </DialogHeader>
 
@@ -2110,6 +2108,62 @@ export default function PokemonWilds() {
               <div className="flex gap-3">
                 <Button onClick={() => handleAcceptCardTrade(activeCardTrade)} className="flex-1 bg-green-600 hover:bg-green-500">Accept Trade</Button>
                 <Button onClick={() => handleDeclineCardTrade(activeCardTrade)} className="flex-1 bg-red-600 hover:bg-red-500">Decline Trade</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!activePokemonTrade} onOpenChange={() => setActivePokemonTrade(null)}>
+        <DialogContent className="max-w-3xl border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-purple-400">Pokémon Trade Request</DialogTitle>
+          </DialogHeader>
+          {activePokemonTrade && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Card className="border-2 border-purple-500/30 bg-slate-800/50">
+                  <CardHeader><CardTitle className="text-purple-300 text-lg">They offer</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(activePokemonTrade.offeredPokemon || []).filter(Boolean).slice(0, 6).map((entry, idx) => {
+                        const pokemon = entry?.pokemonData || entry;
+                        return (
+                          <div key={`${pokemon?._id || pokemon?.id || idx}-${idx}`} className="flex items-center gap-2 bg-slate-700/40 rounded p-2">
+                            <img src={pokemon?.sprite || '/placeholder.png'} alt={pokemon?.displayName || pokemon?.name || 'Pokemon'} className="w-12 h-12 object-contain rounded" />
+                            <div>
+                              <p className="text-white text-xs font-bold">{pokemon?.nickname || pokemon?.displayName || pokemon?.name}</p>
+                              <p className="text-slate-400 text-[11px]">Lv {pokemon?.level || 1}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-2 border-cyan-500/30 bg-slate-800/50">
+                  <CardHeader><CardTitle className="text-cyan-300 text-lg">For your</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(activePokemonTrade.requestedPokemon || []).filter(Boolean).slice(0, 6).map((entry, idx) => {
+                        const pokemon = entry?.pokemonData || entry;
+                        return (
+                          <div key={`${pokemon?._id || pokemon?.id || idx}-${idx}`} className="flex items-center gap-2 bg-slate-700/40 rounded p-2">
+                            <img src={pokemon?.sprite || '/placeholder.png'} alt={pokemon?.displayName || pokemon?.name || 'Pokemon'} className="w-12 h-12 object-contain rounded" />
+                            <div>
+                              <p className="text-white text-xs font-bold">{pokemon?.nickname || pokemon?.displayName || pokemon?.name}</p>
+                              <p className="text-slate-400 text-[11px]">Lv {pokemon?.level || 1}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+              <div className="flex gap-3">
+                <Button onClick={() => handleAcceptPokemonTrade(activePokemonTrade)} className="flex-1 bg-green-600 hover:bg-green-500">Accept Trade</Button>
+                <Button onClick={() => handleDeclinePokemonTrade(activePokemonTrade)} className="flex-1 bg-red-600 hover:bg-red-500">Decline Trade</Button>
               </div>
             </div>
           )}

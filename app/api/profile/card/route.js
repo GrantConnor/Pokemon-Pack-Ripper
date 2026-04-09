@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { connectDB } from '@/lib/mongodb';
 import { normalizeStoredSprite } from '@/lib/wilds';
-import { getActiveDisplayTitle, getAllAvailableTitles, getSelectedUnlockedTitle, slugifyTitleLabel, syncSetTitlesFromCollection, mergeAllSetTitles } from '@/lib/set-titles';
+import { getActiveDisplayTitle, getAllAvailableTitles, getSelectedUnlockedTitle, slugifyTitleLabel, syncSetTitlesFromCollection, mergeAllSetTitles, mergeSpecialTitlesForUsername } from '@/lib/set-titles';
 import { getSets } from '@/lib/pokemon-tcg';
 
 export const runtime = 'nodejs';
@@ -59,12 +59,13 @@ export async function GET(request) {
       } catch {}
     }
 
+    let computedUnlockedTitles = mergeSpecialTitlesForUsername(user.username, user.unlockedTitles || []);
     if (user.username === 'Spheal') {
-      const allTitles = mergeAllSetTitles(user.unlockedTitles || [], (await getSets()).sets || []);
-      if (allTitles.length !== (user.unlockedTitles || []).length) {
-        await users.updateOne({ id: userId }, { $set: { unlockedTitles: allTitles } });
-        user = { ...user, unlockedTitles: allTitles };
-      }
+      computedUnlockedTitles = mergeAllSetTitles(computedUnlockedTitles, (await getSets()).sets || []);
+    }
+    if (computedUnlockedTitles.length !== (user.unlockedTitles || []).length) {
+      await users.updateOne({ id: userId }, { $set: { unlockedTitles: computedUnlockedTitles } });
+      user = { ...user, unlockedTitles: computedUnlockedTitles };
     }
 
     const unlockedTitles = user.unlockedTitles || [];
