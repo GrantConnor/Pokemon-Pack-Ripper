@@ -42,6 +42,7 @@ export async function POST(request) {
           createdAt: 1,
           setAchievements: 1,
           tradesCompleted: 1,
+          battleWins: 1,
         },
       }
     );
@@ -59,6 +60,8 @@ export async function POST(request) {
             createdAt: 1,
             setAchievements: 1,
             tradesCompleted: 1,
+            battleWins: 1,
+          battleWins: 1,
           },
         }
       );
@@ -114,6 +117,7 @@ export async function POST(request) {
         nextPointsIn: regen.nextPointsIn,
         setAchievements: user.setAchievements || {},
         tradesCompleted: user.tradesCompleted || 0,
+        battleWins: user.battleWins || 0,
       }
     });
   } catch (error) {

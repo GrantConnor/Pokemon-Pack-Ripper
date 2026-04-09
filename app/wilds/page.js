@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sparkles, ArrowLeft, Clock, Users } from 'lucide-react';
 import Link from 'next/link';
+import { getTrainerRank } from '@/lib/trainer-ranks';
 
 function sortFriendsByOnline(friends = []) {
   return [...friends].sort((a, b) => {
@@ -46,6 +47,8 @@ export default function PokemonWilds() {
   const [activeTrade, setActiveTrade] = useState(null);
   const [activeCardTrade, setActiveCardTrade] = useState(null);
   const [selectedPokemonForTrade, setSelectedPokemonForTrade] = useState([]);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [massOutbreak, setMassOutbreak] = useState(null);
   const [viewingFriendPokemon, setViewingFriendPokemon] = useState(null);
   const [friendPokemonList, setFriendPokemonList] = useState([]);
   const [battleRequests, setBattleRequests] = useState([]);
@@ -94,6 +97,18 @@ export default function PokemonWilds() {
     try { new Audio('/alert-meme.mp3').play().catch(() => {}); } catch {}
   };
 
+  const trainerRank = getTrainerRank(user?.battleWins || 0);
+
+  const loadLeaderboard = async () => {
+    try {
+      const response = await fetch('/api/battles/leaderboard?limit=10');
+      const data = await response.json();
+      setLeaderboard((data.leaderboard || []).filter(Boolean));
+    } catch (err) {
+      console.error('Error loading battle leaderboard:', err);
+    }
+  };
+
   useEffect(() => {
     // Check if user is logged in
     const storedUserId = localStorage.getItem('userId');
@@ -105,6 +120,7 @@ export default function PokemonWilds() {
             setUser(data.user);
             loadCurrentSpawn();
             loadMyPokemon(data.user.id);
+            loadLeaderboard();
             
             fetch(`/api/friends?userId=${data.user.id}`)
               .then(res => res.json())
@@ -175,6 +191,15 @@ export default function PokemonWilds() {
   }, [user]);
 
   useEffect(() => {
+    loadLeaderboard();
+    const interval = setInterval(() => {
+      loadLeaderboard();
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
     if (activeBattle && !showBattleScreen) {
       window.location.href = `/battle?id=${activeBattle}`;
     }
@@ -225,17 +250,22 @@ export default function PokemonWilds() {
       const response = await fetch('/api/wilds/current');
       const data = await response.json();
       
+      setMassOutbreak(data.outbreak || null);
+
       if (data.spawn) {
         setSpawn(data.spawn);
         setTimeUntilSpawn(null);
         
         // Show notification if new Pokemon
-        if (!spawn || spawn.pokemon.id !== data.spawn.pokemon.id) {
+        if (!spawn || spawn.pokemon.id !== data.spawn.pokemon.id || spawn.spawnedAt !== data.spawn.spawnedAt) {
           showSpawnNotification(data.spawn.pokemon);
         }
       } else if (data.nextSpawnTime) {
         setSpawn(null);
         setTimeUntilSpawn(data.nextSpawnTime);
+      } else {
+        setSpawn(null);
+        setTimeUntilSpawn(null);
       }
     } catch (err) {
       console.error('Error loading spawn:', err);
@@ -1143,16 +1173,28 @@ export default function PokemonWilds() {
               </div>
             </div>
             <div className="text-right self-start lg:self-center">
-              <p className="text-sm text-gray-400">Trainer</p>
-              <p className="text-xl font-bold text-white">{user.username}</p>
+              <p className={`text-sm font-bold ${trainerRank.textClass}`}>{trainerRank.label}</p>
+              <p className={`text-xl font-bold ${trainerRank.textClass}`}>{user.username}</p>
               <p className="text-sm text-yellow-400 font-bold">⭐ {user.points} Points</p>
+              <p className="text-xs text-cyan-300 font-semibold">⚔️ {user.battleWins || 0} Battle Wins</p>
             </div>
           </div>
         </div>
 
         {/* Main Area */}
-        <div className="max-w-7xl mx-auto p-8 mt-12">
-          {spawn && spawn.pokemon ? (
+        <div className="max-w-7xl mx-auto p-8 mt-12 space-y-6">
+          {massOutbreak?.active && (
+            <Card className="border-2 border-red-500/60 bg-red-950/70 backdrop-blur-sm">
+              <CardContent className="p-4 text-center">
+                <p className="text-lg font-bold text-red-200">🚨 A Mass outbreak of {massOutbreak.pokemonName} has been spotted in the wilds!</p>
+                <p className="text-sm text-red-100 mt-1">For the next 10 minutes, this Pokémon respawns 1 minute after each catch with 1/1000 shiny odds.</p>
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] items-start">
+            <div>
+              {spawn && spawn.pokemon ? (
             <div className="text-center">
               {/* Pokemon Display */}
               <div className="mb-8 animate-bounce-slow relative">
@@ -1210,17 +1252,43 @@ export default function PokemonWilds() {
                 </CardContent>
               </Card>
             </div>
-          ) : (
-            <div className="text-center">
-              <Card className="bg-slate-900/90 border-cyan-500/50 border-2 max-w-md mx-auto">
-                <CardContent className="py-12">
-                  <Clock className="w-16 h-16 mx-auto mb-4 text-cyan-400 animate-pulse" />
-                  <h2 className="text-2xl font-bold text-white mb-2">No Pokemon Currently</h2>
-                  <p className="text-gray-400">The wilds are quiet... check back soon!</p>
-                </CardContent>
-              </Card>
+              ) : (
+                <div className="text-center">
+                  <Card className="bg-slate-900/90 border-cyan-500/50 border-2 max-w-md mx-auto">
+                    <CardContent className="py-12">
+                      <Clock className="w-16 h-16 mx-auto mb-4 text-cyan-400 animate-pulse" />
+                      <h2 className="text-2xl font-bold text-white mb-2">No Pokemon Currently</h2>
+                      <p className="text-gray-400">The wilds are quiet... check back soon!</p>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
             </div>
-          )}
+
+            <Card className="border-2 border-cyan-500/40 bg-slate-900/85 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="text-white flex items-center gap-2">
+                  <Users className="h-5 w-5 text-cyan-400" />
+                  Battle Wins Leaderboard
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {leaderboard.length === 0 ? (
+                  <p className="text-sm text-slate-400">No battle wins recorded yet.</p>
+                ) : leaderboard.map((entry) => (
+                  <div key={entry.id} className="rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold text-white">#{entry.rank} {entry.username}</p>
+                        <p className={`text-xs font-semibold ${entry.trainerRank?.textClass || 'text-slate-300'}`}>{entry.trainerRank?.label || 'Trainer'}</p>
+                      </div>
+                      <p className="text-sm font-bold text-yellow-300">{entry.battleWins || 0} wins</p>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
 

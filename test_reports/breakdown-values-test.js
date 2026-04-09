@@ -7,9 +7,9 @@ const js = breakdownSrc.replace(/export\s+/g, '');
 const api = new Function(`${js}; return { BREAKDOWN_VALUES, getBreakdownValueForRarity };`)();
 const { BREAKDOWN_VALUES, getBreakdownValueForRarity } = api;
 
-assert.equal(getBreakdownValueForRarity('Common'), 1);
-assert.equal(getBreakdownValueForRarity('Uncommon'), 2);
-assert.equal(getBreakdownValueForRarity('Rare'), 10);
+assert.equal(getBreakdownValueForRarity('Common'), 5);
+assert.equal(getBreakdownValueForRarity('Uncommon'), 10);
+assert.equal(getBreakdownValueForRarity('Rare'), 15);
 assert.equal(getBreakdownValueForRarity('Double Rare'), 50);
 assert.equal(getBreakdownValueForRarity('Illustration Rare'), 75);
 assert.equal(getBreakdownValueForRarity('Ultra Rare'), 75);

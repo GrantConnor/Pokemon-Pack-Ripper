@@ -2927,13 +2927,17 @@ if (pathname.includes('/api/auth/signin')) {
         await applyXPToAllPokemon(userId, XP_FROM_CATCH, database);
 
         // Mark spawn as caught and set next spawn time
-        const nextInterval = MIN_SPAWN_INTERVAL + Math.random() * (MAX_SPAWN_INTERVAL - MIN_SPAWN_INTERVAL);
+        const outbreak = spawn.outbreak && spawn.outbreak.active && spawn.outbreak.endsAt && Date.now() < spawn.outbreak.endsAt
+          ? spawn.outbreak
+          : null;
+        const nextInterval = outbreak?.respawnDelayMs || (MIN_SPAWN_INTERVAL + Math.random() * (MAX_SPAWN_INTERVAL - MIN_SPAWN_INTERVAL));
         await database.collection('global_spawn').updateOne(
           { id: 'current' },
           { 
             $set: { 
               caughtBy: userId,
               nextSpawnTime: Date.now() + nextInterval,
+              outbreak: outbreak,
             }
           }
         );
@@ -4275,6 +4279,12 @@ if (pathname.includes('/api/auth/signin')) {
           { id: { $in: [battle.player1.userId, battle.player2.userId] } },
           { $unset: { activeBattleId: '' } }
         );
+        if (winner) {
+          await database.collection('users').updateOne(
+            { id: winner },
+            { $inc: { battleWins: 1 } }
+          );
+        }
       }
 
       return NextResponse.json({
@@ -4324,6 +4334,11 @@ if (pathname.includes('/api/auth/signin')) {
       await database.collection('users').updateMany(
         { id: { $in: [battle.player1.userId, battle.player2.userId] } },
         { $unset: { activeBattleId: '' } }
+      );
+
+      await database.collection('users').updateOne(
+        { id: winner },
+        { $inc: { battleWins: 1 } }
       );
 
       return NextResponse.json({ success: true, winner });

@@ -1,10 +1,10 @@
 {
   "status": "passed",
   "values": {
-    "Common": 1,
-    "Uncommon": 2,
-    "Rare": 10,
-    "Rare Holo": 10,
+    "Common": 5,
+    "Uncommon": 10,
+    "Rare": 15,
+    "Rare Holo": 20,
     "Rare Shiny": 20,
     "Radiant Rare": 25,
     "Amazing Rare": 35,
