@@ -15,6 +15,7 @@ export async function GET(request) {
 
     const database = await connectDB();
     const instances = database.collection('safari_zone_instances');
+    const summaries = database.collection('safari_zone_summaries');
     let instance = await instances.findOne({ userId });
     if (!instance) {
       return NextResponse.json({ error: 'No active Safari Zone run' }, { status: 404 });
@@ -24,6 +25,14 @@ export async function GET(request) {
     const hasActiveSpawn = !!instance.currentSpawn;
     const spawnDueSoon = !instance.currentSpawn && instance.nextSpawnAt && (instance.nextSpawnAt - now) <= 5000;
     if (instance.expiresAt && now >= instance.expiresAt && !hasActiveSpawn && !spawnDueSoon) {
+      await summaries.insertOne({
+        userId,
+        biomeName: instance.biomeName,
+        createdAt: instance.createdAt,
+        finishedAt: now,
+        encounterLog: instance.encounterLog || [],
+        unread: true,
+      });
       await instances.deleteOne({ userId });
       return NextResponse.json({ error: 'Safari Zone run expired', expired: true }, { status: 404 });
     }

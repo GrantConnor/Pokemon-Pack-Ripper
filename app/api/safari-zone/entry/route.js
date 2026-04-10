@@ -41,6 +41,7 @@ export async function POST(request) {
         snackApplied: false,
         status: 'active',
       },
+      encounterLog: [],
       nextSpawnAt: null,
       updatedAt: now,
     };

@@ -28,6 +28,9 @@ export default function PokemonWilds() {
   const [showCatchDialog, setShowCatchDialog] = useState(false);
   const [catchResult, setCatchResult] = useState(null);
   const [catching, setCatching] = useState(false);
+  const [showWildsThrowAnimation, setShowWildsThrowAnimation] = useState(false);
+  const [safariSummary, setSafariSummary] = useState(null);
+  const [showSafariSummaryDialog, setShowSafariSummaryDialog] = useState(false);
   const [myPokemon, setMyPokemon] = useState([]);
   const [showMyPokemon, setShowMyPokemon] = useState(false);
   const [selectedPokemon, setSelectedPokemon] = useState(null);
@@ -214,6 +217,7 @@ export default function PokemonWilds() {
             loadMyPokemon(data.user.id);
             loadLeaderboard();
             loadDailyObjectives(data.user.id);
+            loadPendingSafariSummary(data.user.id);
             
             fetch(`/api/friends?userId=${data.user.id}`)
               .then(res => res.json())
@@ -799,6 +803,7 @@ export default function PokemonWilds() {
       const data = await response.json();
       if (data.success) {
         console.log(`Trade completed! Received ${data.receivedPokemon}, sent ${data.sentPokemon}`);
+        setActivePokemonTrade(null);
         alert(data.message || 'Pokemon trade completed');
         loadFriends({ forceRefresh: true });
         loadMyPokemon(user.id);
@@ -837,10 +842,24 @@ export default function PokemonWilds() {
     }
   };
 
+  const loadPendingSafariSummary = async (resolvedUserId = user?.id) => {
+    if (!resolvedUserId) return;
+    try {
+      const response = await fetch(`/api/safari-zone/pending-summary?userId=${resolvedUserId}&ts=${Date.now()}`, { cache: 'no-store' });
+      const data = await response.json();
+      if (response.ok && data?.summary) {
+        setSafariSummary(data.summary);
+        setShowSafariSummaryDialog(true);
+      }
+    } catch {}
+  };
+
   const handleCatchAttempt = async () => {
     if (!user || !spawn) return;
 
     setCatching(true);
+    setShowWildsThrowAnimation(true);
+    await new Promise((resolve) => setTimeout(resolve, 700));
     try {
       const response = await fetch('/api/wilds/catch', {
         method: 'POST',
@@ -869,6 +888,7 @@ export default function PokemonWilds() {
     } catch (err) {
       alert('Error attempting catch');
     } finally {
+      setShowWildsThrowAnimation(false);
       setCatching(false);
     }
   };
@@ -1493,11 +1513,20 @@ export default function PokemonWilds() {
           <div className="space-y-4">
             {!catchResult ? (
               <>
-                <img
-                  src={spawn?.pokemon?.sprite}
-                  alt={spawn?.pokemon?.displayName}
-                  className="w-32 h-32 mx-auto"
-                />
+                <div className="relative min-h-[140px] overflow-hidden">
+                  {showWildsThrowAnimation && (
+                    <img
+                      src="/pokeball.png"
+                      alt="Pokeball"
+                      className="pointer-events-none absolute left-6 bottom-0 h-16 w-16 wilds-throw-animation"
+                    />
+                  )}
+                  <img
+                    src={spawn?.pokemon?.sprite}
+                    alt={spawn?.pokemon?.displayName}
+                    className="w-32 h-32 mx-auto"
+                  />
+                </div>
                 <p className="text-center text-gray-300">
                   Throw a Pokeball and hope for the best!
                 </p>
@@ -2259,6 +2288,49 @@ export default function PokemonWilds() {
             <Button onClick={handleEnterSafariZone} className="flex-1 bg-lime-600 hover:bg-lime-500 text-white font-bold">Yes</Button>
             <Button onClick={() => setShowSafariPrompt(false)} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold">No</Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showSafariSummaryDialog} onOpenChange={setShowSafariSummaryDialog}>
+        <DialogContent className="max-w-2xl border-4 border-emerald-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-emerald-300">Safari Zone Summary</DialogTitle>
+          </DialogHeader>
+          {safariSummary && (
+            <div className="space-y-4 text-slate-200">
+              <p className="text-sm text-emerald-100">Your {safariSummary.biomeName} run has ended.</p>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <h3 className="mb-2 text-lg font-bold text-green-300">Caught</h3>
+                  <div className="space-y-2 max-h-72 overflow-y-auto pr-2">
+                    {(safariSummary.encounterLog || []).filter((entry) => entry.outcome === 'caught').length ? (safariSummary.encounterLog || []).filter((entry) => entry.outcome === 'caught').map((entry, index) => (
+                      <div key={`caught-${index}`} className="rounded-lg border border-green-500/30 bg-slate-800/70 p-3 flex items-center gap-3">
+                        <img src={entry.sprite} alt={entry.displayName} className="h-12 w-12 object-contain" />
+                        <div>
+                          <p className="font-bold text-white">{entry.isShiny ? '✨ ' : ''}{entry.displayName}</p>
+                          <p className="text-xs text-green-200">Catch chance: {entry.catchRate}%</p>
+                        </div>
+                      </div>
+                    )) : <p className="text-sm text-slate-400">No Pokémon were caught this run.</p>}
+                  </div>
+                </div>
+                <div>
+                  <h3 className="mb-2 text-lg font-bold text-red-300">Got Away</h3>
+                  <div className="space-y-2 max-h-72 overflow-y-auto pr-2">
+                    {(safariSummary.encounterLog || []).filter((entry) => entry.outcome !== 'caught').length ? (safariSummary.encounterLog || []).filter((entry) => entry.outcome !== 'caught').map((entry, index) => (
+                      <div key={`away-${index}`} className="rounded-lg border border-red-500/30 bg-slate-800/70 p-3 flex items-center gap-3">
+                        <img src={entry.sprite} alt={entry.displayName} className="h-12 w-12 object-contain" />
+                        <div>
+                          <p className="font-bold text-white">{entry.isShiny ? '✨ ' : ''}{entry.displayName}</p>
+                          <p className="text-xs text-red-200">Catch chance: {entry.catchRate}%</p>
+                        </div>
+                      </div>
+                    )) : <p className="text-sm text-slate-400">Nothing got away this run.</p>}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

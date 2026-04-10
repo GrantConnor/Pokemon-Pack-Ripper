@@ -29,6 +29,7 @@ export default function SafariZonePage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [now, setNow] = useState(Date.now());
+  const [showThrowAnimation, setShowThrowAnimation] = useState(false);
 
   useEffect(() => {
     const userId = localStorage.getItem('userId');
@@ -60,7 +61,10 @@ export default function SafariZonePage() {
           setZone(null);
           setSpawn(null);
           setNextSpawnAt(null);
-          if (data?.expired) setMessage('Your Safari Zone run expired. Start a new one to keep exploring.');
+          if (data?.expired) {
+            setMessage('Your Safari Zone run expired. Returning to Wilds...');
+            setTimeout(() => { window.location.href = '/wilds'; }, 900);
+          }
         }
         return;
       }
@@ -123,6 +127,7 @@ export default function SafariZonePage() {
     } catch (error) {
       setMessage(error.message || 'Failed to enter Safari Zone');
     } finally {
+      setShowThrowAnimation(false);
       setActionLoading(false);
     }
   };
@@ -151,6 +156,8 @@ export default function SafariZonePage() {
   const catchPokemon = async () => {
     if (!user?.id || !spawn || actionLoading) return;
     setActionLoading(true);
+    setShowThrowAnimation(true);
+    await new Promise((resolve) => setTimeout(resolve, 700));
     try {
       const response = await fetch('/api/safari-zone/catch', {
         method: 'POST',
@@ -269,7 +276,10 @@ export default function SafariZonePage() {
 
             {spawn ? (
               <Card className="border-2 border-emerald-400/50 bg-slate-900/70">
-                <CardContent className="py-8 text-center space-y-4">
+                <CardContent className="relative py-8 text-center space-y-4 overflow-hidden">
+                  {showThrowAnimation && (
+                    <img src="/safari-ball.png" alt="Safari Ball" className="pointer-events-none absolute left-8 bottom-6 h-16 w-16 safari-throw-animation" />
+                  )}
                   <img src={spawn.sprite} alt={spawn.displayName} className="mx-auto h-48 w-48 object-contain" />
                   <div className="space-y-2">
                     <h2 className="text-3xl font-bold text-white flex items-center justify-center gap-2">
