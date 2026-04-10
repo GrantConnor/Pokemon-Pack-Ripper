@@ -7,6 +7,7 @@ import axios from 'axios';
 import { getPointRegenState as sharedGetPointRegenState, refreshAllUsersPointsIfDue as sharedRefreshAllUsersPointsIfDue } from '@/lib/auth';
 import { getBreakdownValueForRarity } from '@/lib/breakdown-values';
 import { applyDailyObjectiveEvent } from '@/lib/daily-objectives';
+import { getCollectibleCards } from '@/lib/pokemon-tcg';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -2249,7 +2250,7 @@ if (pathname.includes('/api/auth/signin')) {
         if (user) {
           // Get set name from first card (they all have set info)
           const setName = allPulledCards[0]?.set?.name || 'Unknown Set';
-          const totalCardsInSet = allCards.filter(c => c.supertype !== 'Energy').length;
+          const totalCardsInSet = getCollectibleCards(allCards).length;
           const rawAchievementResult = await checkAchievements(user, database, setId, setName, totalCardsInSet);
 
           if (rawAchievementResult?.newAchievements?.length > 0) {

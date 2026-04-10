@@ -1754,9 +1754,9 @@ export default function App() {
       const response = await fetch(`/api/cards?setId=${set.id}`);
       const data = await response.json();
       if (response.ok) {
-        const nonEnergyCards = (data.cards || []).filter(card => card.supertype !== 'Energy');
-        setPreviewCards(nonEnergyCards);
-        writeLocalCache(cacheKey, nonEnergyCards);
+        const collectibleCards = (data.cards || []).filter(card => card.supertype !== 'Energy');
+        setPreviewCards(collectibleCards);
+        writeLocalCache(cacheKey, collectibleCards);
       }
     } catch (err) {
       console.error('Error loading preview:', err);
@@ -2235,7 +2235,7 @@ export default function App() {
                         <CardContent className="p-4">
                           <CardTitle className="text-lg mb-2 text-white">{set.name}</CardTitle>
                           <CardDescription className="text-sm mb-3 text-cyan-100/70 font-medium">
-                            {set.series} • {setCardCounts[set.id] ?? set.total} cards
+                            {set.series} • {setCardCounts[set.id] ?? set.printedTotal ?? set.total} cards
                           </CardDescription>
                           <div className="space-y-2">
                             <Button 
