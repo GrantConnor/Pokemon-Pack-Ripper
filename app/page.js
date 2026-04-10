@@ -213,6 +213,7 @@ export default function App() {
   const [playerCard, setPlayerCard] = useState(null);
   const [breakdownMode, setBreakdownMode] = useState(false);
   const [breakdownAllMultiples, setBreakdownAllMultiples] = useState(true);
+  const [breakdownIncludePremium, setBreakdownIncludePremium] = useState(false);
   const [selectedForBreakdown, setSelectedForBreakdown] = useState([]);
   const [showBreakdownQuantityModal, setShowBreakdownQuantityModal] = useState(false);
   const [breakdownQuantityCard, setBreakdownQuantityCard] = useState(null);
@@ -289,7 +290,7 @@ export default function App() {
       fetch('/api/presence/ping', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id })
+        body: JSON.stringify({ userId: user.id, includePremium: breakdownIncludePremium })
       }).catch(err => console.error('Presence ping failed on home page:', err));
     };
 
@@ -1095,28 +1096,20 @@ export default function App() {
   };
 
   const toggleBreakdownCard = (card) => {
-    // If card has multiple copies, show quantity modal
-    if (card.count > 1) {
-      setBreakdownQuantityCard(card);
-      setBreakdownQuantity(1);
-      setShowBreakdownQuantityModal(true);
-      return;
-    }
-    
-    // Single copy - toggle selection as before
-    const isSelected = selectedForBreakdown.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
+    const isSelected = selectedForBreakdown.some((c) => c.id === card.id);
     if (isSelected) {
-      setSelectedForBreakdown(selectedForBreakdown.filter(c => !(c.id === card.id && c.pulledAt === card.pulledAt)));
+      setSelectedForBreakdown(selectedForBreakdown.filter((c) => c.id !== card.id));
     } else {
       setSelectedForBreakdown([...selectedForBreakdown, card]);
     }
   };
 
   const getBreakdownValue = (rarity) => getBreakdownValueForRarity(rarity);
+  const isPremiumBreakdownRarity = (rarity) => !['Common', 'Uncommon', 'Rare', 'Rare Holo'].includes(rarity);
 
   const calculateMultiplesBreakdownSummary = () => {
     return groupedAndSortedCollection.reduce((summary, card) => {
-      if (card.count > 1) {
+      if (card.count > 1 && (breakdownIncludePremium || !isPremiumBreakdownRarity(card.rarity))) {
         const duplicatesToBreakDown = card.count - 1;
         summary.cards += duplicatesToBreakDown;
         summary.points += getBreakdownValue(card.rarity) * duplicatesToBreakDown;
@@ -1163,6 +1156,41 @@ export default function App() {
     }
   };
 
+  const handleBreakdownSelectedCards = async () => {
+    if (!selectedForBreakdown.length) {
+      alert('Select one or more cards to break down.');
+      return;
+    }
+    const premiumSelected = selectedForBreakdown.some((card) => isPremiumBreakdownRarity(card.rarity));
+    if (premiumSelected && !breakdownIncludePremium) {
+      alert('Enable the premium breakdown option to include cards above Rare / Rare Holo.');
+      return;
+    }
+    const totalPoints = selectedForBreakdown.reduce((sum, card) => sum + getBreakdownValue(card.rarity), 0);
+    if (!window.confirm(`Break down ${selectedForBreakdown.length} selected cards for ${totalPoints} points? This can include last copies.`)) return;
+    try {
+      let totalAwarded = 0;
+      for (const card of selectedForBreakdown) {
+        const response = await fetch('/api/cards/breakdown-single-copy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, cardId: card.id })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `Failed to break down ${card.name}`);
+        totalAwarded += data.pointsAwarded || 0;
+      }
+      alert(`Successfully broke down ${selectedForBreakdown.length} selected cards for ${totalAwarded} points!`);
+      setSelectedForBreakdown([]);
+      setBreakdownMode(false);
+      invalidateCollectionCache();
+      loadCollection({ forceRefresh: true });
+      setUser(prev => ({ ...prev, points: prev.points + totalAwarded }));
+    } catch (err) {
+      alert(err.message || 'Error breaking down selected cards');
+    }
+  };
+
   const handleBreakdownSingleCard = async () => {
     if (!breakdownQuantityCard || breakdownQuantity < 1) {
       return;
@@ -1191,7 +1219,7 @@ export default function App() {
         'Secret Rare': 500
       };
 
-      const pointValue = breakdownValues[breakdownQuantityCard.rarity] || 10;
+      const pointValue = getBreakdownValue(breakdownQuantityCard.rarity);
       const totalPoints = pointValue * breakdownQuantity;
 
       const response = await fetch('/api/cards/breakdown-quantity', {
@@ -2238,14 +2266,37 @@ export default function App() {
                       />
                       Break down all multiples (leave 1 copy)
                     </label>
+                    <div className="mt-3 rounded-lg border border-yellow-400/40 bg-yellow-900/20 p-3 shadow-[0_0_20px_rgba(250,204,21,0.12)]">
+                      <p className="text-sm font-bold text-yellow-300">Premium Breakdown</p>
+                      <label className="mt-2 flex items-center gap-2 text-sm text-white">
+                        <input
+                          type="checkbox"
+                          checked={breakdownIncludePremium}
+                          onChange={(e) => setBreakdownIncludePremium(e.target.checked)}
+                          className="h-4 w-4 accent-yellow-500"
+                        />
+                        Include cards above Rare / Rare Holo
+                      </label>
+                      <p className="mt-1 text-xs text-yellow-100/80">Required for any rarity above Common, Uncommon, Rare, or Rare Holo.</p>
+                    </div>
+                    <p className="mt-2 text-sm text-cyan-100/80">Selected cards: {selectedForBreakdown.length} = {selectedForBreakdown.reduce((sum, card) => sum + getBreakdownValue(card.rarity), 0)} points</p>
                   </div>
-                  <Button
-                    onClick={handleBreakdownCards}
-                    disabled={!breakdownAllMultiples || calculateMultiplesBreakdownSummary().cards === 0}
-                    className="bg-red-500 hover:bg-red-400 text-white font-bold"
-                  >
-                    Break Down Duplicates
-                  </Button>
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      onClick={handleBreakdownCards}
+                      disabled={!breakdownAllMultiples || calculateMultiplesBreakdownSummary().cards === 0}
+                      className="bg-red-500 hover:bg-red-400 text-white font-bold"
+                    >
+                      Break Down Duplicates
+                    </Button>
+                    <Button
+                      onClick={handleBreakdownSelectedCards}
+                      disabled={selectedForBreakdown.length === 0}
+                      className="bg-orange-500 hover:bg-orange-400 text-white font-bold"
+                    >
+                      Break Down Selected
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
@@ -2401,7 +2452,7 @@ export default function App() {
                   </div>
                 ) : (
                   groupedAndSortedCollection.map((card) => {
-                    const isSelectedForBreakdown = false;
+                    const isSelectedForBreakdown = selectedForBreakdown.some((selected) => selected.id === card.id);
                     return (
                       <Card 
                         key={card.id} 
@@ -3497,7 +3548,7 @@ export default function App() {
                             'Rare Ultra': 200, 'Rare Rainbow': 200, 'Special Illustration Rare': 400,
                             'Hyper Rare': 500, 'Rare Secret': 500, 'Secret Rare': 500
                           };
-                          return values[breakdownQuantityCard.rarity] || 10;
+                          return getBreakdownValue(breakdownQuantityCard.rarity);
                         })()}
                       </span>
                     </div>
@@ -3511,7 +3562,7 @@ export default function App() {
                             'Rare Ultra': 200, 'Rare Rainbow': 200, 'Special Illustration Rare': 400,
                             'Hyper Rare': 500, 'Rare Secret': 500, 'Secret Rare': 500
                           };
-                          return (values[breakdownQuantityCard.rarity] || 10) * breakdownQuantity;
+                          return getBreakdownValue(breakdownQuantityCard.rarity) * breakdownQuantity;
                         })()}
                       </span>
                     </div>

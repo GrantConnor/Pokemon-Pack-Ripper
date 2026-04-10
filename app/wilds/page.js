@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -33,6 +33,9 @@ export default function PokemonWilds() {
   const [showSafariSummaryDialog, setShowSafariSummaryDialog] = useState(false);
   const [myPokemon, setMyPokemon] = useState([]);
   const [showMyPokemon, setShowMyPokemon] = useState(false);
+  const [pokemonSearchTerm, setPokemonSearchTerm] = useState('');
+  const [pokemonTypeFilter, setPokemonTypeFilter] = useState('all');
+  const [pokemonSortMode, setPokemonSortMode] = useState('level-desc');
   const [selectedPokemon, setSelectedPokemon] = useState(null);
   const [timeUntilSpawn, setTimeUntilSpawn] = useState(null);
   const [uiNow, setUiNow] = useState(Date.now());
@@ -56,6 +59,23 @@ export default function PokemonWilds() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [massOutbreak, setMassOutbreak] = useState(null);
+  const availablePokemonTypes = useMemo(() => Array.from(new Set((myPokemon || []).flatMap((pokemon) => pokemon.types || []))).sort(), [myPokemon]);
+  const filteredMyPokemon = useMemo(() => {
+    const term = pokemonSearchTerm.trim().toLowerCase();
+    let list = [...(myPokemon || [])].filter((pokemon) => {
+      const name = String(pokemon.nickname || pokemon.displayName || '').toLowerCase();
+      const species = String(pokemon.displayName || '').toLowerCase();
+      const matchesSearch = !term || name.includes(term) || species.includes(term);
+      const matchesType = pokemonTypeFilter === 'all' || (pokemon.types || []).includes(pokemonTypeFilter);
+      return matchesSearch && matchesType;
+    });
+    list.sort((a, b) => {
+      if (pokemonSortMode === 'alpha') return String(a.nickname || a.displayName || '').localeCompare(String(b.nickname || b.displayName || ''));
+      if (pokemonSortMode === 'level-asc') return (a.level || 1) - (b.level || 1);
+      return (b.level || 1) - (a.level || 1);
+    });
+    return list;
+  }, [myPokemon, pokemonSearchTerm, pokemonTypeFilter, pokemonSortMode]);
   const [showPlayerCard, setShowPlayerCard] = useState(false);
   const [playerCard, setPlayerCard] = useState(null);
   const [showDailyObjectives, setShowDailyObjectives] = useState(false);
@@ -1595,7 +1615,7 @@ export default function PokemonWilds() {
         <DialogContent className="max-w-6xl max-h-[90vh] border-4 border-purple-500/50 bg-slate-900/95 backdrop-blur-xl">
           <DialogHeader>
             <DialogTitle className="text-3xl font-bold text-purple-400 text-center">
-              My Pokemon Collection ({myPokemon.length})
+              My Pokemon Collection ({filteredMyPokemon.length})
             </DialogTitle>
             <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
               {multiReleaseMode && selectedForRelease.length > 0 && (
@@ -1622,14 +1642,42 @@ export default function PokemonWilds() {
             )}
           </DialogHeader>
 
+          <div className="grid grid-cols-1 gap-3 pb-4 md:grid-cols-3">
+            <Input
+              value={pokemonSearchTerm}
+              onChange={(e) => setPokemonSearchTerm(e.target.value)}
+              placeholder="Search My Pokemon..."
+              className="bg-slate-800 border-purple-500/30 text-white"
+            />
+            <select
+              value={pokemonTypeFilter}
+              onChange={(e) => setPokemonTypeFilter(e.target.value)}
+              className="rounded-md border border-purple-500/30 bg-slate-800 px-3 py-2 text-white"
+            >
+              <option value="all">All Types</option>
+              {availablePokemonTypes.map((type) => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+            <select
+              value={pokemonSortMode}
+              onChange={(e) => setPokemonSortMode(e.target.value)}
+              className="rounded-md border border-purple-500/30 bg-slate-800 px-3 py-2 text-white"
+            >
+              <option value="level-desc">Level: High to Low</option>
+              <option value="level-asc">Level: Low to High</option>
+              <option value="alpha">Alphabetical</option>
+            </select>
+          </div>
+
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto max-h-[70vh] pr-4">
-            {myPokemon.length === 0 ? (
+            {filteredMyPokemon.length === 0 ? (
               <div className="col-span-full text-center py-12">
                 <p className="text-gray-400 text-lg">No Pokemon caught yet!</p>
                 <p className="text-gray-500">Visit the wilds to catch some Pokemon.</p>
               </div>
             ) : (
-              myPokemon.map((pokemon, idx) => {
+              filteredMyPokemon.map((pokemon, idx) => {
                 const pokemonKey = String(pokemon._id || pokemon.id);
                 const isSelectedForRelease = selectedForRelease.includes(pokemonKey);
                 return (
