@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { connectDB } from '@/lib/mongodb';
 import { normalizeStoredSprite } from '@/lib/wilds';
-import { getActiveDisplayTitle, getAllAvailableTitles, getSelectedUnlockedTitle, slugifyTitleLabel, mergeSpecialTitlesForUsername } from '@/lib/set-titles';
+import { getActiveDisplayTitle, getAllAvailableTitles, getSelectedUnlockedTitle, slugifyTitleLabel, mergeSpecialTitlesForUsername, normalizeSelectedTitleId } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -67,9 +67,9 @@ export async function GET(request) {
 
     const computedUnlockedTitles = mergeSpecialTitlesForUsername(user.username, user.unlockedTitles || []);
     if (JSON.stringify(computedUnlockedTitles) !== JSON.stringify(user.unlockedTitles || [])) {
-      await users.updateOne({ id: userId }, { $set: { unlockedTitles: computedUnlockedTitles } });
+      await users.updateOne({ id: userId }, { $set: { unlockedTitles: computedUnlockedTitles, selectedTitleId: normalizeSelectedTitleId(user.selectedTitleId) } });
     }
-    user = { ...user, unlockedTitles: computedUnlockedTitles };
+    user = { ...user, unlockedTitles: computedUnlockedTitles, selectedTitleId: normalizeSelectedTitleId(user.selectedTitleId) };
 
 
     const favoriteCardOptions = editable ? Array.from(new Map((Array.isArray(user.collection) ? user.collection : [])

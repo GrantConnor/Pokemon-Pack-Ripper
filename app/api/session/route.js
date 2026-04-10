@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { getPointRegenState, refreshAllUsersPointsIfDue } from '@/lib/auth';
-import { mergeSpecialTitlesForUsername } from '@/lib/set-titles';
+import { mergeSpecialTitlesForUsername, normalizeSelectedTitleId } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,9 +43,10 @@ export async function GET(request) {
 
     const computedUnlockedTitles = mergeSpecialTitlesForUsername(user.username, user.unlockedTitles || []);
     if (JSON.stringify(computedUnlockedTitles) !== JSON.stringify(user.unlockedTitles || [])) {
-      await database.collection('users').updateOne({ id: userId }, { $set: { unlockedTitles: computedUnlockedTitles } });
+      await database.collection('users').updateOne({ id: userId }, { $set: { unlockedTitles: computedUnlockedTitles, selectedTitleId: normalizeSelectedTitleId(user.selectedTitleId) } });
     }
     user.unlockedTitles = computedUnlockedTitles;
+    user.selectedTitleId = normalizeSelectedTitleId(user.selectedTitleId);
 
     const regen = getPointRegenState(user);
 

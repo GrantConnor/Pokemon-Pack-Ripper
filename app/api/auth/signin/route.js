@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connectDB, getSanitizedMongoConfig } from '@/lib/mongodb';
 import { normalizeUsername, escapeRegex, verifyPassword, hashPassword, getPointRegenState, refreshAllUsersPointsIfDue, makeAuthTraceId } from '@/lib/auth';
-import { mergeSpecialTitlesForUsername } from '@/lib/set-titles';
+import { mergeSpecialTitlesForUsername, normalizeSelectedTitleId } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -104,9 +104,10 @@ export async function POST(request) {
 
     const computedUnlockedTitles = mergeSpecialTitlesForUsername(user.username, user.unlockedTitles || []);
     if (JSON.stringify(computedUnlockedTitles) !== JSON.stringify(user.unlockedTitles || [])) {
-      await users.updateOne({ _id: user._id }, { $set: { unlockedTitles: computedUnlockedTitles } });
+      await users.updateOne({ _id: user._id }, { $set: { unlockedTitles: computedUnlockedTitles, selectedTitleId: normalizeSelectedTitleId(user.selectedTitleId) } });
     }
     user.unlockedTitles = computedUnlockedTitles;
+    user.selectedTitleId = normalizeSelectedTitleId(user.selectedTitleId);
 
     const regen = getPointRegenState(user);
 
