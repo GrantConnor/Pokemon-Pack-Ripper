@@ -418,19 +418,19 @@ function openPack(cards, setId = null) {
   const selectRareOrBetter = () => {
     if (isExGoldStarPack) {
       const roll = Math.random();
-      if (roll < 0.60) {
+      if (roll < 0.80) {
         return (rares.length > 0 ? getUniqueCard(rares) : null) || getUniqueCard(nonEnergyCards);
       }
-      if (roll < 0.80) {
+      if (roll < 0.95) {
         const exCard = getUniqueCard(doubleRares);
         if (exCard) return exCard;
       }
-      if (roll < 0.90) {
-        const starCard = getUniqueCard(rareHoloStars);
-        if (starCard) return starCard;
+      if (roll < 0.975) {
+        const secretCard = getUniqueCard(secretRares);
+        if (secretCard) return secretCard;
       }
-      const secretCard = getUniqueCard(secretRares);
-      if (secretCard) return secretCard;
+      const starCard = getUniqueCard(rareHoloStars);
+      if (starCard) return starCard;
       return (rares.length > 0 ? getUniqueCard(rares) : null) || getUniqueCard(nonEnergyCards);
     }
     // Step 1: Get a regular rare by default

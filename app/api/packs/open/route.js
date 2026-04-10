@@ -226,14 +226,14 @@ export function openPack(cards, setId = null) {
   let rareSlotCard = null;
   if (isExGoldStarPack) {
     const exDeoxysRoll = Math.random();
-    if (exDeoxysRoll < 0.60) {
+    if (exDeoxysRoll < 0.80) {
       rareSlotCard = getUniqueCard(standardRares) || getRandomCard(standardRares);
-    } else if (exDeoxysRoll < 0.80) {
+    } else if (exDeoxysRoll < 0.95) {
       rareSlotCard = getUniqueCard(specialPools.rareHoloEx) || getRandomCard(specialPools.rareHoloEx);
-    } else if (exDeoxysRoll < 0.90) {
-      rareSlotCard = getUniqueCard(specialPools.rareHoloStar) || getRandomCard(specialPools.rareHoloStar);
-    } else {
+    } else if (exDeoxysRoll < 0.975) {
       rareSlotCard = getUniqueCard(specialPools.secretRare) || getRandomCard(specialPools.secretRare);
+    } else {
+      rareSlotCard = getUniqueCard(specialPools.rareHoloStar) || getRandomCard(specialPools.rareHoloStar);
     }
   }
   if (!isExGoldStarPack && legacyHitRare && hitSpecialTable && availableSpecialPoolKeys.length) {
