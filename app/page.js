@@ -161,7 +161,8 @@ export default function App() {
 
   const loadPlayerCard = async (userId) => {
     try {
-      const response = await fetch(`/api/profile/card?userId=${userId}`);
+      const editable = userId === user?.id ? '&editable=1' : '';
+      const response = await fetch(`/api/profile/card?userId=${userId}${editable}`);
       const raw = await response.text();
       const data = raw ? JSON.parse(raw) : {};
       if (!response.ok) {
@@ -174,6 +175,25 @@ export default function App() {
     } catch (err) {
       console.error('Error loading player card:', err);
       alert(err.message || 'Failed to load player card');
+    }
+  };
+
+  const handleSelectFavoriteCard = async (cardId) => {
+    if (!user?.id || !cardId) return;
+    try {
+      const response = await fetch('/api/profile/favorite-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, cardId })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to set favorite card');
+      }
+      await loadPlayerCard(user.id);
+    } catch (err) {
+      console.error('Error setting favorite card:', err);
+      alert(err.message || 'Failed to set favorite card');
     }
   };
 
@@ -3187,6 +3207,45 @@ export default function App() {
                   </CardContent>
                 </Card>
               </div>
+
+              <Card className="border-2 border-cyan-500/30 bg-slate-800/50">
+                <CardHeader>
+                  <CardTitle className="text-cyan-400">Favorite Card</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {playerCard.id === user?.id && (
+                    <div>
+                      <p className="text-xs font-semibold text-cyan-300 mb-2">Choose Favorite Card</p>
+                      <select
+                        value={playerCard.favoriteCardId || ''}
+                        onChange={(e) => handleSelectFavoriteCard(e.target.value)}
+                        className="w-full rounded-md border border-cyan-500/30 bg-slate-900/80 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+                      >
+                        <option value="">Select a favorite card</option>
+                        {(playerCard.favoriteCardOptions || []).map((card) => (
+                          <option key={card.id} value={card.id}>
+                            {card.name}{card.setName ? ` — ${card.setName}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {playerCard.favoriteCard ? (
+                    <div className="flex items-center gap-4">
+                      {playerCard.favoriteCard.images?.small && (
+                        <img src={playerCard.favoriteCard.images.small} alt={playerCard.favoriteCard.name} className="h-28 w-20 rounded-md object-cover border border-cyan-400/30" />
+                      )}
+                      <div>
+                        <p className="text-xl font-bold text-white">{playerCard.favoriteCard.name}</p>
+                        <p className="text-sm text-slate-300">{playerCard.favoriteCard.rarity || 'Unknown Rarity'}</p>
+                        <p className="text-sm text-slate-400">{playerCard.favoriteCard.set?.name || ''}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-slate-400">No favorite card selected yet.</p>
+                  )}
+                </CardContent>
+              </Card>
 
               <Card className="border-2 border-yellow-500/30 bg-slate-800/50">
                 <CardHeader>

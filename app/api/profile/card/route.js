@@ -12,6 +12,7 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
+    const editable = searchParams.get('editable') === '1';
     if (!userId) {
       return NextResponse.json({ error: 'User ID required' }, { status: 400 });
     }
@@ -20,7 +21,7 @@ export async function GET(request) {
     const users = database.collection('users');
     let user = await users.findOne(
       { id: userId },
-      { projection: { id: 1, username: 1, battleWins: 1, tradesCompleted: 1, favoritePokemonId: 1, unlockedTitles: 1, selectedTitleId: 1, collection: 1 } }
+      { projection: { id: 1, username: 1, battleWins: 1, tradesCompleted: 1, favoritePokemonId: 1, favoriteCardId: 1, unlockedTitles: 1, selectedTitleId: 1, collection: 1 } }
     );
 
     if (!user) {
@@ -28,27 +29,79 @@ export async function GET(request) {
     }
 
 
-    const setsCatalog = (await getSets()).sets || [];
-    const ownedSetIds = Array.from(new Set((user.collection || []).map((card) => card?.set?.id).filter(Boolean)));
-    const cardsBySetEntries = await Promise.all(
-      ownedSetIds.map(async (setId) => {
-        try {
-          const { cards } = await getCardsForSet(setId);
-          return [setId, cards || []];
-        } catch {
-          return [setId, []];
+    try {
+      const collection = Array.isArray(user.collection) ? user.collection : [];
+      const setGroups = new Map();
+      for (const card of collection) {
+        const setId = card?.set?.id;
+        if (!setId || !card?.id) continue;
+        if (!setGroups.has(setId)) {
+          setGroups.set(setId, {
+            setId,
+            uniqueIds: new Set(),
+            storedTotal: Number(card?.set?.total || 0),
+            storedPrintedTotal: Number(card?.set?.printedTotal || 0),
+          });
         }
-      })
-    );
-    const cardsBySet = Object.fromEntries(cardsBySetEntries);
+        setGroups.get(setId).uniqueIds.add(card.id);
+      }
 
-    const syncedTitles = syncSetTitlesFromCollection(user, setsCatalog, cardsBySet);
-    if (JSON.stringify(syncedTitles.unlockedTitles) !== JSON.stringify(user.unlockedTitles || [])) {
-      await users.updateOne(
-        { id: userId },
-        { $set: { unlockedTitles: syncedTitles.unlockedTitles } }
+      const missingTitleSetIds = Array.from(setGroups.values())
+        .filter((group) => {
+          const hasFull = (user.unlockedTitles || []).some((title) => title?.id === `set-full-${group.setId}`);
+          const hasMaster = (user.unlockedTitles || []).some((title) => title?.id === `set-master-${group.setId}`);
+          if (hasFull && hasMaster) return false;
+          const ownedCount = group.uniqueIds.size;
+          const nearestKnownTarget = Math.max(group.storedPrintedTotal || 0, group.storedTotal || 0);
+          return ownedCount >= Math.max(1, nearestKnownTarget - 8);
+        })
+        .map((group) => group.setId)
+        .slice(0, 12);
+
+      let setsCatalog = [];
+      try {
+        setsCatalog = (await getSets()).sets || [];
+      } catch {
+        setsCatalog = [];
+      }
+
+      const cardsBySetEntries = await Promise.all(
+        missingTitleSetIds.map(async (setId) => {
+          try {
+            const { cards } = await getCardsForSet(setId);
+            return [setId, cards || []];
+          } catch {
+            return [setId, []];
+          }
+        })
       );
-      user = { ...user, unlockedTitles: syncedTitles.unlockedTitles };
+      const cardsBySet = Object.fromEntries(cardsBySetEntries);
+
+      const syncedTitles = syncSetTitlesFromCollection(user, setsCatalog, cardsBySet);
+      if (JSON.stringify(syncedTitles.unlockedTitles) !== JSON.stringify(user.unlockedTitles || [])) {
+        await users.updateOne(
+          { id: userId },
+          { $set: { unlockedTitles: syncedTitles.unlockedTitles } }
+        );
+        user = { ...user, unlockedTitles: syncedTitles.unlockedTitles };
+      }
+    } catch {
+      // Never let title backfill failure break the player card.
+    }
+
+    let favoriteCard = null;
+    if (user.favoriteCardId) {
+      const collection = Array.isArray(user.collection) ? user.collection : [];
+      const card = collection.find((item) => item?.id === user.favoriteCardId);
+      if (card) {
+        favoriteCard = {
+          id: card.id,
+          name: card.name,
+          rarity: card.rarity,
+          set: card.set ? { id: card.set.id, name: card.set.name, series: card.set.series } : null,
+          images: card.images ? { small: card.images.small, large: card.images.large } : null,
+        };
+      }
     }
 
     let favoritePokemon = null;
@@ -74,12 +127,26 @@ export async function GET(request) {
 
     let computedUnlockedTitles = mergeSpecialTitlesForUsername(user.username, user.unlockedTitles || []);
     if (user.username === 'Spheal') {
-      computedUnlockedTitles = mergeAllSetTitles(computedUnlockedTitles, (await getSets()).sets || []);
+      try {
+        computedUnlockedTitles = mergeAllSetTitles(computedUnlockedTitles, (await getSets()).sets || []);
+      } catch {}
     }
     if (JSON.stringify(computedUnlockedTitles) !== JSON.stringify(user.unlockedTitles || [])) {
       await users.updateOne({ id: userId }, { $set: { unlockedTitles: computedUnlockedTitles } });
     }
     user = { ...user, unlockedTitles: computedUnlockedTitles };
+
+
+    const favoriteCardOptions = editable ? Array.from(new Map((Array.isArray(user.collection) ? user.collection : [])
+      .filter((card) => card?.id && card?.name)
+      .map((card) => [card.id, {
+        id: card.id,
+        name: card.name,
+        rarity: card.rarity,
+        setName: card?.set?.name || '',
+        image: card?.images?.small || null,
+      }])).values())
+      .sort((a, b) => a.name.localeCompare(b.name)) : [];
 
     const unlockedTitles = user.unlockedTitles || [];
     const availableTitles = getAllAvailableTitles({ battleWins: user.battleWins || 0, unlockedTitles });
@@ -100,6 +167,9 @@ export async function GET(request) {
         trainerRank: activeTitle,
         baseTrainerRank: getActiveDisplayTitle({ battleWins: user.battleWins || 0, unlockedTitles: [], selectedTitleId: null }),
         favoritePokemon,
+        favoriteCard,
+        favoriteCardId: user.favoriteCardId || null,
+        favoriteCardOptions,
         selectedTitle,
         selectedTitleId: effectiveSelectedTitleId,
         unlockedTitles,
