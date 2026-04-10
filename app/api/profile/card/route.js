@@ -28,7 +28,8 @@ export async function GET(request) {
     }
 
 
-    const syncedTitles = syncSetTitlesFromCollection(user);
+    const setsCatalog = (await getSets()).sets || [];
+    const syncedTitles = syncSetTitlesFromCollection(user, setsCatalog);
     const existingCount = Array.isArray(user.unlockedTitles) ? user.unlockedTitles.length : 0;
     if (syncedTitles.unlockedTitles.length !== existingCount) {
       await users.updateOne(
