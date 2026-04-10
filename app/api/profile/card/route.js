@@ -3,7 +3,7 @@ import { ObjectId } from 'mongodb';
 import { connectDB } from '@/lib/mongodb';
 import { normalizeStoredSprite } from '@/lib/wilds';
 import { getActiveDisplayTitle, getAllAvailableTitles, getSelectedUnlockedTitle, slugifyTitleLabel, syncSetTitlesFromCollection, mergeAllSetTitles, mergeSpecialTitlesForUsername } from '@/lib/set-titles';
-import { getSets } from '@/lib/pokemon-tcg';
+import { getCardsForSet, getSets } from '@/lib/pokemon-tcg';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,9 +29,21 @@ export async function GET(request) {
 
 
     const setsCatalog = (await getSets()).sets || [];
-    const syncedTitles = syncSetTitlesFromCollection(user, setsCatalog);
-    const existingCount = Array.isArray(user.unlockedTitles) ? user.unlockedTitles.length : 0;
-    if (syncedTitles.unlockedTitles.length !== existingCount) {
+    const ownedSetIds = Array.from(new Set((user.collection || []).map((card) => card?.set?.id).filter(Boolean)));
+    const cardsBySetEntries = await Promise.all(
+      ownedSetIds.map(async (setId) => {
+        try {
+          const { cards } = await getCardsForSet(setId);
+          return [setId, cards || []];
+        } catch {
+          return [setId, []];
+        }
+      })
+    );
+    const cardsBySet = Object.fromEntries(cardsBySetEntries);
+
+    const syncedTitles = syncSetTitlesFromCollection(user, setsCatalog, cardsBySet);
+    if (JSON.stringify(syncedTitles.unlockedTitles) !== JSON.stringify(user.unlockedTitles || [])) {
       await users.updateOne(
         { id: userId },
         { $set: { unlockedTitles: syncedTitles.unlockedTitles } }
