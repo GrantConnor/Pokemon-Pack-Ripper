@@ -2523,8 +2523,12 @@ export default function PokemonWilds() {
             <div className="space-y-4">
               <Card className="border-2 border-cyan-500/30 bg-slate-800/60">
                 <CardContent className="pt-6 text-center space-y-2">
-                  <p className={`text-sm font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`} style={playerCard.trainerRank?.color ? { color: playerCard.trainerRank.color } : undefined}>{playerCard.trainerRank?.label || 'Trainer'}</p>
-                  <p className={`text-3xl font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`} style={playerCard.trainerRank?.color ? { color: playerCard.trainerRank.color } : undefined}>{playerCard.username}</p>
+                  <div className="flex justify-center">
+                    <span className={`inline-flex rounded-full border px-3 py-1 text-sm font-bold ${playerCard.trainerRank?.badgeClass || 'bg-slate-700/40 text-white border-slate-400/40'}`} style={playerCard.trainerRank?.color ? { color: playerCard.trainerRank.color, borderColor: playerCard.trainerRank.color } : undefined}>
+                      {playerCard.trainerRank?.label || 'Trainer'}
+                    </span>
+                  </div>
+                  <p className="text-3xl font-bold text-white">{playerCard.username}</p>
                   {playerCard.baseTrainerRank && (
                     <p className="text-xs text-slate-400">Battle Rank: <span className={playerCard.baseTrainerRank.textClass || 'text-white'} style={playerCard.baseTrainerRank?.color ? { color: playerCard.baseTrainerRank.color } : undefined}>{playerCard.baseTrainerRank.label}</span></p>
                   )}
