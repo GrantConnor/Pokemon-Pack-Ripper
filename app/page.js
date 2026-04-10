@@ -1875,6 +1875,20 @@ export default function App() {
   };
 
   // Auth screen
+  const filteredFavoriteCardOptions = useMemo(() => {
+    const options = playerCard?.favoriteCardOptions || [];
+    const query = favoriteCardSearchQuery.trim().toLowerCase();
+    if (!query) return options;
+
+    return options.filter((card) => {
+      const name = String(card?.name || '').toLowerCase();
+      const setName = String(card?.setName || '').toLowerCase();
+      const rarity = String(card?.rarity || '').toLowerCase();
+      return name.includes(query) || setName.includes(query) || rarity.includes(query);
+    });
+  }, [playerCard?.favoriteCardOptions, favoriteCardSearchQuery]);
+
+
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black flex items-center justify-center p-4 relative overflow-hidden">
@@ -1965,19 +1979,6 @@ export default function App() {
   }
 
   // Main app screen
-  const filteredFavoriteCardOptions = useMemo(() => {
-    const options = playerCard?.favoriteCardOptions || [];
-    const query = favoriteCardSearchQuery.trim().toLowerCase();
-    if (!query) return options;
-
-    return options.filter((card) => {
-      const name = String(card?.name || '').toLowerCase();
-      const setName = String(card?.setName || '').toLowerCase();
-      const rarity = String(card?.rarity || '').toLowerCase();
-      return name.includes(query) || setName.includes(query) || rarity.includes(query);
-    });
-  }, [playerCard?.favoriteCardOptions, favoriteCardSearchQuery]);
-
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black relative overflow-hidden">

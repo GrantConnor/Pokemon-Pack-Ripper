@@ -1285,12 +1285,6 @@ export default function PokemonWilds() {
     return colors[type] || 'bg-gray-500';
   };
 
-  if (!user) {
-    return <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-      <p className="text-white">Loading...</p>
-    </div>;
-  }
-
   const filteredFavoriteCardOptions = useMemo(() => {
     const options = playerCard?.favoriteCardOptions || [];
     const query = favoriteCardSearchQuery.trim().toLowerCase();
@@ -1303,6 +1297,13 @@ export default function PokemonWilds() {
       return name.includes(query) || setName.includes(query) || rarity.includes(query);
     });
   }, [playerCard?.favoriteCardOptions, favoriteCardSearchQuery]);
+
+
+  if (!user) {
+    return <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <p className="text-white">Loading...</p>
+    </div>;
+  }
 
 
   return (
