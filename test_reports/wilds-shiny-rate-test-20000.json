@@ -1,0 +1,15 @@
+{
+  "generatedAt": "2026-04-09T00:34:07.164Z",
+  "codePath": [
+    "app/api/[[...path]]/route.js -> fetchPokemonData()",
+    "lib/wilds.js -> fetchPokemonData()"
+  ],
+  "configuredRate": "Math.random() < (1 / 4000)",
+  "configuredOdds": "1/4000",
+  "trials": 20000,
+  "expectedShinies": 5,
+  "observedShinies": 6,
+  "observedRate": 0.0003,
+  "observedOddsApprox": "1 in 3333.33",
+  "assessment": "The code is correctly configured for a 1/4000 shiny roll per spawn generation. A 20,000-trial simulation returned 6 shinies, which is within normal random variance around the expected 5."
+}

@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Swords, Repeat2, Flag } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
@@ -122,8 +122,10 @@ function BattlePageContent() {
   const [backgroundImage, setBackgroundImage] = useState(BATTLE_BACKGROUNDS[0]);
   const [displayedMyHP, setDisplayedMyHP] = useState(null);
   const [displayedOppHP, setDisplayedOppHP] = useState(null);
+  const [actionPanelTab, setActionPanelTab] = useState('fight');
   const logContainerRef = useRef(null);
   const lastAnimatedRef = useRef(null);
+  const battleMusicRef = useRef(null);
 
   useEffect(() => {
     setBackgroundImage(BATTLE_BACKGROUNDS[Math.floor(Math.random() * BATTLE_BACKGROUNDS.length)]);
@@ -220,6 +222,35 @@ function BattlePageContent() {
     };
   }, [battleLog.length, battle?.status]);
 
+
+  useEffect(() => {
+    if (awaitingMySwitch) {
+      setActionPanelTab('switch');
+    }
+  }, [awaitingMySwitch]);
+
+  useEffect(() => {
+    if (!battleMusicRef.current) {
+      battleMusicRef.current = new Audio('/audio/trainer-battle.mp3');
+      battleMusicRef.current.loop = true;
+      battleMusicRef.current.volume = 0.35;
+    }
+
+    const audio = battleMusicRef.current;
+    const shouldPlay = !!user?.id && battle?.status === 'active' && battle?.player1?.ready && battle?.player2?.ready;
+
+    if (shouldPlay) {
+      audio.play().catch(() => {});
+    } else {
+      audio.pause();
+      audio.currentTime = 0;
+    }
+
+    return () => {
+      audio.pause();
+    };
+  }, [user?.id, battle?.status, battle?.player1?.ready, battle?.player2?.ready]);
+
   useEffect(() => {
     if (!myCurrentPokemon || !opponentCurrentPokemon) return;
 
@@ -312,14 +343,21 @@ function BattlePageContent() {
     if (actionSubmitting) return;
     setActionSubmitting(true);
     try {
-      const response = await fetch('/api/battles/switch-pokemon', {
+      const endpoint = awaitingMySwitch ? '/api/battles/switch-pokemon' : '/api/battles/attack';
+      const payload = awaitingMySwitch
+        ? { battleId, userId: user.id, pokemonIndex }
+        : { battleId, userId: user.id, actionType: 'switch', pokemonIndex };
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ battleId, userId: user.id, pokemonIndex })
+        body: JSON.stringify(payload)
       });
       const data = await response.json();
       if (!data.success) {
         alert(data.error || 'Error switching Pokemon');
+      } else if (!awaitingMySwitch) {
+        setActionPanelTab('fight');
       }
       await loadBattle();
     } catch {
@@ -525,49 +563,94 @@ function BattlePageContent() {
               </Card>
             </div>
           )}
-
-          {battle.status === 'active' && (
-            <div className="fixed bottom-6 right-6 z-30">
-              <Button onClick={handleForfeit} disabled={battle.status === 'finished'} className="bg-red-600 hover:bg-red-500">
-                Flee
-              </Button>
-            </div>
-          )}
-
           {battle.status === 'active' && !awaitingMySwitch && (
-            <div className="fixed bottom-3 left-1/2 z-30 w-full max-w-3xl -translate-x-1/2 px-4">
+            <div className="fixed bottom-3 left-1/2 z-30 w-full max-w-4xl -translate-x-1/2 px-4">
               <Card className="border-2 border-green-500/50 bg-slate-900/95 backdrop-blur-sm shadow-2xl">
-                <CardContent className="p-2.5 space-y-2.5">
+                <CardContent className="p-3 space-y-3">
                   <div className="flex items-center justify-between flex-wrap gap-2">
-                    <h2 className="text-lg font-bold text-white">Attack</h2>
-                    <p className="text-xs text-yellow-300">
-                      {myMoveLocked ? 'Move locked in — waiting for opponent.' : 'Pick a move for this round.'}
-                    </p>
+                    <div>
+                      <h2 className="text-lg font-bold text-white">Battle Actions</h2>
+                      <p className="text-xs text-yellow-300">
+                        {myMoveLocked ? 'Action locked in — waiting for opponent.' : 'Pick Fight or Switch for this round.'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant={actionPanelTab === 'fight' ? 'default' : 'outline'}
+                        onClick={() => setActionPanelTab('fight')}
+                        disabled={myMoveLocked || actionSubmitting}
+                        className={actionPanelTab === 'fight' ? 'bg-blue-600 hover:bg-blue-500' : 'bg-slate-800 border-slate-600 text-white'}
+                      >
+                        <Swords className="h-4 w-4 mr-2" />
+                        Fight
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={actionPanelTab === 'switch' ? 'default' : 'outline'}
+                        onClick={() => setActionPanelTab('switch')}
+                        disabled={myMoveLocked || actionSubmitting}
+                        className={actionPanelTab === 'switch' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-slate-800 border-slate-600 text-white'}
+                      >
+                        <Repeat2 className="h-4 w-4 mr-2" />
+                        Switch
+                      </Button>
+                      <Button onClick={handleForfeit} disabled={battle.status === 'finished' || actionSubmitting} className="bg-red-600 hover:bg-red-500">
+                        <Flag className="h-4 w-4 mr-2" />
+                        Flee
+                      </Button>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {myCurrentPokemon?.moveset?.map((move, index) => {
-                      const moveData = myCurrentPokemon.allMovesData?.find(m => m.name === move);
-                      return (
-                        <Button
-                          key={index}
-                          onClick={() => handleAttack(index)}
-                          disabled={myMoveLocked || actionSubmitting || myCurrentPokemon.currentHP === 0 || battle.status !== 'active'}
-                          className="h-14 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 flex flex-col items-center justify-center px-2"
-                        >
-                          <span className="font-bold text-xs md:text-sm">{move.replace(/-/g, ' ').toUpperCase()}</span>
-                          {moveData && (
-                            <span className="text-[10px] md:text-xs text-center">
-                              {moveData.type} • {moveData.damageClass} • {moveData.power || 'N/A'}
-                            </span>
-                          )}
-                        </Button>
-                      );
-                    })}
-                  </div>
+
+                  {actionPanelTab === 'fight' ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      {myCurrentPokemon?.moveset?.map((move, index) => {
+                        const moveData = myCurrentPokemon.allMovesData?.find(m => m.name === move);
+                        return (
+                          <Button
+                            key={index}
+                            onClick={() => handleAttack(index)}
+                            disabled={myMoveLocked || actionSubmitting || myCurrentPokemon.currentHP === 0 || battle.status !== 'active'}
+                            className="h-14 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 flex flex-col items-center justify-center px-2"
+                          >
+                            <span className="font-bold text-xs md:text-sm">{move.replace(/-/g, ' ').toUpperCase()}</span>
+                            {moveData && (
+                              <span className="text-[10px] md:text-xs text-center">
+                                {moveData.type} • {moveData.damageClass} • {moveData.power || 'N/A'}
+                              </span>
+                            )}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      {myPlayer?.pokemon
+                        ?.map((pokemon, index) => ({ pokemon, index }))
+                        .filter(({ pokemon, index }) => pokemon.currentHP > 0 && index !== myPlayer.currentPokemonIndex)
+                        .map(({ pokemon, index }) => (
+                          <Button
+                            key={`${pokemon._id || pokemon.id}-${index}`}
+                            onClick={() => handleSwitchPokemon(index)}
+                            disabled={myMoveLocked || actionSubmitting || battle.status !== 'active'}
+                            className="h-auto justify-start bg-emerald-700 hover:bg-emerald-600 disabled:bg-gray-600 px-3 py-3 text-left"
+                          >
+                            <div className="flex items-center gap-3">
+                              <img src={pokemon.sprite} alt={pokemon.displayName} className="h-12 w-12 object-contain" />
+                              <div>
+                                <div className="font-bold text-white">{pokemon.nickname || pokemon.displayName}</div>
+                                <div className="text-xs text-emerald-100">Level {pokemon.level} • HP {pokemon.currentHP}/{pokemon.maxHP || pokemon.stats?.hp}</div>
+                              </div>
+                            </div>
+                          </Button>
+                        ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
           )}
+
         </div>
       </div>
     );

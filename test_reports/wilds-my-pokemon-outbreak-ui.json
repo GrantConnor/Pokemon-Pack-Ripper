@@ -1,0 +1,12 @@
+{
+  "checks": [
+    {"name": "My Pokemon cards show level and gender next to the name", "status": "passed"},
+    {"name": "Multi-release mode uses the same My Pokemon card display with level and gender", "status": "passed"},
+    {"name": "Mass outbreak alert shows started-at time", "status": "passed"},
+    {"name": "Mass outbreak alert shows live countdown timer", "status": "passed"}
+  ],
+  "syntax_checks": [
+    "app/wilds/page.js"
+  ],
+  "result": "passed"
+}

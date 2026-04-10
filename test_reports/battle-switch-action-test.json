@@ -1,0 +1,22 @@
+{
+  "generatedAt": "2026-04-09T00:07:25.810Z",
+  "summary": {
+    "switchResolvedFirst": true,
+    "newPokemonBecameActive": true,
+    "newPokemonTookDamage": true,
+    "originalPokemonUntouched": true
+  },
+  "details": {
+    "order": [
+      "player1",
+      "player2"
+    ],
+    "log": [
+      "player1 switched to Charmeleon",
+      "player2 attacked Charmeleon"
+    ],
+    "activeAfterSwitch": "Charmeleon",
+    "hpAfterAttack": 90,
+    "originalLeadHp": 100
+  }
+}

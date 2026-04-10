@@ -1,0 +1,15 @@
+{
+  "checks": [
+    {"name": "Safari Zone runs now expire after 10 minutes", "status": "passed"},
+    {"name": "Safari Zone page top-left UI only shows Safari Zone, biome name, and Back to Wilds", "status": "passed"},
+    {"name": "Biome name is prominently shown near the top", "status": "passed"},
+    {"name": "Spheal Safari Zone shiny rate override set to 1/5 for testing", "status": "passed"}
+  ],
+  "syntax_checks": [
+    "lib/safari-zone.js",
+    "app/api/safari-zone/entry/route.js",
+    "app/api/safari-zone/current/route.js",
+    "app/safari-zone/page.js"
+  ],
+  "result": "passed"
+}

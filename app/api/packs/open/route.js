@@ -3,6 +3,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { connectDB } from '@/lib/mongodb';
 import { getCardsForSet, getPackCost } from '@/lib/pokemon-tcg';
 import { refreshAllUsersPointsIfDue, refreshUserPoints } from '@/lib/auth';
+import { applyDailyObjectiveEvent } from '@/lib/daily-objectives';
+import { unlockSetTitlesForUser } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,11 +16,13 @@ const LEGACY_SETS = [
   'gym1', 'gym2', 'neo1', 'neo2', 'neo3', 'neo4',
   'base4', 'ecard1', 'ecard2', 'ecard3',
   'ex1', 'ex2', 'ex3', 'ex4', 'ex5', 'ex6',
-  'ex7', 'ex8', 'ex9', 'ex10', 'ex11', 'ex12'
+  'ex7', 'ex8', 'ex9', 'ex10', 'ex11', 'ex12',
+  'ex13', 'ex14', 'ex15', 'ex16'
 ];
 
 const HS_SETS = ['hgss1', 'hgss2', 'hgss3', 'hgss4'];
 const HS_SET_NAMES = ['HeartGold & SoulSilver', 'HS—Unleashed', 'HS—Undaunted', 'HS—Triumphant'];
+const EX_GOLD_STAR_SETS = ['ex8', 'ex10', 'ex11', 'ex12', 'ex13', 'ex14', 'ex15', 'ex16'];
 
 
 export function openPack(cards, setId = null) {
@@ -124,6 +128,7 @@ export function openPack(cards, setId = null) {
     rarePrismStar: nonEnergyCards.filter(card => rarityValue(card).includes('rare prism star')),
     aceSpecRare: nonEnergyCards.filter(card => rarityValue(card).includes('ace spec')),
     rareBreak: nonEnergyCards.filter(card => rarityValue(card).includes('rare break')),
+    rareHoloStar: nonEnergyCards.filter(card => rarityValue(card).includes('rare holo star')),
     legend: nonEnergyCards.filter(card => rarityValue(card).includes('legend')),
     rainbowRare: nonEnergyCards.filter(card => rarityValue(card).includes('rare rainbow')),
     hyperRare: nonEnergyCards.filter(card => rarityValue(card).includes('hyper rare')),
@@ -171,6 +176,7 @@ export function openPack(cards, setId = null) {
   const setName = cards[0]?.set?.name || '';
   const setSeries = cards[0]?.set?.series || '';
   const isHsPack = (setId && HS_SETS.includes(setId)) || HS_SET_NAMES.includes(setName) || setSeries === 'HeartGold & SoulSilver';
+  const isExGoldStarPack = EX_GOLD_STAR_SETS.includes(setId) || /ex deoxys|unseen forces|delta species|legend maker|holon phantoms|crystal guardians|dragon frontiers|power keepers/i.test(setName);
   const weightedSpecialTable = isHsPack
     ? [
         { key: 'legend', weight: 4 },
@@ -208,7 +214,7 @@ export function openPack(cards, setId = null) {
   };
 
   const isLegacyPack = setId && LEGACY_SETS.includes(setId);
-  const legacyHitRare = !isLegacyPack || Math.random() < 0.15;
+  const legacyHitRare = isExGoldStarPack ? true : (!isLegacyPack || Math.random() < 0.15);
 
   if (!isLegacyPack && !isHsPack && hitSpecialTable && godPackPool.length > 0) {
     const godPackRoll = Math.floor(Math.random() * 100) + 1;
@@ -218,7 +224,19 @@ export function openPack(cards, setId = null) {
   }
 
   let rareSlotCard = null;
-  if (legacyHitRare && hitSpecialTable && availableSpecialPoolKeys.length) {
+  if (isExGoldStarPack) {
+    const exDeoxysRoll = Math.random();
+    if (exDeoxysRoll < 0.80) {
+      rareSlotCard = getUniqueCard(standardRares) || getRandomCard(standardRares);
+    } else if (exDeoxysRoll < 0.95) {
+      rareSlotCard = getUniqueCard(specialPools.rareHoloEx) || getRandomCard(specialPools.rareHoloEx);
+    } else if (exDeoxysRoll < 0.975) {
+      rareSlotCard = getUniqueCard(specialPools.secretRare) || getRandomCard(specialPools.secretRare);
+    } else {
+      rareSlotCard = getUniqueCard(specialPools.rareHoloStar) || getRandomCard(specialPools.rareHoloStar);
+    }
+  }
+  if (!isExGoldStarPack && legacyHitRare && hitSpecialTable && availableSpecialPoolKeys.length) {
     const selectedPoolKey = pickWeightedSpecialPoolKey();
     if (selectedPoolKey) {
       rareSlotCard = getUniqueCard(specialPools[selectedPoolKey]);
@@ -228,7 +246,7 @@ export function openPack(cards, setId = null) {
   if (legacyHitRare && !rareSlotCard) {
     rareSlotCard = isHsPack
       ? (getUniqueCard(hsStandardRares) || getRandomCard(hsStandardRares))
-      : getUniqueCard(standardRares);
+      : (getUniqueCard(standardRares) || getRandomCard(standardRares));
   }
 
   if (legacyHitRare && !rareSlotCard && availableSpecialPoolKeys.length) {
@@ -342,17 +360,43 @@ export async function POST(request) {
       }
     );
 
-    const revealId = uuidv4();
-    await database.collection('pack_reveals').insertOne({
-      id: revealId,
-      userId,
-      cards: cardsWithTimestamp,
-      packs: packsWithTimestamps,
-      isBulk: !!bulk,
-      pointsRemaining: newPoints,
-      createdAt: new Date().toISOString(),
-      revealed: false,
-    });
+    let titleUnlockResult = { newlyUnlocked: [] };
+    try {
+      titleUnlockResult = await unlockSetTitlesForUser(
+        users,
+        userId,
+        setId,
+        allCards[0]?.set?.name || setId,
+        allCards,
+      );
+    } catch (error) {
+      console.error('[PACK OPEN] Title unlock step failed:', error);
+    }
+
+    let dailyObjectiveResult = { pointsAwarded: 0 };
+    try {
+      dailyObjectiveResult = await applyDailyObjectiveEvent(users, userId, 'open-pack', { count: packCount }) || { pointsAwarded: 0 };
+    } catch (error) {
+      console.error('[PACK OPEN] Daily objective step failed:', error);
+    }
+    const finalPointsRemaining = newPoints + (dailyObjectiveResult?.pointsAwarded || 0);
+
+    let revealId = uuidv4();
+    try {
+      await database.collection('pack_reveals').insertOne({
+        id: revealId,
+        userId,
+        cards: cardsWithTimestamp,
+        packs: packsWithTimestamps,
+        isBulk: !!bulk,
+        pointsRemaining: finalPointsRemaining,
+        createdAt: new Date().toISOString(),
+        revealed: false,
+      });
+    } catch (error) {
+      console.error('[PACK OPEN] Reveal persistence failed:', error);
+      revealId = null;
+    }
 
     return NextResponse.json({
       success: true,
@@ -360,9 +404,11 @@ export async function POST(request) {
       cards: cardsWithTimestamp,
       packs: packsWithTimestamps,
       isBulk: bulk,
-      pointsRemaining: newPoints,
+      pointsRemaining: finalPointsRemaining,
       achievements: null,
+      titleUnlocks: titleUnlockResult?.newlyUnlocked || [],
       xpApplied: false,
+      dailyObjectivePointsAwarded: dailyObjectiveResult?.pointsAwarded || 0,
     });
   } catch (error) {
     return NextResponse.json({

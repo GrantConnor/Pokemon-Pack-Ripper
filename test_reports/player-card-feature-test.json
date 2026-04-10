@@ -1,0 +1,17 @@
+{
+  "generatedAt": "2026-04-09T01:25:00Z",
+  "features": {
+    "playerCardModalInFriendsPanel": true,
+    "showsBattleWins": true,
+    "showsTradesCompleted": true,
+    "favoritePokemonShowcase": true,
+    "favoritePokemonSetFromMyPokemon": true
+  },
+  "routes": [
+    "app/api/profile/card/route.js",
+    "app/api/profile/favorite-pokemon/route.js"
+  ],
+  "ui": [
+    "app/wilds/page.js"
+  ]
+}
