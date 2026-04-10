@@ -1,0 +1,14 @@
+{
+  "summary": {
+    "total_checks": 5,
+    "passed": 5,
+    "failed": 0
+  },
+  "checks": {
+    "normalize_reveal_data_helper_exists": true,
+    "hydrate_reveal_returns_boolean": true,
+    "pack_open_timeout_ref_exists": true,
+    "open_pack_guards_duplicate_clicks": true,
+    "render_guards_pack_cards_arrays": true
+  }
+}

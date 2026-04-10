@@ -1,0 +1,15 @@
+{
+  "checks": [
+    {"name": "wilds card trade modal closes automatically after accept", "status": "passed"},
+    {"name": "wilds card trade modal closes automatically after decline", "status": "passed"},
+    {"name": "offered cards are locked when a card trade request is sent", "status": "passed"},
+    {"name": "same offered card cannot be used in a second pending trade while locked", "status": "passed"},
+    {"name": "accept path claims trade request before processing to prevent double accept races", "status": "passed"},
+    {"name": "decline path releases sender card locks", "status": "passed"}
+  ],
+  "syntax_checks": [
+    "app/api/[[...path]]/route.js",
+    "app/wilds/page.js"
+  ],
+  "result": "passed"
+}

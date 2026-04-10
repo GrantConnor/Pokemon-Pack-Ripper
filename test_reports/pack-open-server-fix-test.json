@@ -1,0 +1,14 @@
+{
+  "summary": {
+    "total_checks": 5,
+    "passed": 5,
+    "failed": 0
+  },
+  "checks": {
+    "broken_cards_reference_removed": true,
+    "uses_allCards_for_title_unlocks": true,
+    "title_unlock_step_is_nonfatal": true,
+    "daily_objective_step_is_nonfatal": true,
+    "reveal_persistence_step_is_nonfatal": true
+  }
+}
