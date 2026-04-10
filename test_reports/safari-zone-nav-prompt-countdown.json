@@ -1,0 +1,12 @@
+{
+  "checks": [
+    {"name": "Wilds nav Safari Zone button opens a yes/no prompt modal", "status": "passed"},
+    {"name": "Safari prompt explains Safari Zone features before entry", "status": "passed"},
+    {"name": "Safari Zone page shows a prominent 10-minute countdown timer near the top", "status": "passed"}
+  ],
+  "syntax_checks": [
+    "app/wilds/page.js",
+    "app/safari-zone/page.js"
+  ],
+  "result": "passed"
+}

@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request) {
   try {
-    const { userId } = await request.json();
+    const { userId, includePremium = false } = await request.json();
     if (!userId) {
       return NextResponse.json({ error: 'User ID required' }, { status: 400 });
     }
@@ -37,7 +37,7 @@ export async function POST(request) {
     for (const cards of grouped.values()) {
       if (cards.length <= 1) continue;
       const sortedCards = [...cards].sort((a, b) => new Date(a.pulledAt || 0) - new Date(b.pulledAt || 0));
-      const duplicates = sortedCards.slice(1); // leave the oldest copy
+      const duplicates = sortedCards.slice(1).filter((card) => includePremium || ['Common', 'Uncommon', 'Rare', 'Rare Holo'].includes(card.rarity)); // leave the oldest copy
       cardsToBreakdown.push(...duplicates);
       for (const card of duplicates) {
         totalPoints += getBreakdownValueForRarity(card.rarity);

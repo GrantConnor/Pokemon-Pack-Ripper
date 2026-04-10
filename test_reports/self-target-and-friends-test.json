@@ -1,0 +1,95 @@
+{
+  "generatedAt": "2026-04-08T23:43:11.663Z",
+  "summary": {
+    "moveCasesTested": 9,
+    "moveCasesPassed": 9,
+    "moveCasesFailed": 0,
+    "friendSortPassed": true
+  },
+  "moveResults": [
+    {
+      "name": "swords-dance",
+      "target": "user",
+      "resolvedRecipient": "self",
+      "expectedRecipient": "self",
+      "passed": true
+    },
+    {
+      "name": "close-combat",
+      "target": "selected-pokemon",
+      "resolvedRecipient": "self",
+      "expectedRecipient": "self",
+      "passed": true
+    },
+    {
+      "name": "superpower",
+      "target": "selected-pokemon",
+      "resolvedRecipient": "self",
+      "expectedRecipient": "self",
+      "passed": true
+    },
+    {
+      "name": "metal-claw",
+      "target": "selected-pokemon",
+      "resolvedRecipient": "self",
+      "expectedRecipient": "self",
+      "passed": true
+    },
+    {
+      "name": "ancient-power",
+      "target": "selected-pokemon",
+      "resolvedRecipient": "self",
+      "expectedRecipient": "self",
+      "passed": true
+    },
+    {
+      "name": "tail-whip",
+      "target": "selected-pokemon",
+      "resolvedRecipient": "opponent",
+      "expectedRecipient": "opponent",
+      "passed": true
+    },
+    {
+      "name": "growl",
+      "target": "all-opponents",
+      "resolvedRecipient": "opponent",
+      "expectedRecipient": "opponent",
+      "passed": true
+    },
+    {
+      "name": "nasty-plot",
+      "target": "user",
+      "resolvedRecipient": "self",
+      "expectedRecipient": "self",
+      "passed": true
+    },
+    {
+      "name": "charm",
+      "target": "selected-pokemon",
+      "resolvedRecipient": "opponent",
+      "expectedRecipient": "opponent",
+      "passed": true
+    }
+  ],
+  "friendSorting": {
+    "inputOrder": [
+      "Zed",
+      "Ash",
+      "Misty",
+      "Brock"
+    ],
+    "sortedOrder": [
+      "Misty",
+      "Ash",
+      "Brock",
+      "Zed"
+    ],
+    "expectedOrder": [
+      "Misty",
+      "Ash",
+      "Brock",
+      "Zed"
+    ],
+    "passed": true
+  }
+}

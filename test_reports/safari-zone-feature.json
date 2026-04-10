@@ -1,0 +1,20 @@
+{
+  "checks": [
+    {"name": "Safari Zone entry route charges 5000 points and creates a per-user instance", "status": "passed"},
+    {"name": "Safari Zone current route serves instanced biome data and respawns after 20-60 seconds", "status": "passed"},
+    {"name": "Safari Zone snack route limits runs to 3 Poké Snacks and boosts catch rate for the current spawn", "status": "passed"},
+    {"name": "Safari Zone catch route sends caught Pokémon to caught_pokemon / My Pokemon", "status": "passed"},
+    {"name": "Wilds page contains Safari Zone entry button", "status": "passed"},
+    {"name": "Safari Zone page displays biome, snacks, spawn timer, and encounter actions", "status": "passed"}
+  ],
+  "syntax_checks": [
+    "lib/safari-zone.js",
+    "app/wilds/page.js",
+    "app/safari-zone/page.js",
+    "app/api/safari-zone/entry/route.js",
+    "app/api/safari-zone/current/route.js",
+    "app/api/safari-zone/snack/route.js",
+    "app/api/safari-zone/catch/route.js"
+  ],
+  "result": "passed"
+}

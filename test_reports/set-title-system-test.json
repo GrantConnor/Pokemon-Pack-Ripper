@@ -1,0 +1,45 @@
+{
+  "titles": [
+    {
+      "id": "set-full-gym1",
+      "setId": "gym1",
+      "tier": "full",
+      "label": "Badge Master",
+      "description": "Unlocked by completing the numbered set for Gym Heroes.",
+      "textClass": "text-emerald-300",
+      "badgeClass": "bg-emerald-500/20 text-emerald-200 border-emerald-400/40"
+    },
+    {
+      "id": "set-master-gym1",
+      "setId": "gym1",
+      "tier": "master",
+      "label": "Badge Master Supreme",
+      "description": "Unlocked by completing the master set for Gym Heroes.",
+      "textClass": "text-yellow-300",
+      "badgeClass": "bg-yellow-500/20 text-yellow-200 border-yellow-400/40"
+    }
+  ],
+  "full": {
+    "fullSetCompleted": true,
+    "masterSetCompleted": false,
+    "uniqueCount": 2,
+    "totalCards": 3,
+    "printedTotal": 2
+  },
+  "master": {
+    "fullSetCompleted": true,
+    "masterSetCompleted": true,
+    "uniqueCount": 3,
+    "totalCards": 3,
+    "printedTotal": 2
+  },
+  "active": {
+    "id": "set-full-gym1",
+    "setId": "gym1",
+    "tier": "full",
+    "label": "Badge Master",
+    "description": "Unlocked by completing the numbered set for Gym Heroes.",
+    "textClass": "text-emerald-300",
+    "badgeClass": "bg-emerald-500/20 text-emerald-200 border-emerald-400/40"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "checks": [
+    {"name": "profile card route no longer performs external set fetches during load", "status": "passed"},
+    {"name": "profile card route syncs set titles from existing collection locally", "status": "passed"},
+    {"name": "pack ripper header no longer contains My Player Card nav button", "status": "passed"},
+    {"name": "pack ripper friends panel contains My Player Card button", "status": "passed"},
+    {"name": "pack ripper friends list contains friend Player Card button", "status": "passed"},
+    {"name": "player card client loader now handles non-OK responses safely", "status": "passed"}
+  ],
+  "syntax_checks": [
+    "lib/set-titles.js",
+    "app/api/profile/card/route.js",
+    "app/page.js",
+    "app/wilds/page.js"
+  ],
+  "result": "passed"
+}

@@ -1,0 +1,12 @@
+{
+  "checks": [
+    {"name": "dedicated admin-spawn-shiny route now reads pokemonId from request body", "status": "passed"},
+    {"name": "dedicated admin-spawn-shiny route resolves dex number or pokemon name before spawning", "status": "passed"},
+    {"name": "invalid shiny query now returns an error instead of silently spawning a random shiny", "status": "passed"},
+    {"name": "response now includes resolvedPokemonId for easier verification", "status": "passed"}
+  ],
+  "syntax_checks": [
+    "app/api/wilds/admin-spawn-shiny/route.js"
+  ],
+  "result": "passed"
+}
