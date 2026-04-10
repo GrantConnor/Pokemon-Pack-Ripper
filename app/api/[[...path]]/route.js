@@ -16,7 +16,7 @@ const STARTING_POINTS = 1000;
 const PACK_COST = 100; // Default cost
 const BULK_PACK_COUNT = 10;
 const POINTS_REGEN_RATE = 2000; // Points per regeneration
-const POINTS_REGEN_INTERVAL = 4 * 60 * 60 * 1000; // 4 hours in milliseconds
+const POINTS_REGEN_INTERVAL = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
 
 const EXTERNAL_API_TIMEOUT = 15000;
 const SETS_CACHE_TTL_MS = 12 * 60 * 60 * 1000;

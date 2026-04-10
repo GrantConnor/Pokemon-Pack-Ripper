@@ -28,7 +28,6 @@ export default function PokemonWilds() {
   const [showCatchDialog, setShowCatchDialog] = useState(false);
   const [catchResult, setCatchResult] = useState(null);
   const [catching, setCatching] = useState(false);
-  const [showWildsThrowAnimation, setShowWildsThrowAnimation] = useState(false);
   const [safariSummary, setSafariSummary] = useState(null);
   const [showSafariSummaryDialog, setShowSafariSummaryDialog] = useState(false);
   const [myPokemon, setMyPokemon] = useState([]);
@@ -878,8 +877,6 @@ export default function PokemonWilds() {
     if (!user || !spawn) return;
 
     setCatching(true);
-    setShowWildsThrowAnimation(true);
-    await new Promise((resolve) => setTimeout(resolve, 700));
     try {
       const response = await fetch('/api/wilds/catch', {
         method: 'POST',
@@ -908,7 +905,6 @@ export default function PokemonWilds() {
     } catch (err) {
       alert('Error attempting catch');
     } finally {
-      setShowWildsThrowAnimation(false);
       setCatching(false);
     }
   };
@@ -1533,20 +1529,11 @@ export default function PokemonWilds() {
           <div className="space-y-4">
             {!catchResult ? (
               <>
-                <div className="relative min-h-[140px] overflow-hidden">
-                  {showWildsThrowAnimation && (
-                    <img
-                      src="/pokeball.png"
-                      alt="Pokeball"
-                      className="pointer-events-none absolute left-6 bottom-0 h-16 w-16 wilds-throw-animation"
-                    />
-                  )}
-                  <img
-                    src={spawn?.pokemon?.sprite}
-                    alt={spawn?.pokemon?.displayName}
-                    className="w-32 h-32 mx-auto"
-                  />
-                </div>
+                <img
+                  src={spawn?.pokemon?.sprite}
+                  alt={spawn?.pokemon?.displayName}
+                  className="w-32 h-32 mx-auto"
+                />
                 <p className="text-center text-gray-300">
                   Throw a Pokeball and hope for the best!
                 </p>

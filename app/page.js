@@ -1723,6 +1723,11 @@ export default function App() {
   };
 
   const handleCardClick = (card) => {
+    if (breakdownMode) {
+      toggleBreakdownCard(card);
+      return;
+    }
+
     setSelectedCard(card);
     
     // Mark card as viewed to remove NEW badge
