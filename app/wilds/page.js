@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Sparkles, ArrowLeft, Clock, Users } from 'lucide-react';
+import { Sparkles, ArrowLeft, Clock, Users, Search } from 'lucide-react';
 import Link from 'next/link';
 import { getTrainerRank } from '@/lib/trainer-ranks';
 import { getActiveDisplayTitle } from '@/lib/set-titles';
@@ -77,6 +77,8 @@ export default function PokemonWilds() {
   }, [myPokemon, pokemonSearchTerm, pokemonTypeFilter, pokemonSortMode]);
   const [showPlayerCard, setShowPlayerCard] = useState(false);
   const [playerCard, setPlayerCard] = useState(null);
+  const [showFavoriteCardPicker, setShowFavoriteCardPicker] = useState(false);
+  const [favoriteCardSearchQuery, setFavoriteCardSearchQuery] = useState('');
   const [showDailyObjectives, setShowDailyObjectives] = useState(false);
   const [showSafariPrompt, setShowSafariPrompt] = useState(false);
   const [dailyObjectives, setDailyObjectives] = useState(null);
@@ -1289,6 +1291,20 @@ export default function PokemonWilds() {
     </div>;
   }
 
+  const filteredFavoriteCardOptions = useMemo(() => {
+    const options = playerCard?.favoriteCardOptions || [];
+    const query = favoriteCardSearchQuery.trim().toLowerCase();
+    if (!query) return options;
+
+    return options.filter((card) => {
+      const name = String(card?.name || '').toLowerCase();
+      const setName = String(card?.setName || '').toLowerCase();
+      const rarity = String(card?.rarity || '').toLowerCase();
+      return name.includes(query) || setName.includes(query) || rarity.includes(query);
+    });
+  }, [playerCard?.favoriteCardOptions, favoriteCardSearchQuery]);
+
+
   return (
     <>
       <div 
@@ -1533,6 +1549,79 @@ export default function PokemonWilds() {
                 </div>
               </div>
             ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showFavoriteCardPicker}
+        onOpenChange={(open) => {
+          setShowFavoriteCardPicker(open);
+          if (!open) setFavoriteCardSearchQuery('');
+        }}
+      >
+        <DialogContent className="max-w-3xl border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-cyan-400">Choose Favorite Card</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-3.5 h-4 w-4 text-cyan-400" />
+              <Input
+                value={favoriteCardSearchQuery}
+                onChange={(e) => setFavoriteCardSearchQuery(e.target.value)}
+                placeholder="Search your collection by name, set, or rarity..."
+                className="border-cyan-500/30 bg-slate-800/90 pl-10 text-white placeholder:text-slate-400"
+              />
+            </div>
+
+            <ScrollArea className="h-[26rem] rounded-lg border border-cyan-500/20 bg-slate-950/40 p-2">
+              <div className="grid grid-cols-1 gap-3 pr-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await handleSelectFavoriteCard('');
+                    setShowFavoriteCardPicker(false);
+                    setFavoriteCardSearchQuery('');
+                  }}
+                  className={`rounded-lg border p-3 text-left transition ${!playerCard?.favoriteCardId ? 'border-cyan-400 bg-cyan-500/10' : 'border-slate-700 bg-slate-900/70 hover:border-cyan-500/40'}`}
+                >
+                  <p className="font-semibold text-white">No Favorite Card</p>
+                  <p className="text-sm text-slate-400">Clear the favorite card shown on your player card.</p>
+                </button>
+
+                {filteredFavoriteCardOptions.map((card) => (
+                  <button
+                    key={card.id}
+                    type="button"
+                    onClick={async () => {
+                      await handleSelectFavoriteCard(card.id);
+                      setShowFavoriteCardPicker(false);
+                      setFavoriteCardSearchQuery('');
+                    }}
+                    className={`flex items-center gap-3 rounded-lg border p-3 text-left transition ${playerCard?.favoriteCardId === card.id ? 'border-cyan-400 bg-cyan-500/10' : 'border-slate-700 bg-slate-900/70 hover:border-cyan-500/40'}`}
+                  >
+                    {card.image ? (
+                      <img src={card.image} alt={card.name} className="h-20 w-14 rounded-md border border-cyan-500/20 object-cover" />
+                    ) : (
+                      <div className="flex h-20 w-14 items-center justify-center rounded-md border border-slate-700 bg-slate-800 text-xs text-slate-400">No Image</div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-white">{card.name}</p>
+                      <p className="truncate text-sm text-slate-300">{card.setName || 'Unknown Set'}</p>
+                      <p className="text-xs text-slate-400">{card.rarity || 'Unknown Rarity'}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {!filteredFavoriteCardOptions.length && (
+                <div className="flex h-40 items-center justify-center text-center text-slate-400">
+                  No cards in your collection match that search.
+                </div>
+              )}
+            </ScrollArea>
           </div>
         </DialogContent>
       </Dialog>
@@ -2478,20 +2567,21 @@ export default function PokemonWilds() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {playerCard.id === user?.id && (
-                    <div>
-                      <p className="text-xs font-semibold text-cyan-300 mb-2">Choose Favorite Card</p>
-                      <select
-                        value={playerCard.favoriteCardId || ''}
-                        onChange={(e) => handleSelectFavoriteCard(e.target.value)}
-                        className="w-full rounded-md border border-cyan-500/30 bg-slate-900/80 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-cyan-300">Choose Favorite Card</p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setShowFavoriteCardPicker(true)}
+                        className="w-full justify-between border-cyan-500/30 bg-slate-900/80 text-white hover:bg-slate-800"
                       >
-                        <option value="">Select a favorite card</option>
-                        {(playerCard.favoriteCardOptions || []).map((card) => (
-                          <option key={card.id} value={card.id}>
-                            {card.name}{card.setName ? ` — ${card.setName}` : ''}
-                          </option>
-                        ))}
-                      </select>
+                        <span className="truncate">
+                          {playerCard.favoriteCard
+                            ? `${playerCard.favoriteCard.name}${playerCard.favoriteCard.set?.name ? ` — ${playerCard.favoriteCard.set.name}` : ''}`
+                            : 'Select a favorite card from your collection'}
+                        </span>
+                        <Search className="ml-2 h-4 w-4 text-cyan-300" />
+                      </Button>
                     </div>
                   )}
                   {playerCard.favoriteCard ? (

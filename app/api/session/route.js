@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { getPointRegenState, refreshAllUsersPointsIfDue } from '@/lib/auth';
-import { getSets } from '@/lib/pokemon-tcg';
-import { mergeAllSetTitles, mergeSpecialTitlesForUsername } from '@/lib/set-titles';
+import { mergeSpecialTitlesForUsername } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -42,10 +41,7 @@ export async function GET(request) {
       return NextResponse.json({ authenticated: false });
     }
 
-    let computedUnlockedTitles = mergeSpecialTitlesForUsername(user.username, user.unlockedTitles || []);
-    if (user.username === 'Spheal') {
-      computedUnlockedTitles = mergeAllSetTitles(computedUnlockedTitles, (await getSets()).sets || []);
-    }
+    const computedUnlockedTitles = mergeSpecialTitlesForUsername(user.username, user.unlockedTitles || []);
     if (JSON.stringify(computedUnlockedTitles) !== JSON.stringify(user.unlockedTitles || [])) {
       await database.collection('users').updateOne({ id: userId }, { $set: { unlockedTitles: computedUnlockedTitles } });
     }
