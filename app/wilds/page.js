@@ -2248,9 +2248,9 @@ export default function PokemonWilds() {
             <ul className="list-disc pl-5 space-y-1 text-slate-300">
               <li>Instanced per user</li>
               <li>Random biome</li>
-              <li>Pokemon respawn every 20-60 seconds</li>
+              <li>Pokemon respawn every 8-15 seconds</li>
               <li>3 poke snacks per run to boost catch rate</li>
-              <li>Safari run lasts 10 minutes</li>
+              <li>Safari run lasts 5 minutes</li>
               <li>Pokemon now have catch rates depending on rarity.</li>
             </ul>
             <p className="font-semibold text-lime-200">Spend 2000 points to enter Safari Zone?</p>

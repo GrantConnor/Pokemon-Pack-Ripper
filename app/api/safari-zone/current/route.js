@@ -21,7 +21,9 @@ export async function GET(request) {
     }
 
     const now = Date.now();
-    if (instance.expiresAt && now >= instance.expiresAt) {
+    const hasActiveSpawn = !!instance.currentSpawn;
+    const spawnDueSoon = !instance.currentSpawn && instance.nextSpawnAt && (instance.nextSpawnAt - now) <= 5000;
+    if (instance.expiresAt && now >= instance.expiresAt && !hasActiveSpawn && !spawnDueSoon) {
       await instances.deleteOne({ userId });
       return NextResponse.json({ error: 'Safari Zone run expired', expired: true }, { status: 404 });
     }

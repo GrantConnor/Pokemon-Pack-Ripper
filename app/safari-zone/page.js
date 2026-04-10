@@ -54,17 +54,21 @@ export default function SafariZonePage() {
     if (!resolvedUserId) return;
     try {
       const response = await fetch(`/api/safari-zone/current?userId=${resolvedUserId}&ts=${Date.now()}`, { cache: 'no-store' });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setZone(null);
-        setSpawn(null);
-        setNextSpawnAt(null);
-        if (data?.expired) setMessage('Your Safari Zone run expired. Start a new one to keep exploring.');
+        if (response.status === 404) {
+          setZone(null);
+          setSpawn(null);
+          setNextSpawnAt(null);
+          if (data?.expired) setMessage('Your Safari Zone run expired. Start a new one to keep exploring.');
+        }
         return;
       }
       setZone(data.safariZone || null);
       setSpawn(data.spawn || null);
       setNextSpawnAt(data.nextSpawnAt || null);
+    } catch {
+      // Keep the active run visible during transient polling failures.
     } finally {
       setLoading(false);
     }
@@ -232,9 +236,10 @@ export default function SafariZonePage() {
               <p className="text-emerald-100/80">Spend {SAFARI_ZONE_COST} points to roll a random biome and begin a private Safari Zone session.</p>
               <ul className="list-disc pl-6 text-sm text-emerald-100/70 space-y-1">
                 <li>Instanced per user</li>
-                <li>Pokémon respawn every 20 to 60 seconds</li>
+                <li>Pokémon respawn every 8 to 15 seconds</li>
                 <li>1/800 shiny odds</li>
                 <li>3 Poké Snacks per run for bonus catch rate</li>
+                <li>Safari run lasts 5 minutes</li>
               </ul>
               <Button onClick={enterSafariZone} disabled={loading || actionLoading} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
                 {actionLoading ? 'Entering...' : `Enter Safari Zone (${SAFARI_ZONE_COST})`}
