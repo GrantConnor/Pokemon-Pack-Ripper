@@ -119,6 +119,7 @@ export default function App() {
   
   const BREAKDOWN_DEFAULT_RARITIES = ['Common', 'Uncommon'];
   const BREAKDOWN_OPTIONAL_RARITIES = [
+    'Rare',
     'Rare Holo',
     'Rare Holo EX',
     'Rare Holo V',
