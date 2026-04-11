@@ -499,32 +499,7 @@ export default function App() {
 
   // Group duplicates and sort
 
-  const BREAKDOWN_DEFAULT_RARITIES = ['Common', 'Uncommon'];
-  const BREAKDOWN_OPTIONAL_RARITIES = [
-    'Rare Holo',
-    'Rare Holo EX',
-    'Rare Holo V',
-    'Rare Holo VMAX',
-    'Double Rare',
-    'Illustration Rare',
-    'Special Illustration Rare',
-    'Ultra Rare',
-    'Rare Ultra',
-    'Rare Rainbow',
-    'Hyper Rare',
-    'Secret Rare',
-    'Rare Secret',
-    'Amazing Rare',
-    'Rare BREAK',
-    'Rare Prism Star',
-    'ACE SPEC Rare',
-    'Rare Shiny',
-    'Shiny Rare',
-    'Radiant Rare',
-    'LEGEND',
-    'Rare Holo Star',
-  ];
-
+  
   const SORT_OPTIONS = [
     { value: 'newest', label: 'Newest' },
     { value: 'name', label: 'Name (A-Z)' },
