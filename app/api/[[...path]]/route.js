@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { connectDB as sharedConnectDB } from '@/lib/mongodb';
+import { awardSetTitlesForUser } from '@/lib/set-titles';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import { getPointRegenState as sharedGetPointRegenState, refreshAllUsersPointsIfDue as sharedRefreshAllUsersPointsIfDue } from '@/lib/auth';
 import { getBreakdownValueForRarity } from '@/lib/breakdown-values';
 import { applyDailyObjectiveEvent } from '@/lib/daily-objectives';
+import { getCollectibleCards } from '@/lib/pokemon-tcg';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -2248,7 +2250,7 @@ if (pathname.includes('/api/auth/signin')) {
         if (user) {
           // Get set name from first card (they all have set info)
           const setName = allPulledCards[0]?.set?.name || 'Unknown Set';
-          const totalCardsInSet = allCards.filter(c => c.supertype !== 'Energy').length;
+          const totalCardsInSet = getCollectibleCards(allCards).length;
           const rawAchievementResult = await checkAchievements(user, database, setId, setName, totalCardsInSet);
 
           if (rawAchievementResult?.newAchievements?.length > 0) {
@@ -2933,6 +2935,13 @@ if (pathname.includes('/api/auth/signin')) {
         { id: userId },
         { $inc: { tradesCompleted: 1 } }
       );
+
+      const senderChangedSetIds = Array.from(new Set((trade.requestedCards || []).map((card) => card?.set?.id).filter(Boolean)));
+      const receiverChangedSetIds = Array.from(new Set((trade.offeredCards || []).map((card) => card?.set?.id).filter(Boolean)));
+      await Promise.all([
+        senderChangedSetIds.length ? awardSetTitlesForUser(database.collection('users'), trade.from, senderChangedSetIds) : Promise.resolve(),
+        receiverChangedSetIds.length ? awardSetTitlesForUser(database.collection('users'), userId, receiverChangedSetIds) : Promise.resolve(),
+      ]);
 
       await pushUserNotification(
         database,
