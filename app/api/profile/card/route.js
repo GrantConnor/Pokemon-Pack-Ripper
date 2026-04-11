@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { connectDB } from '@/lib/mongodb';
 import { normalizeStoredSprite } from '@/lib/wilds';
-import { getActiveDisplayTitle, getAllAvailableTitles, getSelectedUnlockedTitle, slugifyTitleLabel, syncSetTitlesFromCollection, mergeAllSetTitles, mergeSpecialTitlesForUsername } from '@/lib/set-titles';
-import { getCardsForSet, getSets } from '@/lib/pokemon-tcg';
+import { getActiveDisplayTitle, getAllAvailableTitles, getSelectedUnlockedTitle, slugifyTitleLabel, mergeSpecialTitlesForUsername, normalizeSelectedTitleId } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,65 +28,6 @@ export async function GET(request) {
     }
 
 
-    try {
-      const collection = Array.isArray(user.collection) ? user.collection : [];
-      const setGroups = new Map();
-      for (const card of collection) {
-        const setId = card?.set?.id;
-        if (!setId || !card?.id) continue;
-        if (!setGroups.has(setId)) {
-          setGroups.set(setId, {
-            setId,
-            uniqueIds: new Set(),
-            storedTotal: Number(card?.set?.total || 0),
-            storedPrintedTotal: Number(card?.set?.printedTotal || 0),
-          });
-        }
-        setGroups.get(setId).uniqueIds.add(card.id);
-      }
-
-      const missingTitleSetIds = Array.from(setGroups.values())
-        .filter((group) => {
-          const hasFull = (user.unlockedTitles || []).some((title) => title?.id === `set-full-${group.setId}`);
-          const hasMaster = (user.unlockedTitles || []).some((title) => title?.id === `set-master-${group.setId}`);
-          if (hasFull && hasMaster) return false;
-          const ownedCount = group.uniqueIds.size;
-          const nearestKnownTarget = Math.max(group.storedPrintedTotal || 0, group.storedTotal || 0);
-          return ownedCount >= Math.max(1, nearestKnownTarget - 8);
-        })
-        .map((group) => group.setId)
-        .slice(0, 12);
-
-      let setsCatalog = [];
-      try {
-        setsCatalog = (await getSets()).sets || [];
-      } catch {
-        setsCatalog = [];
-      }
-
-      const cardsBySetEntries = await Promise.all(
-        missingTitleSetIds.map(async (setId) => {
-          try {
-            const { cards } = await getCardsForSet(setId);
-            return [setId, cards || []];
-          } catch {
-            return [setId, []];
-          }
-        })
-      );
-      const cardsBySet = Object.fromEntries(cardsBySetEntries);
-
-      const syncedTitles = syncSetTitlesFromCollection(user, setsCatalog, cardsBySet);
-      if (JSON.stringify(syncedTitles.unlockedTitles) !== JSON.stringify(user.unlockedTitles || [])) {
-        await users.updateOne(
-          { id: userId },
-          { $set: { unlockedTitles: syncedTitles.unlockedTitles } }
-        );
-        user = { ...user, unlockedTitles: syncedTitles.unlockedTitles };
-      }
-    } catch {
-      // Never let title backfill failure break the player card.
-    }
 
     let favoriteCard = null;
     if (user.favoriteCardId) {
@@ -125,16 +65,11 @@ export async function GET(request) {
       } catch {}
     }
 
-    let computedUnlockedTitles = mergeSpecialTitlesForUsername(user.username, user.unlockedTitles || []);
-    if (user.username === 'Spheal') {
-      try {
-        computedUnlockedTitles = mergeAllSetTitles(computedUnlockedTitles, (await getSets()).sets || []);
-      } catch {}
-    }
+    const computedUnlockedTitles = mergeSpecialTitlesForUsername(user.username, user.unlockedTitles || []);
     if (JSON.stringify(computedUnlockedTitles) !== JSON.stringify(user.unlockedTitles || [])) {
-      await users.updateOne({ id: userId }, { $set: { unlockedTitles: computedUnlockedTitles } });
+      await users.updateOne({ id: userId }, { $set: { unlockedTitles: computedUnlockedTitles, selectedTitleId: normalizeSelectedTitleId(user.selectedTitleId) } });
     }
-    user = { ...user, unlockedTitles: computedUnlockedTitles };
+    user = { ...user, unlockedTitles: computedUnlockedTitles, selectedTitleId: normalizeSelectedTitleId(user.selectedTitleId) };
 
 
     const favoriteCardOptions = editable ? Array.from(new Map((Array.isArray(user.collection) ? user.collection : [])
