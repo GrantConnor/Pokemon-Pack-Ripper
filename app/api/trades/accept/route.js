@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
+import { awardSetTitlesForUser } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -46,6 +47,13 @@ export async function POST(request) {
     await Promise.all([
       users.updateOne({ id: trade.from }, { $inc: { tradesCompleted: 1 } }),
       users.updateOne({ id: userId }, { $inc: { tradesCompleted: 1 } }),
+    ]);
+
+    const senderChangedSetIds = Array.from(new Set((trade.requestedCards || []).map((card) => card?.set?.id).filter(Boolean)));
+    const receiverChangedSetIds = Array.from(new Set((trade.offeredCards || []).map((card) => card?.set?.id).filter(Boolean)));
+    await Promise.all([
+      senderChangedSetIds.length ? awardSetTitlesForUser(users, trade.from, senderChangedSetIds) : Promise.resolve(),
+      receiverChangedSetIds.length ? awardSetTitlesForUser(users, userId, receiverChangedSetIds) : Promise.resolve(),
     ]);
 
     return NextResponse.json({ success: true, message: `Trade completed with ${trade.fromUsername}` });
