@@ -6,7 +6,32 @@ import { getBreakdownValueForRarity } from '@/lib/breakdown-values';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const ALLOWED_RARITIES = ['Common', 'Uncommon', 'Rare', 'Rare Holo'];
+const ALLOWED_RARITIES = [
+  'Common',
+  'Uncommon',
+  'Rare Holo',
+  'Rare Holo EX',
+  'Rare Holo V',
+  'Rare Holo VMAX',
+  'Double Rare',
+  'Illustration Rare',
+  'Special Illustration Rare',
+  'Ultra Rare',
+  'Rare Ultra',
+  'Rare Rainbow',
+  'Hyper Rare',
+  'Secret Rare',
+  'Rare Secret',
+  'Amazing Rare',
+  'Rare BREAK',
+  'Rare Prism Star',
+  'ACE SPEC Rare',
+  'Rare Shiny',
+  'Shiny Rare',
+  'Radiant Rare',
+  'LEGEND',
+  'Rare Holo Star',
+];
 
 export async function POST(request) {
   try {
@@ -57,14 +82,21 @@ export async function POST(request) {
       if (!selectedSet.size) {
         return NextResponse.json({ error: 'No selected cards provided' }, { status: 400 });
       }
-      const taken = new Set();
-      const sortedCollection = [...collection].sort((a, b) => new Date(a.pulledAt || 0) - new Date(b.pulledAt || 0));
-      for (const card of sortedCollection) {
+
+      const grouped = new Map();
+      for (const card of collection) {
         if (!selectedSet.has(card.id)) continue;
-        if (!allowedSet.has(card.rarity || 'Common')) continue;
-        if (taken.has(card.id)) continue;
-        cardsToBreakdown.push(card);
-        taken.add(card.id);
+        if (!grouped.has(card.id)) grouped.set(card.id, []);
+        grouped.get(card.id).push(card);
+      }
+
+      for (const cards of grouped.values()) {
+        if (cards.length <= 1) continue;
+        const sortedCards = [...cards].sort((a, b) => new Date(a.pulledAt || 0) - new Date(b.pulledAt || 0));
+        const eligibleDuplicate = sortedCards.slice(1).find((card) => allowedSet.has(card.rarity || 'Common'));
+        if (eligibleDuplicate) {
+          cardsToBreakdown.push(eligibleDuplicate);
+        }
       }
     }
 

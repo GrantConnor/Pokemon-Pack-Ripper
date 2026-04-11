@@ -483,7 +483,9 @@ export default function PokemonWilds() {
       setFriends(sortFriendsByOnline((data.friends || []).filter(Boolean)));
       setPendingRequests((data.pendingRequests || []).filter(Boolean));
       setBattleRequests((data.battleRequests || []).filter(Boolean));
+      setOutgoingBattleRequests((data.outgoingBattleRequests || []).filter(Boolean));
       setTradeRequests((data.tradeRequests || []).filter(Boolean));
+      setOutgoingTradeRequests((data.outgoingTradeRequests || []).filter(Boolean));
       setActiveBattle(data.activeBattleId || null);
     } catch (err) {
       console.error('Error loading friends:', err);
@@ -2867,6 +2869,52 @@ export default function PokemonWilds() {
                             <Button size="sm" onClick={() => handleAcceptBattleRequest(request)} className="bg-green-600 hover:bg-green-500">Accept</Button>
                             <Button size="sm" onClick={() => handleDeclineBattleRequest(request)} className="bg-red-600 hover:bg-red-500">Decline</Button>
                           </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-2 border-purple-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(168,85,247,0.2)]">
+                <CardHeader>
+                  <CardTitle className="text-purple-300">Outgoing Trade Requests ({outgoingTradeRequests.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {outgoingTradeRequests.length === 0 ? (
+                    <p className="text-cyan-100/50 text-center py-4">No outgoing trade requests</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {outgoingTradeRequests.filter(Boolean).map(trade => (
+                        <div key={trade.id} className="flex items-center justify-between p-3 bg-slate-700/50 rounded">
+                          <div>
+                            <p className="text-white font-bold">To {trade.toUsername || trade.recipientUsername}</p>
+                            <p className="text-xs text-cyan-100/60">Pending trade request</p>
+                          </div>
+                          <Badge className="bg-purple-500">Pending</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-2 border-red-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(239,68,68,0.2)]">
+                <CardHeader>
+                  <CardTitle className="text-red-300">Outgoing Battle Requests ({outgoingBattleRequests.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {outgoingBattleRequests.length === 0 ? (
+                    <p className="text-cyan-100/50 text-center py-4">No outgoing battle requests</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {outgoingBattleRequests.filter(Boolean).map(request => (
+                        <div key={request.id} className="flex items-center justify-between p-3 bg-slate-700/50 rounded">
+                          <div>
+                            <p className="text-white font-bold">To {request.to?.username || request.recipientUsername}</p>
+                            <p className="text-xs text-cyan-100/60">Pending battle request</p>
+                          </div>
+                          <Badge className="bg-red-500">Pending</Badge>
                         </div>
                       ))}
                     </div>
