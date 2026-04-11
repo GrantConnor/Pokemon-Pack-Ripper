@@ -235,6 +235,7 @@ export default function App() {
   const [showFavoriteCardPicker, setShowFavoriteCardPicker] = useState(false);
   const [favoriteCardSearchQuery, setFavoriteCardSearchQuery] = useState('');
   const [breakdownMode, setBreakdownMode] = useState(false);
+  const BREAKDOWN_DEFAULT_RARITIES = ['Common', 'Uncommon'];
   const [pendingBreakdownRarities, setPendingBreakdownRarities] = useState(BREAKDOWN_DEFAULT_RARITIES);
   const [activeBreakdownRarities, setActiveBreakdownRarities] = useState(BREAKDOWN_DEFAULT_RARITIES);
   const [selectedForBreakdown, setSelectedForBreakdown] = useState([]);
@@ -471,7 +472,6 @@ export default function App() {
 
   // Group duplicates and sort
 
-  const BREAKDOWN_DEFAULT_RARITIES = ['Common', 'Uncommon'];
   const BREAKDOWN_OPTIONAL_RARITIES = [
     'Rare Holo',
     'Rare Holo EX',
@@ -2450,7 +2450,6 @@ export default function App() {
                   </div>
                 </div>
               </div>
-            )}
             )}
 
             {/* Search and Filters */}
