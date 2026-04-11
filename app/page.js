@@ -2451,6 +2451,7 @@ export default function App() {
                 </div>
               </div>
             )}
+            )}
 
             {/* Search and Filters */}
             <div className="relative z-50 overflow-visible bg-slate-800/50 backdrop-blur-sm border-2 border-cyan-500/30 rounded-lg p-4 mb-6 shadow-[0_0_20px_rgba(6,182,212,0.2)]">
