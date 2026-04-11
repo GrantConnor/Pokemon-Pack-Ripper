@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic';
 const ALLOWED_RARITIES = [
   'Common',
   'Uncommon',
+  'Rare',
   'Rare Holo',
   'Rare Holo EX',
   'Rare Holo V',
