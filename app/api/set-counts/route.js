@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getCardsForSet } from '@/lib/pokemon-tcg';
+import { getCardsForSet, getCollectibleCards } from '@/lib/pokemon-tcg';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,7 +18,7 @@ export async function GET(request) {
       ids.map(async (id) => {
         try {
           const { cards } = await getCardsForSet(id);
-          return [id, Array.isArray(cards) ? cards.length : 0];
+          return [id, getCollectibleCards(cards).length];
         } catch {
           return [id, null];
         }

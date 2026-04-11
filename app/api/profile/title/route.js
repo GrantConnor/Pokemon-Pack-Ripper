@@ -1,5 +1,4 @@
-import { getAllAvailableTitles, mergeAllSetTitles, mergeSpecialTitlesForUsername } from '@/lib/set-titles';
-import { getSets } from '@/lib/pokemon-tcg';
+import { getAllAvailableTitles, mergeSpecialTitlesForUsername, normalizeSelectedTitleId } from '@/lib/set-titles';
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 
@@ -23,14 +22,12 @@ export async function POST(request) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    let computedUnlockedTitles = mergeSpecialTitlesForUsername(user.username, user.unlockedTitles || []);
-    if (user.username === 'Spheal') {
-      computedUnlockedTitles = mergeAllSetTitles(computedUnlockedTitles, (await getSets()).sets || []);
-    }
+    const computedUnlockedTitles = mergeSpecialTitlesForUsername(user.username, user.unlockedTitles || []);
     if (JSON.stringify(computedUnlockedTitles) !== JSON.stringify(user.unlockedTitles || [])) {
-      await database.collection('users').updateOne({ id: userId }, { $set: { unlockedTitles: computedUnlockedTitles } });
+      await database.collection('users').updateOne({ id: userId }, { $set: { unlockedTitles: computedUnlockedTitles, selectedTitleId: normalizeSelectedTitleId(user.selectedTitleId) } });
     }
     user.unlockedTitles = computedUnlockedTitles;
+    user.selectedTitleId = normalizeSelectedTitleId(user.selectedTitleId);
 
     const ownedTitle = getAllAvailableTitles({ battleWins: user.battleWins || 0, unlockedTitles: user.unlockedTitles || [] }).find((title) => title?.id === titleId);
     if (!ownedTitle) {

@@ -232,9 +232,11 @@ export default function App() {
   const [viewingFriendCollection, setViewingFriendCollection] = useState([]);
   const [showPlayerCard, setShowPlayerCard] = useState(false);
   const [playerCard, setPlayerCard] = useState(null);
+  const [showFavoriteCardPicker, setShowFavoriteCardPicker] = useState(false);
+  const [favoriteCardSearchQuery, setFavoriteCardSearchQuery] = useState('');
   const [breakdownMode, setBreakdownMode] = useState(false);
-  const [breakdownAllMultiples, setBreakdownAllMultiples] = useState(true);
-  const [breakdownIncludePremium, setBreakdownIncludePremium] = useState(false);
+  const [pendingBreakdownRarities, setPendingBreakdownRarities] = useState(BREAKDOWN_DEFAULT_RARITIES);
+  const [activeBreakdownRarities, setActiveBreakdownRarities] = useState(BREAKDOWN_DEFAULT_RARITIES);
   const [selectedForBreakdown, setSelectedForBreakdown] = useState([]);
   const [showBreakdownQuantityModal, setShowBreakdownQuantityModal] = useState(false);
   const [breakdownQuantityCard, setBreakdownQuantityCard] = useState(null);
@@ -311,7 +313,7 @@ export default function App() {
       fetch('/api/presence/ping', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, includePremium: breakdownIncludePremium })
+        body: JSON.stringify({ userId: user.id })
       }).catch(err => console.error('Presence ping failed on home page:', err));
     };
 
@@ -469,6 +471,32 @@ export default function App() {
 
   // Group duplicates and sort
 
+  const BREAKDOWN_DEFAULT_RARITIES = ['Common', 'Uncommon'];
+  const BREAKDOWN_OPTIONAL_RARITIES = [
+    'Rare Holo',
+    'Rare Holo EX',
+    'Rare Holo V',
+    'Rare Holo VMAX',
+    'Double Rare',
+    'Illustration Rare',
+    'Special Illustration Rare',
+    'Ultra Rare',
+    'Rare Ultra',
+    'Rare Rainbow',
+    'Hyper Rare',
+    'Secret Rare',
+    'Rare Secret',
+    'Amazing Rare',
+    'Rare BREAK',
+    'Rare Prism Star',
+    'ACE SPEC Rare',
+    'Rare Shiny',
+    'Shiny Rare',
+    'Radiant Rare',
+    'LEGEND',
+    'Rare Holo Star',
+  ];
+
   const SORT_OPTIONS = [
     { value: 'newest', label: 'Newest' },
     { value: 'name', label: 'Name (A-Z)' },
@@ -596,8 +624,32 @@ export default function App() {
   const pokemonTradeRequests = useMemo(() => (tradeRequests || []).filter((trade) => trade?.type === 'pokemon-trade' || trade?.offeredPokemon || trade?.requestedPokemon), [tradeRequests]);
 
   const tradeOfferCards = useMemo(() => {
-    return [...collection].sort((a, b) => new Date(b.pulledAt || 0) - new Date(a.pulledAt || 0));
+    const grouped = new Map();
+    [...collection]
+      .sort((a, b) => new Date(b.pulledAt || 0) - new Date(a.pulledAt || 0))
+      .forEach((card) => {
+        if (!grouped.has(card.id)) {
+          grouped.set(card.id, { ...card, instances: [], count: 0 });
+        }
+        const entry = grouped.get(card.id);
+        entry.instances.push(card);
+        entry.count += 1;
+      });
+
+    return Array.from(grouped.values());
   }, [collection]);
+
+  const getSelectedTradeQuantity = (cardId) => selectedTradeCards.filter((card) => card.id === cardId).length;
+
+  const setTradeCardQuantity = (groupedCard, quantity) => {
+    const currentQuantity = getSelectedTradeQuantity(groupedCard.id);
+    const otherSelectedCount = selectedTradeCards.length - currentQuantity;
+    const maxAllowed = Math.min(groupedCard.count, 10 - otherSelectedCount);
+    const safeQuantity = Math.max(0, Math.min(quantity, maxAllowed));
+    const remaining = selectedTradeCards.filter((card) => card.id !== groupedCard.id);
+    const nextCards = groupedCard.instances.slice(0, safeQuantity);
+    setSelectedTradeCards([...remaining, ...nextCards]);
+  };
 
 
   const previewOwnedIds = useMemo(() => new Set(collection.map(card => card.id)), [collection]);
@@ -949,12 +1001,9 @@ export default function App() {
     }
   };
 
-  const toggleTradeCard = (card) => {
-    if (selectedTradeCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt)) {
-      setSelectedTradeCards(selectedTradeCards.filter(c => !(c.id === card.id && c.pulledAt === card.pulledAt)));
-    } else if (selectedTradeCards.length < 10) {
-      setSelectedTradeCards([...selectedTradeCards, card]);
-    }
+  const toggleTradeCard = (groupedCard) => {
+    const currentQuantity = getSelectedTradeQuantity(groupedCard.id);
+    setTradeCardQuantity(groupedCard, currentQuantity > 0 ? 0 : 1);
   };
 
   const toggleRequestCard = (card) => {
@@ -1151,11 +1200,19 @@ export default function App() {
   };
 
   const getBreakdownValue = (rarity) => getBreakdownValueForRarity(rarity);
-  const isPremiumBreakdownRarity = (rarity) => !['Common', 'Uncommon', 'Rare', 'Rare Holo'].includes(rarity);
 
-  const calculateMultiplesBreakdownSummary = () => {
+  const togglePendingBreakdownRarity = (rarity) => {
+    setPendingBreakdownRarities((prev) => (
+      prev.includes(rarity)
+        ? prev.filter((item) => item !== rarity)
+        : [...prev, rarity]
+    ));
+  };
+
+  const calculateMultiplesBreakdownSummary = (rarities = activeBreakdownRarities) => {
+    const allowedRarities = new Set(rarities);
     return groupedAndSortedCollection.reduce((summary, card) => {
-      if (card.count > 1 && (breakdownIncludePremium || !isPremiumBreakdownRarity(card.rarity))) {
+      if (card.count > 1 && allowedRarities.has(card.rarity || 'Common')) {
         const duplicatesToBreakDown = card.count - 1;
         summary.cards += duplicatesToBreakDown;
         summary.points += getBreakdownValue(card.rarity) * duplicatesToBreakDown;
@@ -1164,33 +1221,44 @@ export default function App() {
     }, { cards: 0, points: 0 });
   };
 
-  const handleBreakdownCards = async () => {
-    if (!breakdownAllMultiples) {
-      alert('Check "Break down all multiples" to continue.');
-      return;
-    }
+  const calculateSelectedBreakdownSummary = (rarities = activeBreakdownRarities) => {
+    const allowedRarities = new Set(rarities);
+    return selectedForBreakdown.reduce((summary, card) => {
+      if (card.count > 1 && allowedRarities.has(card.rarity || 'Common')) {
+        summary.cards += 1;
+        summary.points += getBreakdownValue(card.rarity);
+      }
+      return summary;
+    }, { cards: 0, points: 0 });
+  };
 
+  const handleConfirmBreakdownRarities = () => {
+    setActiveBreakdownRarities(pendingBreakdownRarities);
+  };
+
+  const handleBreakdownCards = async () => {
     const summary = calculateMultiplesBreakdownSummary();
     if (summary.cards === 0) {
-      alert('You do not have any duplicate cards to break down.');
+      alert('You do not have any duplicate cards matching the selected rarities to break down.');
       return;
     }
 
-    if (!window.confirm(`Break down all duplicate cards (${summary.cards} cards) for ${summary.points} points? This will leave 1 copy of each card in your collection.`)) {
+    if (!window.confirm(`Break down all duplicate cards matching the selected rarities (${summary.cards} cards) for ${summary.points} points? This will leave 1 copy of each card in your collection.`)) {
       return;
     }
 
     try {
-      const response = await fetch('/api/cards/breakdown-multiples', {
+      const response = await fetch('/api/cards/breakdown-batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id })
+        body: JSON.stringify({ userId: user.id, mode: 'duplicates', rarities: activeBreakdownRarities })
       });
 
       const data = await response.json();
       if (response.ok) {
         alert(`Successfully broke down ${data.cardsBreakdown} duplicate cards for ${data.pointsAwarded} points!`);
         setBreakdownMode(false);
+        setSelectedForBreakdown([]);
         invalidateCollectionCache();
         loadCollection({ forceRefresh: true });
         setUser(prev => ({ ...prev, points: prev.points + data.pointsAwarded }));
@@ -1207,31 +1275,33 @@ export default function App() {
       alert('Select one or more cards to break down.');
       return;
     }
-    const premiumSelected = selectedForBreakdown.some((card) => isPremiumBreakdownRarity(card.rarity));
-    if (premiumSelected && !breakdownIncludePremium) {
-      alert('Enable the premium breakdown option to include cards above Rare / Rare Holo.');
+
+    const summary = calculateSelectedBreakdownSummary();
+    if (summary.cards === 0) {
+      alert('Selected cards must match the active rarities and have more than 1 copy so 1 card always remains in your collection.');
       return;
     }
-    const totalPoints = selectedForBreakdown.reduce((sum, card) => sum + getBreakdownValue(card.rarity), 0);
-    if (!window.confirm(`Break down ${selectedForBreakdown.length} selected cards for ${totalPoints} points? This can include last copies.`)) return;
+
+    if (!window.confirm(`Break down 1 copy from ${summary.cards} selected cards for ${summary.points} points? This will always leave 1 copy unless you use single-card breakdown.`)) return;
     try {
-      let totalAwarded = 0;
-      for (const card of selectedForBreakdown) {
-        const response = await fetch('/api/cards/breakdown-single-copy', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: user.id, cardId: card.id })
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || `Failed to break down ${card.name}`);
-        totalAwarded += data.pointsAwarded || 0;
-      }
-      alert(`Successfully broke down ${selectedForBreakdown.length} selected cards for ${totalAwarded} points!`);
+      const response = await fetch('/api/cards/breakdown-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          mode: 'selected',
+          rarities: activeBreakdownRarities,
+          selectedCardIds: selectedForBreakdown.map((card) => card.id),
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to break down selected cards');
+      alert(`Successfully broke down ${data.cardsBreakdown} selected duplicate cards for ${data.pointsAwarded} points!`);
       setSelectedForBreakdown([]);
       setBreakdownMode(false);
       invalidateCollectionCache();
       loadCollection({ forceRefresh: true });
-      setUser(prev => ({ ...prev, points: prev.points + totalAwarded }));
+      setUser(prev => ({ ...prev, points: prev.points + data.pointsAwarded }));
     } catch (err) {
       alert(err.message || 'Error breaking down selected cards');
     }
@@ -1752,9 +1822,9 @@ export default function App() {
       const response = await fetch(`/api/cards?setId=${set.id}`);
       const data = await response.json();
       if (response.ok) {
-        const nonEnergyCards = (data.cards || []).filter(card => card.supertype !== 'Energy');
-        setPreviewCards(nonEnergyCards);
-        writeLocalCache(cacheKey, nonEnergyCards);
+        const collectibleCards = (data.cards || []).filter(card => card.supertype !== 'Energy');
+        setPreviewCards(collectibleCards);
+        writeLocalCache(cacheKey, collectibleCards);
       }
     } catch (err) {
       console.error('Error loading preview:', err);
@@ -1873,6 +1943,20 @@ export default function App() {
   };
 
   // Auth screen
+  const filteredFavoriteCardOptions = useMemo(() => {
+    const options = playerCard?.favoriteCardOptions || [];
+    const query = favoriteCardSearchQuery.trim().toLowerCase();
+    if (!query) return options;
+
+    return options.filter((card) => {
+      const name = String(card?.name || '').toLowerCase();
+      const setName = String(card?.setName || '').toLowerCase();
+      const rarity = String(card?.rarity || '').toLowerCase();
+      return name.includes(query) || setName.includes(query) || rarity.includes(query);
+    });
+  }, [playerCard?.favoriteCardOptions, favoriteCardSearchQuery]);
+
+
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black flex items-center justify-center p-4 relative overflow-hidden">
@@ -1963,6 +2047,7 @@ export default function App() {
   }
 
   // Main app screen
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black relative overflow-hidden">
       {/* Grid Background */}
@@ -2218,7 +2303,7 @@ export default function App() {
                         <CardContent className="p-4">
                           <CardTitle className="text-lg mb-2 text-white">{set.name}</CardTitle>
                           <CardDescription className="text-sm mb-3 text-cyan-100/70 font-medium">
-                            {set.series} • {setCardCounts[set.id] ?? set.total} cards
+                            {set.series} • {setCardCounts[set.id] ?? set.printedTotal ?? set.total} cards
                           </CardDescription>
                           <div className="space-y-2">
                             <Button 
@@ -2289,9 +2374,13 @@ export default function App() {
             <div className="flex justify-end mb-4">
               <Button
                 onClick={() => {
-                  setBreakdownMode(!breakdownMode);
+                  const nextMode = !breakdownMode;
+                  setBreakdownMode(nextMode);
                   setSelectedForBreakdown([]);
-                  setBreakdownAllMultiples(true);
+                  if (nextMode) {
+                    setPendingBreakdownRarities(BREAKDOWN_DEFAULT_RARITIES);
+                    setActiveBreakdownRarities(BREAKDOWN_DEFAULT_RARITIES);
+                  }
                 }}
                 className={breakdownMode ? 'bg-gray-600 hover:bg-gray-500' : 'bg-red-600 hover:bg-red-500 text-white font-bold'}
               >
@@ -2302,47 +2391,58 @@ export default function App() {
             {/* Breakdown Action Bar */}
             {breakdownMode && (
               <div className="bg-gradient-to-r from-orange-900/50 to-red-900/50 border-2 border-orange-500/50 rounded-lg p-4 mb-4">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex-1">
                     <p className="text-orange-400 font-bold">Breakdown Mode Active</p>
                     <p className="text-sm text-orange-100/70">
-                      Duplicate cards: {calculateMultiplesBreakdownSummary().cards} = {calculateMultiplesBreakdownSummary().points} points
+                      By default, only Common and Uncommon duplicates are included. Bulk breakdown always leaves 1 copy unless you use single-card breakdown.
                     </p>
-                    <label className="mt-2 flex items-center gap-2 text-sm text-white">
-                      <input
-                        type="checkbox"
-                        checked={breakdownAllMultiples}
-                        onChange={(e) => setBreakdownAllMultiples(e.target.checked)}
-                        className="h-4 w-4 accent-red-500"
-                      />
-                      Break down all multiples (leave 1 copy)
-                    </label>
                     <div className="mt-3 rounded-lg border border-yellow-400/40 bg-yellow-900/20 p-3 shadow-[0_0_20px_rgba(250,204,21,0.12)]">
-                      <p className="text-sm font-bold text-yellow-300">Premium Breakdown</p>
-                      <label className="mt-2 flex items-center gap-2 text-sm text-white">
-                        <input
-                          type="checkbox"
-                          checked={breakdownIncludePremium}
-                          onChange={(e) => setBreakdownIncludePremium(e.target.checked)}
-                          className="h-4 w-4 accent-yellow-500"
-                        />
-                        Include cards above Rare / Rare Holo
-                      </label>
-                      <p className="mt-1 text-xs text-yellow-100/80">Required for any rarity above Common, Uncommon, Rare, or Rare Holo.</p>
+                      <p className="text-sm font-bold text-yellow-300">Included by default</p>
+                      <p className="mt-1 text-sm text-white">Common, Uncommon</p>
+                      <p className="mt-3 text-sm font-bold text-yellow-300">Optional rarities</p>
+                      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                        {BREAKDOWN_OPTIONAL_RARITIES.map((rarity) => (
+                          <label key={rarity} className="flex items-center gap-2 rounded border border-yellow-400/20 bg-slate-900/20 px-2 py-1 text-sm text-white">
+                            <input
+                              type="checkbox"
+                              checked={pendingBreakdownRarities.includes(rarity)}
+                              onChange={() => togglePendingBreakdownRarity(rarity)}
+                              className="h-4 w-4 accent-yellow-500"
+                            />
+                            <span>{rarity}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <Button
+                          onClick={handleConfirmBreakdownRarities}
+                          className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold"
+                        >
+                          Confirm Rarity Selection
+                        </Button>
+                        <p className="text-xs text-yellow-100/80">Active rarities: {activeBreakdownRarities.join(', ')}</p>
+                      </div>
                     </div>
-                    <p className="mt-2 text-sm text-cyan-100/80">Selected cards: {selectedForBreakdown.length} = {selectedForBreakdown.reduce((sum, card) => sum + getBreakdownValue(card.rarity), 0)} points</p>
+                    <p className="mt-3 text-sm text-orange-100/80">
+                      Duplicate cards matching active rarities: {calculateMultiplesBreakdownSummary().cards} = {calculateMultiplesBreakdownSummary().points} points
+                    </p>
+                    <p className="mt-1 text-sm text-cyan-100/80">
+                      Selected cards eligible for 1-copy breakdown: {calculateSelectedBreakdownSummary().cards} = {calculateSelectedBreakdownSummary().points} points
+                    </p>
+                    <p className="mt-1 text-xs text-cyan-100/60">Selected cards: {selectedForBreakdown.length}</p>
                   </div>
                   <div className="flex flex-col gap-2">
                     <Button
                       onClick={handleBreakdownCards}
-                      disabled={!breakdownAllMultiples || calculateMultiplesBreakdownSummary().cards === 0}
+                      disabled={calculateMultiplesBreakdownSummary().cards === 0}
                       className="bg-red-500 hover:bg-red-400 text-white font-bold"
                     >
                       Break Down Duplicates
                     </Button>
                     <Button
                       onClick={handleBreakdownSelectedCards}
-                      disabled={selectedForBreakdown.length === 0}
+                      disabled={calculateSelectedBreakdownSummary().cards === 0}
                       className="bg-orange-500 hover:bg-orange-400 text-white font-bold"
                     >
                       Break Down Selected
@@ -2831,6 +2931,57 @@ export default function App() {
                   </ScrollArea>
                 </CardContent>
               </Card>
+
+
+              <Card className="border-2 border-purple-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(168,85,247,0.2)]">
+                <CardHeader>
+                  <CardTitle className="text-purple-300">Outgoing Trade Requests ({outgoingTradeRequests.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-40">
+                    {outgoingTradeRequests.length === 0 ? (
+                      <p className="text-cyan-100/50 text-center py-4">No outgoing trade requests</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {outgoingTradeRequests.map((trade) => (
+                          <div key={trade.id} className="flex items-center justify-between p-2 bg-slate-700/50 rounded">
+                            <div>
+                              <span className="text-white font-semibold">To {trade.toUsername || trade.recipientUsername}</span>
+                              <p className="text-xs text-cyan-100/60">Pending trade request</p>
+                            </div>
+                            <Badge className="bg-purple-500 text-white">Pending</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+
+              <Card className="border-2 border-red-500/30 bg-slate-800/50 backdrop-blur-sm shadow-[0_0_20px_rgba(239,68,68,0.2)]">
+                <CardHeader>
+                  <CardTitle className="text-red-300">Outgoing Battle Requests ({outgoingBattleRequests.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-40">
+                    {outgoingBattleRequests.length === 0 ? (
+                      <p className="text-cyan-100/50 text-center py-4">No outgoing battle requests</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {outgoingBattleRequests.map((request) => (
+                          <div key={request.id} className="flex items-center justify-between p-2 bg-slate-700/50 rounded">
+                            <div>
+                              <span className="text-white font-semibold">To {request.to?.username || request.recipientUsername}</span>
+                              <p className="text-xs text-cyan-100/60">Pending battle request</p>
+                            </div>
+                            <Badge className="bg-red-500 text-white">Pending</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
 
@@ -2852,6 +3003,79 @@ export default function App() {
               <Sparkles className="h-8 w-8 text-cyan-400 absolute -top-2 -right-2 animate-spin drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]" />
             </div>
             <p className="mt-4 text-lg font-bold text-cyan-100">Ripping open your {selectedSet?.name || 'selected'} pack...</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showFavoriteCardPicker}
+        onOpenChange={(open) => {
+          setShowFavoriteCardPicker(open);
+          if (!open) setFavoriteCardSearchQuery('');
+        }}
+      >
+        <DialogContent className="max-w-3xl border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-cyan-400">Choose Favorite Card</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-3.5 h-4 w-4 text-cyan-400" />
+              <Input
+                value={favoriteCardSearchQuery}
+                onChange={(e) => setFavoriteCardSearchQuery(e.target.value)}
+                placeholder="Search your collection by name, set, or rarity..."
+                className="border-cyan-500/30 bg-slate-800/90 pl-10 text-white placeholder:text-slate-400"
+              />
+            </div>
+
+            <ScrollArea className="h-[26rem] rounded-lg border border-cyan-500/20 bg-slate-950/40 p-2">
+              <div className="grid grid-cols-1 gap-3 pr-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await handleSelectFavoriteCard('');
+                    setShowFavoriteCardPicker(false);
+                    setFavoriteCardSearchQuery('');
+                  }}
+                  className={`rounded-lg border p-3 text-left transition ${!playerCard?.favoriteCardId ? 'border-cyan-400 bg-cyan-500/10' : 'border-slate-700 bg-slate-900/70 hover:border-cyan-500/40'}`}
+                >
+                  <p className="font-semibold text-white">No Favorite Card</p>
+                  <p className="text-sm text-slate-400">Clear the favorite card shown on your player card.</p>
+                </button>
+
+                {filteredFavoriteCardOptions.map((card) => (
+                  <button
+                    key={card.id}
+                    type="button"
+                    onClick={async () => {
+                      await handleSelectFavoriteCard(card.id);
+                      setShowFavoriteCardPicker(false);
+                      setFavoriteCardSearchQuery('');
+                    }}
+                    className={`flex items-center gap-3 rounded-lg border p-3 text-left transition ${playerCard?.favoriteCardId === card.id ? 'border-cyan-400 bg-cyan-500/10' : 'border-slate-700 bg-slate-900/70 hover:border-cyan-500/40'}`}
+                  >
+                    {card.image ? (
+                      <img src={card.image} alt={card.name} className="h-20 w-14 rounded-md border border-cyan-500/20 object-cover" />
+                    ) : (
+                      <div className="flex h-20 w-14 items-center justify-center rounded-md border border-slate-700 bg-slate-800 text-xs text-slate-400">No Image</div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-white">{card.name}</p>
+                      <p className="truncate text-sm text-slate-300">{card.setName || 'Unknown Set'}</p>
+                      <p className="text-xs text-slate-400">{card.rarity || 'Unknown Rarity'}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {!filteredFavoriteCardOptions.length && (
+                <div className="flex h-40 items-center justify-center text-center text-slate-400">
+                  No cards in your collection match that search.
+                </div>
+              )}
+            </ScrollArea>
           </div>
         </DialogContent>
       </Dialog>
@@ -3169,8 +3393,12 @@ export default function App() {
             <div className="space-y-4">
               <Card className="border-2 border-cyan-500/30 bg-slate-800/60">
                 <CardContent className="pt-6 text-center space-y-2">
-                  <p className={`text-sm font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`} style={playerCard.trainerRank?.color ? { color: playerCard.trainerRank.color } : undefined}>{playerCard.trainerRank?.label || 'Trainer'}</p>
-                  <p className={`text-3xl font-bold ${playerCard.trainerRank?.textClass || 'text-white'}`} style={playerCard.trainerRank?.color ? { color: playerCard.trainerRank.color } : undefined}>{playerCard.username}</p>
+                  <div className="flex justify-center">
+                    <span className={`inline-flex rounded-full border px-3 py-1 text-sm font-bold ${playerCard.trainerRank?.badgeClass || 'bg-slate-700/40 text-white border-slate-400/40'}`} style={playerCard.trainerRank?.color ? { color: playerCard.trainerRank.color, borderColor: playerCard.trainerRank.color } : undefined}>
+                      {playerCard.trainerRank?.label || 'Trainer'}
+                    </span>
+                  </div>
+                  <p className="text-3xl font-bold text-white">{playerCard.username}</p>
                   {playerCard.baseTrainerRank && (
                     <p className="text-xs text-slate-400">Battle Rank: <span className={playerCard.baseTrainerRank.textClass || 'text-white'} style={playerCard.baseTrainerRank?.color ? { color: playerCard.baseTrainerRank.color } : undefined}>{playerCard.baseTrainerRank.label}</span></p>
                   )}
@@ -3214,20 +3442,21 @@ export default function App() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {playerCard.id === user?.id && (
-                    <div>
-                      <p className="text-xs font-semibold text-cyan-300 mb-2">Choose Favorite Card</p>
-                      <select
-                        value={playerCard.favoriteCardId || ''}
-                        onChange={(e) => handleSelectFavoriteCard(e.target.value)}
-                        className="w-full rounded-md border border-cyan-500/30 bg-slate-900/80 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-cyan-300">Choose Favorite Card</p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setShowFavoriteCardPicker(true)}
+                        className="w-full justify-between border-cyan-500/30 bg-slate-900/80 text-white hover:bg-slate-800"
                       >
-                        <option value="">Select a favorite card</option>
-                        {(playerCard.favoriteCardOptions || []).map((card) => (
-                          <option key={card.id} value={card.id}>
-                            {card.name}{card.setName ? ` — ${card.setName}` : ''}
-                          </option>
-                        ))}
-                      </select>
+                        <span className="truncate">
+                          {playerCard.favoriteCard
+                            ? `${playerCard.favoriteCard.name}${playerCard.favoriteCard.set?.name ? ` — ${playerCard.favoriteCard.set.name}` : ''}`
+                            : 'Select a favorite card from your collection'}
+                        </span>
+                        <Search className="ml-2 h-4 w-4 text-cyan-300" />
+                      </Button>
                     </div>
                   )}
                   {playerCard.favoriteCard ? (
@@ -3393,7 +3622,8 @@ export default function App() {
                   {tradeOfferCards
                     .filter(card => !tradeSearchOffer || card.name.toLowerCase().includes(tradeSearchOffer.toLowerCase()))
                     .map((card, index) => {
-                      const isSelected = selectedTradeCards.find(c => c.id === card.id && c.pulledAt === card.pulledAt);
+                      const selectedQuantity = getSelectedTradeQuantity(card.id);
+                      const isSelected = selectedQuantity > 0;
                       return (
                         <Card
                           key={index}
@@ -3406,11 +3636,33 @@ export default function App() {
                         >
                           <div className="relative">
                             <img src={card.images?.small} alt={card.name} className="w-full" />
+                            <Badge className="absolute top-1 left-1 bg-cyan-500 text-black font-bold">x{card.count}</Badge>
                             {isSelected && (
-                              <div className="absolute top-1 right-1 bg-purple-500 rounded-full p-1">
-                                <Check className="h-4 w-4 text-white" />
+                              <div className="absolute top-1 right-1 bg-purple-500 rounded-full px-2 py-1 text-xs font-bold text-white">
+                                {selectedQuantity} selected
                               </div>
                             )}
+                            <div className="absolute bottom-1 right-1 flex items-center gap-1 rounded bg-slate-900/80 px-1 py-1" onClick={(event) => event.stopPropagation()}>
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-7 w-7 px-0 bg-slate-700 hover:bg-slate-600 text-white"
+                                onClick={() => setTradeCardQuantity(card, selectedQuantity - 1)}
+                                disabled={selectedQuantity === 0}
+                              >
+                                -
+                              </Button>
+                              <span className="min-w-[1.5rem] text-center text-xs font-bold text-white">{selectedQuantity}</span>
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-7 w-7 px-0 bg-purple-600 hover:bg-purple-500 text-white"
+                                onClick={() => setTradeCardQuantity(card, selectedQuantity + 1)}
+                                disabled={selectedTradeCards.length >= 10 && selectedQuantity >= getSelectedTradeQuantity(card.id)}
+                              >
+                                +
+                              </Button>
+                            </div>
                           </div>
                         </Card>
                       );
