@@ -1661,7 +1661,7 @@ export default function PokemonWilds() {
                 </div>
               )}
             </ScrollArea>
-          </div>
+          </div></div>
         </DialogContent>
       </Dialog>
 
@@ -1807,70 +1807,73 @@ export default function PokemonWilds() {
             </select>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto pr-4"><div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-            {filteredMyPokemon.length === 0 ? (
-              <div className="col-span-full text-center py-12">
-                <p className="text-gray-400 text-lg">No Pokemon caught yet!</p>
-                <p className="text-gray-500">Visit the wilds to catch some Pokemon.</p>
-              </div>
-            ) : (
-              filteredMyPokemon.map((pokemon, idx) => {
-                const pokemonKey = String(pokemon._id || pokemon.id);
-                const isSelectedForRelease = selectedForRelease.includes(pokemonKey);
-                return (
-                <Card 
-                  key={idx}
-                  className={`bg-slate-800/90 cursor-pointer hover:border-purple-500 transition-all ${
-                    multiReleaseMode
-                      ? (isSelectedForRelease ? 'border-red-400 ring-2 ring-red-400' : 'border-red-500/30')
-                      : 'border-purple-500/30'
-                  } ${pokemon.isShiny ? 'ring-2 ring-yellow-400' : ''}`}
-                  onClick={() => {
-                    if (multiReleaseMode) {
-                      togglePokemonForRelease(pokemon);
-                      return;
-                    }
-                    setSelectedPokemon(pokemon);
-                    fetchEvolutionDataForPokemon(pokemon);
-                  }}
-                >
-                  <CardContent className="p-4 relative">
-                    {multiReleaseMode && (
-                      <div className={`absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 ${isSelectedForRelease ? 'border-red-300 bg-red-500 text-white' : 'border-white/50 bg-slate-900/70 text-transparent'}`}>
-                        ✓
-                      </div>
-                    )}
-                    <img
-                      src={pokemon.sprite}
-                      alt={pokemon.displayName}
-                      className="w-24 h-24 mx-auto mb-2"
-                      style={{
-                        filter: pokemon.isShiny ? 'brightness(1.2) drop-shadow(0 0 10px rgba(234, 179, 8, 0.6))' : 'none'
+          <div className="min-h-0 flex-1 overflow-y-auto pr-4">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+              {filteredMyPokemon.length === 0 ? (
+                <div className="col-span-full py-12 text-center">
+                  <p className="text-lg text-gray-400">No Pokemon caught yet!</p>
+                  <p className="text-gray-500">Visit the wilds to catch some Pokemon.</p>
+                </div>
+              ) : (
+                filteredMyPokemon.map((pokemon, idx) => {
+                  const pokemonKey = String(pokemon._id || pokemon.id);
+                  const isSelectedForRelease = selectedForRelease.includes(pokemonKey);
+                  return (
+                    <Card
+                      key={idx}
+                      className={`bg-slate-800/90 cursor-pointer hover:border-purple-500 transition-all ${
+                        multiReleaseMode
+                          ? (isSelectedForRelease ? 'border-red-400 ring-2 ring-red-400' : 'border-red-500/30')
+                          : 'border-purple-500/30'
+                      } ${pokemon.isShiny ? 'ring-2 ring-yellow-400' : ''}`}
+                      onClick={() => {
+                        if (multiReleaseMode) {
+                          togglePokemonForRelease(pokemon);
+                          return;
+                        }
+                        setSelectedPokemon(pokemon);
+                        fetchEvolutionDataForPokemon(pokemon);
                       }}
-                    />
-                    <h3 className="text-center font-bold text-white flex items-center justify-center gap-1 flex-wrap">
-                      {pokemon.isShiny && <span className="text-yellow-400 text-sm">✨</span>}
-                      <span>{pokemon.nickname || pokemon.displayName}</span>
-                      <span className="text-cyan-300 text-xs font-semibold">Lv {pokemon.level || 1}</span>
-                      {genderSymbol(pokemon.gender) && <span className="text-pink-300 text-xs font-semibold">{genderSymbol(pokemon.gender)}</span>}
-                    </h3>
-                    <p className="text-center text-gray-400 text-sm">
-                      #{pokemon.id}
-                    </p>
-                    <div className="flex gap-1 justify-center mt-2 flex-wrap">
-                      {pokemon.types.map(type => (
-                        <Badge 
-                          key={type} 
-                          className={`${getTypeColor(type)} text-white text-xs capitalize`}
-                        >
-                          {type}
-                        </Badge>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )})
-            )}
+                    >
+                      <CardContent className="relative p-4">
+                        {multiReleaseMode && (
+                          <div className={`absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 ${isSelectedForRelease ? 'border-red-300 bg-red-500 text-white' : 'border-white/50 bg-slate-900/70 text-transparent'}`}>
+                            ✓
+                          </div>
+                        )}
+                        <img
+                          src={pokemon.sprite}
+                          alt={pokemon.displayName}
+                          className="mx-auto mb-2 h-24 w-24"
+                          style={{
+                            filter: pokemon.isShiny ? 'brightness(1.2) drop-shadow(0 0 10px rgba(234, 179, 8, 0.6))' : 'none'
+                          }}
+                        />
+                        <h3 className="flex flex-wrap items-center justify-center gap-1 text-center font-bold text-white">
+                          {pokemon.isShiny && <span className="text-sm text-yellow-400">✨</span>}
+                          <span>{pokemon.nickname || pokemon.displayName}</span>
+                          <span className="text-xs font-semibold text-cyan-300">Lv {pokemon.level || 1}</span>
+                          {genderSymbol(pokemon.gender) && <span className="text-xs font-semibold text-pink-300">{genderSymbol(pokemon.gender)}</span>}
+                        </h3>
+                        <p className="text-center text-sm text-gray-400">
+                          #{pokemon.id}
+                        </p>
+                        <div className="mt-2 flex flex-wrap justify-center gap-1">
+                          {pokemon.types.map(type => (
+                            <Badge
+                              key={type}
+                              className={`${getTypeColor(type)} text-xs capitalize text-white`}
+                            >
+                              {type}
+                            </Badge>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>

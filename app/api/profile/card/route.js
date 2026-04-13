@@ -33,13 +33,14 @@ export async function GET(request) {
         { id: userId },
         {
           projection: {
-            collection: {
-              id: 1,
-              name: 1,
-              rarity: 1,
-              set: 1,
-              images: 1,
-            },
+            'collection.id': 1,
+            'collection.name': 1,
+            'collection.rarity': 1,
+            'collection.set.id': 1,
+            'collection.set.name': 1,
+            'collection.set.series': 1,
+            'collection.images.small': 1,
+            'collection.images.large': 1,
           },
         }
       );
