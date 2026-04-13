@@ -1588,7 +1588,7 @@ export default function PokemonWilds() {
                 </div>
               </div>
             ))}
-          </div>
+          </div></div>
         </DialogContent>
       </Dialog>
 
@@ -1661,7 +1661,7 @@ export default function PokemonWilds() {
                 </div>
               )}
             </ScrollArea>
-          </div>
+          </div></div>
         </DialogContent>
       </Dialog>
 
