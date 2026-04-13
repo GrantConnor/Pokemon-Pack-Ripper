@@ -383,6 +383,7 @@ export async function POST(request) {
 
     let revealId = uuidv4();
     try {
+      await database.collection('pack_reveals').deleteMany({ userId });
       await database.collection('pack_reveals').insertOne({
         id: revealId,
         userId,

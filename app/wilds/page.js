@@ -12,6 +12,11 @@ import Link from 'next/link';
 import { getTrainerRank } from '@/lib/trainer-ranks';
 import { getActiveDisplayTitle } from '@/lib/set-titles';
 
+const WILDS_SPAWN_POLL_MS = 5000;
+const WILDS_FRIENDS_POLL_MS = 10000;
+const WILDS_LEADERBOARD_POLL_MS = 30000;
+const WILDS_DAILY_OBJECTIVES_POLL_MS = 60000;
+
 function sortFriendsByOnline(friends = []) {
   return [...friends].sort((a, b) => {
     if (!!a?.isOnline !== !!b?.isOnline) return a?.isOnline ? -1 : 1;
@@ -127,6 +132,9 @@ export default function PokemonWilds() {
   const [adminShinySpawnQuery, setAdminShinySpawnQuery] = useState('');
   const tradeSoundCountRef = useRef(0);
   const battleSoundCountRef = useRef(0);
+  const activeSpawnKeyRef = useRef(null);
+  const loadingSpawnRef = useRef(false);
+  const loadingFriendsRef = useRef(false);
 
   const playTradeNotificationSound = () => {
     try { new Audio('/pokemon-level-up.mp3').play().catch(() => {}); } catch {}
@@ -289,13 +297,13 @@ export default function PokemonWilds() {
     }
   }, []);
 
-  // Poll for new spawns frequently so catches/disappearances feel instant
+  // Poll for new spawns on a modest cadence to avoid overwhelming the page/server
   useEffect(() => {
     if (!user) return;
     
     const interval = setInterval(() => {
       loadCurrentSpawn();
-    }, 1000);
+    }, WILDS_SPAWN_POLL_MS);
 
     return () => clearInterval(interval);
   }, [user]);
@@ -326,8 +334,8 @@ export default function PokemonWilds() {
 
     loadFriends();
     const interval = setInterval(() => {
-      loadFriends({ forceRefresh: true });
-    }, 2000);
+      loadFriends();
+    }, WILDS_FRIENDS_POLL_MS);
 
     return () => clearInterval(interval);
   }, [user]);
@@ -336,7 +344,7 @@ export default function PokemonWilds() {
     loadLeaderboard();
     const interval = setInterval(() => {
       loadLeaderboard();
-    }, 12000);
+    }, WILDS_LEADERBOARD_POLL_MS);
 
     return () => clearInterval(interval);
   }, []);
@@ -346,7 +354,7 @@ export default function PokemonWilds() {
     loadDailyObjectives(user.id);
     const interval = setInterval(() => {
       loadDailyObjectives(user.id);
-    }, 30000);
+    }, WILDS_DAILY_OBJECTIVES_POLL_MS);
 
     return () => clearInterval(interval);
   }, [user?.id]);
@@ -401,29 +409,46 @@ export default function PokemonWilds() {
   }, [tradeRequests, socialNotifications, battleRequests]);
 
   const loadCurrentSpawn = async () => {
+    if (loadingSpawnRef.current) return;
+    loadingSpawnRef.current = true;
+
     try {
       const response = await fetch(`/api/wilds/current?ts=${Date.now()}`, { cache: 'no-store' });
       const data = await response.json();
-      
-      setMassOutbreak(data.outbreak || null);
+      const nextSpawnKey = data?.spawn ? `${data.spawn.spawnedAt}:${data.spawn.pokemon.id}` : null;
+      const previousSpawnKey = activeSpawnKeyRef.current;
+
+      setMassOutbreak((prev) => {
+        const nextOutbreak = data.outbreak || null;
+        const prevKey = prev?.active ? `${prev.pokemonId}:${prev.endsAt}` : null;
+        const nextKey = nextOutbreak?.active ? `${nextOutbreak.pokemonId}:${nextOutbreak.endsAt}` : null;
+        return prevKey === nextKey ? prev : nextOutbreak;
+      });
 
       if (data.spawn) {
-        setSpawn(data.spawn);
+        activeSpawnKeyRef.current = nextSpawnKey;
         setTimeUntilSpawn(null);
-        
-        // Show notification if new Pokemon
-        if (!spawn || spawn.pokemon.id !== data.spawn.pokemon.id || spawn.spawnedAt !== data.spawn.spawnedAt) {
+        setSpawn((prev) => {
+          const prevKey = prev ? `${prev.spawnedAt}:${prev.pokemon.id}` : null;
+          return prevKey === nextSpawnKey ? prev : data.spawn;
+        });
+
+        if (previousSpawnKey && previousSpawnKey !== nextSpawnKey) {
           showSpawnNotification(data.spawn.pokemon);
         }
       } else if (data.nextSpawnTime) {
-        setSpawn(null);
-        setTimeUntilSpawn(data.nextSpawnTime);
+        activeSpawnKeyRef.current = null;
+        setSpawn((prev) => (prev ? null : prev));
+        setTimeUntilSpawn((prev) => (prev === data.nextSpawnTime ? prev : data.nextSpawnTime));
       } else {
-        setSpawn(null);
-        setTimeUntilSpawn(null);
+        activeSpawnKeyRef.current = null;
+        setSpawn((prev) => (prev ? null : prev));
+        setTimeUntilSpawn((prev) => (prev ? null : prev));
       }
     } catch (err) {
       console.error('Error loading spawn:', err);
+    } finally {
+      loadingSpawnRef.current = false;
     }
   };
 
@@ -477,13 +502,12 @@ export default function PokemonWilds() {
   };
 
   const loadFriends = async () => {
-    if (!user) return;
+    if (!user || loadingFriendsRef.current) return;
+    loadingFriendsRef.current = true;
+
     try {
-      console.log('🔍 Loading friends for user:', user.id);
       const response = await fetch(`/api/friends?userId=${user.id}`);
       const data = await response.json();
-      console.log('📥 Friends API response:', data);
-      console.log('👥 Friends array:', data.friends);
       setFriends(sortFriendsByOnline((data.friends || []).filter(Boolean)));
       setPendingRequests((data.pendingRequests || []).filter(Boolean));
       setBattleRequests((data.battleRequests || []).filter(Boolean));
@@ -493,6 +517,8 @@ export default function PokemonWilds() {
       setActiveBattle(data.activeBattleId || null);
     } catch (err) {
       console.error('Error loading friends:', err);
+    } finally {
+      loadingFriendsRef.current = false;
     }
   };
 
