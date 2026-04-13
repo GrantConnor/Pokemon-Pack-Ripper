@@ -3415,8 +3415,11 @@ if (pathname.includes('/api/auth/signin')) {
         return NextResponse.json({ error: 'XP amount must be a positive whole number' }, { status: 400 });
       }
 
-      // Get user to check points
-      const user = await database.collection('users').findOne({ id: userId });
+      // Get only the fields needed for the purchase check.
+      const user = await database.collection('users').findOne(
+        { id: userId },
+        { projection: { id: 1, username: 1, points: 1 } }
+      );
       if (!user) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
-import { getPointRegenState, refreshAllUsersPointsIfDue } from '@/lib/auth';
+import { getPointRegenState } from '@/lib/auth';
 import { mergeSpecialTitlesForUsername, normalizeSelectedTitleId } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
@@ -16,7 +16,6 @@ export async function GET(request) {
     }
 
     const database = await connectDB();
-    await refreshAllUsersPointsIfDue(database);
 
     let user = await database.collection('users').findOne(
       { id: userId },
