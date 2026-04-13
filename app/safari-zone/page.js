@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Clock, Sparkles, Candy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,7 @@ export default function SafariZonePage() {
   const [message, setMessage] = useState('');
   const [now, setNow] = useState(Date.now());
   const [showThrowAnimation, setShowThrowAnimation] = useState(false);
+  const safariLoadInFlightRef = useRef(false);
 
   useEffect(() => {
     const userId = localStorage.getItem('userId');
@@ -52,10 +53,15 @@ export default function SafariZonePage() {
   }, []);
 
   const loadSafariZone = async (resolvedUserId = user?.id) => {
-    if (!resolvedUserId) return;
+    if (!resolvedUserId || safariLoadInFlightRef.current) return;
+
+    safariLoadInFlightRef.current = true;
     try {
-      const response = await fetch(`/api/safari-zone/current?userId=${resolvedUserId}&ts=${Date.now()}`, { cache: 'no-store' });
+      const response = await fetch(`/api/safari-zone/current?userId=${resolvedUserId}&ts=${Date.now()}`, {
+        cache: 'no-store',
+      });
       const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
         if (response.status === 404) {
           setZone(null);
@@ -68,12 +74,14 @@ export default function SafariZonePage() {
         }
         return;
       }
+
       setZone(data.safariZone || null);
       setSpawn(data.spawn || null);
       setNextSpawnAt(data.nextSpawnAt || null);
     } catch {
       // Keep the active run visible during transient polling failures.
     } finally {
+      safariLoadInFlightRef.current = false;
       setLoading(false);
     }
   };
@@ -88,7 +96,7 @@ export default function SafariZonePage() {
     const interval = setInterval(() => {
       setNow(Date.now());
       loadSafariZone(user.id);
-    }, 1000);
+    }, 3000);
     return () => clearInterval(interval);
   }, [user?.id]);
 
@@ -239,88 +247,157 @@ export default function SafariZonePage() {
             <CardHeader>
               <CardTitle className="text-2xl text-emerald-300">Start a Safari Zone run</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-emerald-100/80">Spend {SAFARI_ZONE_COST} points to roll a random biome and begin a private Safari Zone session.</p>
-              <ul className="list-disc pl-6 text-sm text-emerald-100/70 space-y-1">
-                <li>Instanced per user</li>
-                <li>Pokémon respawn every 8 to 15 seconds</li>
+            <CardContent className="space-y-4 text-emerald-50">
+              <p>Spend {SAFARI_ZONE_COST.toLocaleString()} points to enter a biome for 5 minutes. You'll receive 3 Poké Snacks and encounter a themed stream of Pokémon with boosted shiny odds.</p>
+              <ul className="list-disc space-y-1 pl-5 text-sm text-emerald-100">
                 <li>1/800 shiny odds</li>
-                <li>3 Poké Snacks per run for bonus catch rate</li>
-                <li>Safari run lasts 5 minutes</li>
+                <li>Legendary and mythical Pokémon can take up to 3 throws to catch</li>
+                <li>Poké Snacks boost catch rate by 20%</li>
               </ul>
-              <Button onClick={enterSafariZone} disabled={loading || actionLoading} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
-                {actionLoading ? 'Entering...' : `Enter Safari Zone (${SAFARI_ZONE_COST})`}
+              <Button
+                onClick={enterSafariZone}
+                disabled={loading || actionLoading || !user || (user.points || 0) < SAFARI_ZONE_COST}
+                className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold"
+              >
+                {actionLoading ? 'Entering…' : `Enter Safari Zone (${SAFARI_ZONE_COST.toLocaleString()} pts)`}
               </Button>
+              {user && (user.points || 0) < SAFARI_ZONE_COST && (
+                <p className="text-sm text-amber-200">You need more points before you can enter.</p>
+              )}
             </CardContent>
           </Card>
         ) : (
-          <>
-            <div className="grid gap-4 md:grid-cols-3">
-              <Card className="border border-emerald-400/40 bg-slate-900/60 md:col-span-2">
-                <CardHeader>
-                  <CardTitle className="text-2xl text-emerald-300">{zone.biomeName}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-emerald-100/80">{zone.biomeDescription}</p>
+          <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
+            <Card className="border-2 border-emerald-400/40 bg-slate-950/55">
+              <CardHeader className="space-y-2">
+                <CardTitle className="text-2xl text-emerald-300">Current Encounter</CardTitle>
+                {countdown && !spawn && (
+                  <p className="text-sm text-emerald-100">Next Pokémon arrives in {countdown}</p>
+                )}
+              </CardHeader>
+              <CardContent>
+                {spawn ? (
+                  <div className="space-y-6">
+                    <div className="flex flex-col items-center gap-4 text-center">
+                      <div className="rounded-full border-4 border-emerald-300/60 bg-black/20 p-6 shadow-2xl">
+                        <img
+                          src={spawn.sprite}
+                          alt={spawn.displayName}
+                          className="h-48 w-48 object-contain"
+                        />
+                      </div>
+                      <div>
+                        <h2 className="text-3xl font-bold text-white">
+                          {spawn.displayName}
+                          {spawn.isShiny && <span className="text-yellow-300"> ✨</span>}
+                        </h2>
+                        <p className="text-emerald-100">Level {spawn.level} • {spawn.safariRarity?.toUpperCase?.() || 'COMMON'}</p>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        {spawn.types?.map((type) => (
+                          <Badge key={type} className={`${getTypeColor(type)} text-white uppercase tracking-wide`}>
+                            {type}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
 
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <Card className="border border-emerald-400/30 bg-slate-900/60">
+                        <CardContent className="py-4 text-center">
+                          <p className="text-xs uppercase tracking-wide text-emerald-200">Catch Rate</p>
+                          <p className="mt-2 text-2xl font-bold text-white">{spawn.catchRate}%</p>
+                        </CardContent>
+                      </Card>
+                      <Card className="border border-emerald-400/30 bg-slate-900/60">
+                        <CardContent className="py-4 text-center">
+                          <p className="text-xs uppercase tracking-wide text-emerald-200">Attempts Used</p>
+                          <p className="mt-2 text-2xl font-bold text-white">{spawn.attemptsUsed || 0}</p>
+                        </CardContent>
+                      </Card>
+                      <Card className="border border-emerald-400/30 bg-slate-900/60">
+                        <CardContent className="py-4 text-center">
+                          <p className="text-xs uppercase tracking-wide text-emerald-200">Max Attempts</p>
+                          <p className="mt-2 text-2xl font-bold text-white">{spawn.maxAttempts || 1}</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <div className="flex flex-wrap justify-center gap-3">
+                      <Button
+                        onClick={catchPokemon}
+                        disabled={actionLoading}
+                        className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold"
+                      >
+                        {showThrowAnimation && actionLoading ? 'Throwing…' : 'Throw Safari Ball'}
+                      </Button>
+                      <Button
+                        onClick={useSnack}
+                        disabled={actionLoading || (zone?.snacksRemaining ?? 0) <= 0 || spawn.snackApplied}
+                        className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-semibold"
+                      >
+                        <Candy className="mr-2 h-4 w-4" />
+                        {spawn.snackApplied ? 'Snack Active' : `Use Poké Snack (${zone?.snacksRemaining ?? 0})`}
+                      </Button>
+                      <Button
+                        onClick={runFromPokemon}
+                        disabled={actionLoading}
+                        variant="outline"
+                        className="border-emerald-300/40 bg-slate-900/40 text-emerald-50 hover:bg-slate-800"
+                      >
+                        Run Away
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex min-h-[360px] flex-col items-center justify-center gap-4 text-center">
+                    <div className="rounded-full border border-emerald-300/30 bg-slate-900/40 p-6">
+                      <Clock className="h-14 w-14 text-emerald-300" />
+                    </div>
+                    <div className="space-y-2">
+                      <h2 className="text-2xl font-bold text-emerald-200">Waiting for the next encounter…</h2>
+                      <p className="text-emerald-100">
+                        {countdown ? `A Pokémon should appear in ${countdown}.` : 'Refreshing the biome...'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="space-y-6">
+              <Card className="border border-emerald-400/40 bg-slate-950/55">
+                <CardHeader>
+                  <CardTitle className="text-xl text-emerald-300">Safari Perks</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm text-emerald-100">
+                  <div className="flex items-start gap-2">
+                    <Sparkles className="mt-0.5 h-4 w-4 text-yellow-300" />
+                    <p>Safari Zone encounters have elevated shiny odds compared to standard Wilds spawns.</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Candy className="mt-0.5 h-4 w-4 text-amber-300" />
+                    <p>Use Poké Snacks wisely to boost your catch chance on rare encounters.</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Clock className="mt-0.5 h-4 w-4 text-emerald-300" />
+                    <p>Your run lasts 5 minutes, so keep an eye on the timer.</p>
+                  </div>
                 </CardContent>
               </Card>
-              <Card className="border border-yellow-400/40 bg-slate-900/60">
-                <CardContent className="pt-6 space-y-2">
-                  <div className="flex items-center gap-2 text-yellow-300 font-bold"><Candy className="h-4 w-4" /> Poké Snacks: {zone.snacksRemaining ?? 0}</div>
-                  <div className="flex items-center gap-2 text-cyan-300 font-bold"><Sparkles className="h-4 w-4" /> Shiny Odds: 1 / 800</div>
-                  {countdown && <div className="flex items-center gap-2 text-emerald-200 font-bold"><Clock className="h-4 w-4" /> Next spawn in {countdown}</div>}
+
+              <Card className="border border-emerald-400/40 bg-slate-950/55">
+                <CardHeader>
+                  <CardTitle className="text-xl text-emerald-300">Biome Status</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm text-emerald-100">
+                  <p><span className="font-semibold text-white">Biome:</span> {zone.biomeName}</p>
+                  <p><span className="font-semibold text-white">Snacks Remaining:</span> {zone.snacksRemaining ?? 0}</p>
+                  <p><span className="font-semibold text-white">Shiny Rate:</span> 1 / {Math.round(1 / (zone.shinyRate || (1 / 800)))}</p>
                 </CardContent>
               </Card>
             </div>
-
-            {spawn ? (
-              <Card className="border-2 border-emerald-400/50 bg-slate-900/70">
-                <CardContent className="relative py-8 text-center space-y-4 overflow-hidden">
-                  {showThrowAnimation && (
-                    <img src="/safari-ball.png" alt="Safari Ball" className="pointer-events-none absolute left-8 bottom-6 h-16 w-16 safari-throw-animation" />
-                  )}
-                  <img src={spawn.sprite} alt={spawn.displayName} className="mx-auto h-48 w-48 object-contain" />
-                  <div className="space-y-2">
-                    <h2 className="text-3xl font-bold text-white flex items-center justify-center gap-2">
-                      {spawn.isShiny && <span className="text-yellow-300">✨</span>}
-                      {spawn.displayName}
-                      <span className="text-cyan-300 text-base font-semibold">Lv {spawn.level || 1}</span>
-                    </h2>
-                    <p className="text-emerald-100/70 capitalize">Safari rarity: {spawn.safariRarity}</p>
-                    <p className="text-yellow-200 font-semibold">Catch rate: {spawn.catchRate}% {spawn.snackApplied ? '(Snack boosted)' : ''}</p>
-                    <div className="flex justify-center gap-2 flex-wrap">
-                      {(spawn.types || []).map((type) => (
-                        <Badge key={type} className={`${getTypeColor(type)} text-white capitalize`}>{type}</Badge>
-                      ))}
-                      {(spawn.safariRarity === 'legendary' || spawn.safariRarity === 'mythical') && (
-                        <Badge variant="outline" className="border-fuchsia-300 text-fuchsia-200">Attempts Left {Math.max(0, (spawn.maxAttempts || 3) - (spawn.attemptsUsed || 0))}</Badge>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap justify-center gap-3">
-                    <Button onClick={catchPokemon} disabled={actionLoading} className="bg-emerald-600 hover:bg-emerald-500 font-bold text-white">
-                      {actionLoading ? 'Throwing...' : 'Throw Safari Ball'}
-                    </Button>
-                    <Button onClick={useSnack} disabled={actionLoading || (zone.snacksRemaining ?? 0) <= 0 || spawn.snackApplied} className="bg-yellow-600 hover:bg-yellow-500 font-bold text-black">
-                      Use Poké Snack
-                    </Button>
-                    <Button onClick={runFromPokemon} disabled={actionLoading} className="bg-slate-700 hover:bg-slate-600 font-bold text-white">
-                      Run
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="border border-emerald-400/40 bg-slate-900/60">
-                <CardContent className="py-10 text-center space-y-2">
-                  <Clock className="mx-auto h-10 w-10 text-emerald-300" />
-                  <p className="text-xl font-bold text-white">Waiting for the next Safari Zone spawn...</p>
-                  {countdown && <p className="text-emerald-200">Next encounter in {countdown}</p>}
-                </CardContent>
-              </Card>
-            )}
-          </>
+          </div>
         )}
       </div>
     </div>
