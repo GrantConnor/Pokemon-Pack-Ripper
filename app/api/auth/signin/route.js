@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { connectDB, getSanitizedMongoConfig } from '@/lib/mongodb';
-import { normalizeUsername, escapeRegex, verifyPassword, hashPassword, getPointRegenState, refreshAllUsersPointsIfDue, makeAuthTraceId } from '@/lib/auth';
+import { normalizeUsername, escapeRegex, verifyPassword, hashPassword, getPointRegenState, makeAuthTraceId } from '@/lib/auth';
 import { mergeSpecialTitlesForUsername, normalizeSelectedTitleId } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
@@ -27,7 +27,6 @@ export async function POST(request) {
     }
 
     const db = await connectDB();
-    await refreshAllUsersPointsIfDue(db);
     const users = db.collection('users');
 
     let user = await users.findOne(

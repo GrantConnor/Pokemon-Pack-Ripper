@@ -2,9 +2,8 @@ import { NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { connectDB } from '@/lib/mongodb';
 import { getCardsForSet, getPackCost } from '@/lib/pokemon-tcg';
-import { refreshAllUsersPointsIfDue, refreshUserPoints } from '@/lib/auth';
+import { refreshUserPoints } from '@/lib/auth';
 import { applyDailyObjectiveEvent } from '@/lib/daily-objectives';
-import { unlockSetTitlesForUser } from '@/lib/set-titles';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -297,7 +296,6 @@ export async function POST(request) {
     }
 
     const database = await connectDB();
-    await refreshAllUsersPointsIfDue(database);
     const users = database.collection('users');
     let user = await users.findOne(
       { id: userId },
@@ -329,7 +327,7 @@ export async function POST(request) {
     const individualPacks = [];
     for (let i = 0; i < packCount; i++) {
       const pulledCards = openPack(allCards, setId);
-      allPulledCards = [...allPulledCards, ...pulledCards];
+      allPulledCards.push(...pulledCards);
       if (bulk) {
         individualPacks.push({ packNumber: i + 1, cards: pulledCards });
       }
@@ -360,19 +358,6 @@ export async function POST(request) {
       }
     );
 
-    let titleUnlockResult = { newlyUnlocked: [] };
-    try {
-      titleUnlockResult = await unlockSetTitlesForUser(
-        users,
-        userId,
-        setId,
-        allCards[0]?.set?.name || setId,
-        allCards,
-      );
-    } catch (error) {
-      console.error('[PACK OPEN] Title unlock step failed:', error);
-    }
-
     let dailyObjectiveResult = { pointsAwarded: 0 };
     try {
       dailyObjectiveResult = await applyDailyObjectiveEvent(users, userId, 'open-pack', { count: packCount }) || { pointsAwarded: 0 };
@@ -383,6 +368,7 @@ export async function POST(request) {
 
     let revealId = uuidv4();
     try {
+      await database.collection('pack_reveals').deleteMany({ userId });
       await database.collection('pack_reveals').insertOne({
         id: revealId,
         userId,
@@ -406,7 +392,7 @@ export async function POST(request) {
       isBulk: bulk,
       pointsRemaining: finalPointsRemaining,
       achievements: null,
-      titleUnlocks: titleUnlockResult?.newlyUnlocked || [],
+      titleUnlocks: [],
       xpApplied: false,
       dailyObjectivePointsAwarded: dailyObjectiveResult?.pointsAwarded || 0,
     });

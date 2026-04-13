@@ -20,19 +20,35 @@ export async function GET(request) {
     const users = database.collection('users');
     let user = await users.findOne(
       { id: userId },
-      { projection: { id: 1, username: 1, battleWins: 1, tradesCompleted: 1, favoritePokemonId: 1, favoriteCardId: 1, unlockedTitles: 1, selectedTitleId: 1, collection: 1 } }
+      { projection: { id: 1, username: 1, battleWins: 1, tradesCompleted: 1, favoritePokemonId: 1, favoriteCardId: 1, unlockedTitles: 1, selectedTitleId: 1 } }
     );
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-
+    let cardCollection = [];
+    if (editable || user.favoriteCardId) {
+      const slimCardData = await users.findOne(
+        { id: userId },
+        {
+          projection: {
+            collection: {
+              id: 1,
+              name: 1,
+              rarity: 1,
+              set: 1,
+              images: 1,
+            },
+          },
+        }
+      );
+      cardCollection = Array.isArray(slimCardData?.collection) ? slimCardData.collection : [];
+    }
 
     let favoriteCard = null;
     if (user.favoriteCardId) {
-      const collection = Array.isArray(user.collection) ? user.collection : [];
-      const card = collection.find((item) => item?.id === user.favoriteCardId);
+      const card = cardCollection.find((item) => item?.id === user.favoriteCardId);
       if (card) {
         favoriteCard = {
           id: card.id,
@@ -72,7 +88,7 @@ export async function GET(request) {
     user = { ...user, unlockedTitles: computedUnlockedTitles, selectedTitleId: normalizeSelectedTitleId(user.selectedTitleId) };
 
 
-    const favoriteCardOptions = editable ? Array.from(new Map((Array.isArray(user.collection) ? user.collection : [])
+    const favoriteCardOptions = editable ? Array.from(new Map(cardCollection
       .filter((card) => card?.id && card?.name)
       .map((card) => [card.id, {
         id: card.id,
