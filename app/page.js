@@ -2997,7 +2997,7 @@ export default function App() {
 
       {/* Pack Opening Animation Dialog */}
       <Dialog open={showPackAnimation} onOpenChange={() => {}}>
-        <DialogContent className="max-w-md border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_50px_rgba(6,182,212,0.5)]">
+        <DialogContent showCloseButton={false} className="max-w-md border-4 border-cyan-500/50 bg-slate-900/95 backdrop-blur-xl shadow-[0_0_50px_rgba(6,182,212,0.5)]">
           <DialogHeader>
             <DialogTitle className="text-center text-2xl font-bold text-white drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]">Opening Pack...</DialogTitle>
           </DialogHeader>

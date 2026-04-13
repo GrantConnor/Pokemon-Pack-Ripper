@@ -13,10 +13,7 @@ export async function POST(request) {
     }
 
     const database = await connectDB();
-    await database.collection('pack_reveals').updateOne(
-      { id: revealId, userId },
-      { $set: { revealed: true, revealedAt: new Date().toISOString() } }
-    );
+    await database.collection('pack_reveals').deleteOne({ id: revealId, userId });
 
     return NextResponse.json({ success: true });
   } catch (error) {
