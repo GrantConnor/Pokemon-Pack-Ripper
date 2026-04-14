@@ -2278,17 +2278,6 @@ if (pathname.includes('/api/auth/signin')) {
     }
 
     // Admin: Send points to user (Spheal only)
-    if (pathname.includes('/api/admin/send-points')) {
-      const { adminId, targetUsername, points } = body;
-      
-      if (!adminId || !targetUsername || !points) {
-        return NextResponse.json({ error: 'Admin ID, target username, and points required' }, { status: 400 });
-      }
-
-      const database = await connectDB();
-      
-      // Verify admin is Spheal
-      // Admin: Send points to user (Spheal only)
 if (pathname.includes('/api/admin/send-points')) {
   const { adminId, targetUsername, points } = body;
 
