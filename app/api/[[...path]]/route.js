@@ -3173,8 +3173,7 @@ if (pathname.includes('/api/auth/signin')) {
         // Save to user's caught Pokemon only after the global spawn is claimed
         await database.collection('caught_pokemon').insertOne(caughtPokemon);
 
-        // Grant XP to all owned Pokemon (including the newly caught one)
-        await applyXPToAllPokemon(userId, XP_FROM_CATCH, database);
+       
         await applyDailyObjectiveEvent(database.collection('users'), userId, 'catch-pokemon', { types: caughtPokemon.types, count: 1 });
 
         return NextResponse.json({ 
