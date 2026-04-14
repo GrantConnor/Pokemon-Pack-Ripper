@@ -3669,8 +3669,16 @@ if (pathname.includes('/api/auth/signin')) {
 
       const database = await connectDB();
       
-      const fromUser = await database.collection('users').findOne({ id: fromUserId });
-      const toUser = await database.collection('users').findOne({ id: toUserId });
+     const [fromUser, toUser] = await Promise.all([
+      database.collection('users').findOne(
+        { id: fromUserId },
+        { projection: { id: 1, username: 1, battleRequests: 1 } }
+      ),
+      database.collection('users').findOne(
+        { id: toUserId },
+        { projection: { id: 1, username: 1, battleRequests: 1 } }
+      ),
+    ]);
       
       if (!fromUser || !toUser) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
