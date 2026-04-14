@@ -3659,17 +3659,16 @@ if (pathname.includes('/api/auth/signin')) {
 
     // ===== BATTLE SYSTEM ENDPOINTS =====
     
-    // Send battle request
        // Send battle request
     if (pathname.includes('/api/battles/request')) {
       const { fromUserId, toUserId } = body;
-      
+
       if (!fromUserId || !toUserId) {
         return NextResponse.json({ error: 'User IDs required' }, { status: 400 });
       }
 
       const database = await connectDB();
-      
+
       const [fromUser, toUser] = await Promise.all([
         database.collection('users').findOne(
           { id: fromUserId },
@@ -3680,20 +3679,28 @@ if (pathname.includes('/api/auth/signin')) {
           { projection: { id: 1, username: 1, battleRequests: 1 } }
         ),
       ]);
-      
+
       if (!fromUser || !toUser) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
 
-      const existingBattleRequest = [...(toUser.battleRequests || []), ...(fromUser.battleRequests || [])].find((request) =>
-        request.status === 'pending' && (
-          (request.from?.id === fromUserId && request.to?.id === toUserId) ||
-          (request.from?.id === toUserId && request.to?.id === fromUserId)
-        )
+      const existingBattleRequest = [
+        ...(toUser.battleRequests || []),
+        ...(fromUser.battleRequests || []),
+      ].find(
+        (request) =>
+          request.status === 'pending' &&
+          (
+            (request.from?.id === fromUserId && request.to?.id === toUserId) ||
+            (request.from?.id === toUserId && request.to?.id === fromUserId)
+          )
       );
 
       if (existingBattleRequest) {
-        return NextResponse.json({ error: 'Only one pending battle request is allowed between these users at a time' }, { status: 409 });
+        return NextResponse.json(
+          { error: 'Only one pending battle request is allowed between these users at a time' },
+          { status: 409 }
+        );
       }
 
       const battleRequest = {
@@ -3701,27 +3708,9 @@ if (pathname.includes('/api/auth/signin')) {
         from: { id: fromUser.id, username: fromUser.username },
         to: { id: toUser.id, username: toUser.username },
         status: 'pending',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       };
 
-      await database.collection('users').updateOne(
-        { id: toUserId },
-        { $push: { battleRequests: battleRequest } }
-      );
-
-      return NextResponse.json({ success: true, request: battleRequest });
-    }
-
-      // Create battle request
-      const battleRequest = {
-        id: uuidv4(),
-        from: { id: fromUser.id, username: fromUser.username },
-        to: { id: toUser.id, username: toUser.username },
-        status: 'pending',
-        createdAt: new Date().toISOString()
-      };
-
-      // Add to recipient's battle requests
       await database.collection('users').updateOne(
         { id: toUserId },
         { $push: { battleRequests: battleRequest } }
@@ -3731,25 +3720,28 @@ if (pathname.includes('/api/auth/signin')) {
     }
 
     // Accept battle request
-       // Accept battle request
     if (pathname.includes('/api/battles/accept')) {
       const { userId, requestId } = body;
-      
+
       if (!userId || !requestId) {
-        return NextResponse.json({ error: 'User ID and request ID required' }, { status: 400 });
+        return NextResponse.json(
+          { error: 'User ID and request ID required' },
+          { status: 400 }
+        );
       }
 
       const database = await connectDB();
-      
+
       const user = await database.collection('users').findOne(
         { id: userId },
         { projection: { id: 1, battleRequests: 1 } }
       );
+
       if (!user) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
 
-      const request = user.battleRequests?.find(r => r.id === requestId);
+      const request = user.battleRequests?.find((r) => r.id === requestId);
       if (!request) {
         return NextResponse.json({ error: 'Battle request not found' }, { status: 404 });
       }
@@ -3762,7 +3754,7 @@ if (pathname.includes('/api/auth/signin')) {
           pokemon: [],
           currentPokemonIndex: 0,
           ready: false,
-          sideConditions: defaultSideConditions()
+          sideConditions: defaultSideConditions(),
         },
         player2: {
           userId: request.to.id,
@@ -3770,12 +3762,12 @@ if (pathname.includes('/api/auth/signin')) {
           pokemon: [],
           currentPokemonIndex: 0,
           ready: false,
-          sideConditions: defaultSideConditions()
+          sideConditions: defaultSideConditions(),
         },
         currentTurn: null,
         pendingActions: {
           player1: null,
-          player2: null
+          player2: null,
         },
         awaitingSwitchFor: null,
         roundNumber: 1,
@@ -3783,7 +3775,7 @@ if (pathname.includes('/api/auth/signin')) {
         winner: null,
         battleLog: [],
         fieldState: defaultFieldState(),
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       };
 
       await database.collection('battles').insertOne(battle);
@@ -3801,66 +3793,19 @@ if (pathname.includes('/api/auth/signin')) {
       return NextResponse.json({
         success: true,
         battleId: battle.id,
-        battleStatus: battle.status
+        battleStatus: battle.status,
       });
-    }
-
-      // Create battle
-      const battle = {
-        id: uuidv4(),
-        player1: {
-          userId: request.from.id,
-          username: request.from.username,
-          pokemon: [],
-          currentPokemonIndex: 0,
-          ready: false,
-          sideConditions: defaultSideConditions()
-        },
-        player2: {
-          userId: request.to.id,
-          username: request.to.username,
-          pokemon: [],
-          currentPokemonIndex: 0,
-          ready: false,
-          sideConditions: defaultSideConditions()
-        },
-        currentTurn: null,
-        pendingActions: {
-          player1: null,
-          player2: null
-        },
-        awaitingSwitchFor: null,
-        roundNumber: 1,
-        status: 'selecting',
-        winner: null,
-        battleLog: [],
-        fieldState: defaultFieldState(),
-        createdAt: new Date().toISOString()
-      };
-
-      await database.collection('battles').insertOne(battle);
-
-      // Mark both players as actively entering this battle
-      await database.collection('users').updateMany(
-        { id: { $in: [request.from.id, request.to.id] } },
-        { $set: { activeBattleId: battle.id } }
-      );
-
-      // Remove battle request
-      await database.collection('users').updateOne(
-        { id: userId },
-        { $pull: { battleRequests: { id: requestId } } }
-      );
-
-      return NextResponse.json({ success: true, battle });
     }
 
     // Decline battle request
     if (pathname.includes('/api/battles/decline')) {
       const { userId, requestId } = body;
-      
+
       if (!userId || !requestId) {
-        return NextResponse.json({ error: 'User ID and request ID required' }, { status: 400 });
+        return NextResponse.json(
+          { error: 'User ID and request ID required' },
+          { status: 400 }
+        );
       }
 
       const database = await connectDB();
@@ -3874,7 +3819,6 @@ if (pathname.includes('/api/auth/signin')) {
     }
 
     // Select Pokemon for battle
-       // Select Pokemon for battle
     if (pathname.includes('/api/battles/select-pokemon')) {
       const { battleId, userId, pokemonIds } = body;
 
@@ -3888,37 +3832,50 @@ if (pathname.includes('/api/auth/signin')) {
 
       const database = await connectDB();
       const battle = await database.collection('battles').findOne({ id: battleId });
-      
+
       if (!battle) {
         return NextResponse.json({ error: 'Battle not found' }, { status: 404 });
       }
 
       const pokemon = await database.collection('caught_pokemon')
-        .find({ 
-          _id: { $in: pokemonIds.map(id => new ObjectId(id)) },
-          userId: userId
+        .find({
+          _id: { $in: pokemonIds.map((id) => new ObjectId(id)) },
+          userId,
         })
         .toArray();
 
-      const pokemonOrder = new Map(pokemonIds.map((id, index) => [String(id), index]));
-      pokemon.sort((a, b) => (pokemonOrder.get(String(a._id)) ?? 999) - (pokemonOrder.get(String(b._id)) ?? 999));
+      const pokemonOrder = new Map(
+        pokemonIds.map((id, index) => [String(id), index])
+      );
+      pokemon.sort(
+        (a, b) =>
+          (pokemonOrder.get(String(a._id)) ?? 999) -
+          (pokemonOrder.get(String(b._id)) ?? 999)
+      );
 
-      const pokemonWithHP = pokemon.map(p => {
-        const supportedMoves = (p.allMovesData || []).filter((move) => !isUnsupportedBattleMove(move));
+      const pokemonWithHP = pokemon.map((p) => {
+        const supportedMoves = (p.allMovesData || []).filter(
+          (move) => !isUnsupportedBattleMove(move)
+        );
         const supportedMoveNames = supportedMoves.map((move) => move.name);
-        const sanitizedMoveset = (p.moveset || []).filter((moveName) => supportedMoveNames.includes(moveName));
+        const sanitizedMoveset = (p.moveset || []).filter((moveName) =>
+          supportedMoveNames.includes(moveName)
+        );
+
         return {
           ...p,
           allMovesData: supportedMoves,
           allMoves: supportedMoveNames,
-          moveset: sanitizedMoveset.length ? sanitizedMoveset.slice(0, 4) : supportedMoveNames.slice(0, 4),
+          moveset: sanitizedMoveset.length
+            ? sanitizedMoveset.slice(0, 4)
+            : supportedMoveNames.slice(0, 4),
           currentHP: p.stats.hp,
           maxHP: p.stats.hp,
           statusCondition: null,
           sleepTurns: 0,
           poisonCounter: 0,
           burnCounter: 0,
-          statStages: defaultStatStages()
+          statStages: defaultStatStages(),
         };
       });
 
@@ -3927,11 +3884,11 @@ if (pathname.includes('/api/auth/signin')) {
 
       await database.collection('battles').updateOne(
         { id: battleId },
-        { 
-          $set: { 
+        {
+          $set: {
             [`${playerField}.pokemon`]: pokemonWithHP,
-            [`${playerField}.ready`]: true
-          }
+            [`${playerField}.ready`]: true,
+          },
         }
       );
 
@@ -3954,64 +3911,6 @@ if (pathname.includes('/api/auth/signin')) {
 
       return NextResponse.json({ success: true });
     }
-      // Fetch the Pokemon from database
-      const pokemon = await database.collection('caught_pokemon')
-        .find({ 
-          _id: { $in: pokemonIds.map(id => new ObjectId(id)) },
-          userId: userId
-        })
-        .toArray();
-
-      // Preserve the exact order the user selected in the UI
-      const pokemonOrder = new Map(pokemonIds.map((id, index) => [String(id), index]));
-      pokemon.sort((a, b) => (pokemonOrder.get(String(a._id)) ?? 999) - (pokemonOrder.get(String(b._id)) ?? 999));
-
-      // Add battle state to each Pokemon (start at max HP)
-      const pokemonWithHP = pokemon.map(p => {
-        const supportedMoves = (p.allMovesData || []).filter((move) => !isUnsupportedBattleMove(move));
-        const supportedMoveNames = supportedMoves.map((move) => move.name);
-        const sanitizedMoveset = (p.moveset || []).filter((moveName) => supportedMoveNames.includes(moveName));
-        return {
-          ...p,
-          allMovesData: supportedMoves,
-          allMoves: supportedMoveNames,
-          moveset: sanitizedMoveset.length ? sanitizedMoveset.slice(0, 4) : supportedMoveNames.slice(0, 4),
-          currentHP: p.stats.hp,
-          maxHP: p.stats.hp,
-          statusCondition: null,
-          sleepTurns: 0,
-          poisonCounter: 0,
-          burnCounter: 0,
-          statStages: defaultStatStages()
-        };
-      });
-
-      // Determine which player and update
-      const isPlayer1 = battle.player1.userId === userId;
-      const playerField = isPlayer1 ? 'player1' : 'player2';
-
-      await database.collection('battles').updateOne(
-        { id: battleId },
-        { 
-          $set: { 
-            [`${playerField}.pokemon`]: pokemonWithHP,
-            [`${playerField}.ready`]: true
-          }
-        }
-      );
-
-      // Check if both players are ready
-      const updatedBattle = await database.collection('battles').findOne({ id: battleId });
-      if (updatedBattle.player1.ready && updatedBattle.player2.ready) {
-        await database.collection('battles').updateOne(
-          { id: battleId },
-          { $set: { status: 'active', pendingActions: { player1: null, player2: null }, awaitingSwitchFor: null, currentTurn: null } }
-        );
-      }
-
-      return NextResponse.json({ success: true });
-    }
-
     // Switch Pokemon after a faint
     if (pathname.includes('/api/battles/switch-pokemon')) {
       const { battleId, userId, pokemonIndex } = body;
