@@ -4514,53 +4514,54 @@ if (pathname.includes('/api/auth/signin')) {
       });
     }
 
-     if (pathname.includes('/api/battles/cancel-selection')) {
-      const { battleId, userId } = body;
+    // Cancel battle while still selecting teams
+if (pathname.includes('/api/battles/cancel-selection')) {
+  const { battleId, userId } = body;
 
-      if (!battleId || !userId) {
-        return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
-      }
+  if (!battleId || !userId) {
+    return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+  }
 
-      const database = await connectDB();
-      const battle = await database.collection('battles').findOne({ id: battleId });
+  const database = await connectDB();
+  const battle = await database.collection('battles').findOne({ id: battleId });
 
-      if (!battle) {
-        return NextResponse.json({ error: 'Battle not found' }, { status: 404 });
-      }
+  if (!battle) {
+    return NextResponse.json({ error: 'Battle not found' }, { status: 404 });
+  }
 
-      if (battle.status !== 'selecting') {
-        return NextResponse.json({ error: 'Battle is no longer in team selection' }, { status: 400 });
-      }
+  if (battle.status !== 'selecting') {
+    return NextResponse.json({ error: 'Battle is no longer in team selection' }, { status: 400 });
+  }
 
-      if (battle.player1.userId !== userId && battle.player2.userId !== userId) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
-      }
+  if (battle.player1.userId !== userId && battle.player2.userId !== userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+  }
 
-      await database.collection('battles').updateOne(
-        { id: battleId },
-        {
-          $set: {
-            status: 'cancelled',
-            winner: null
-          },
-          $push: {
-            battleLog: {
-              turn: battle.roundNumber || 1,
-              type: 'cancelled',
-              message: `${battle.player1.userId === userId ? battle.player1.username : battle.player2.username} left during team selection`,
-              timestamp: new Date().toISOString()
-            }
-          }
+  await database.collection('battles').updateOne(
+    { id: battleId, status: 'selecting' },
+    {
+      $set: {
+        status: 'cancelled',
+        winner: null
+      },
+      $push: {
+        battleLog: {
+          turn: battle.roundNumber || 1,
+          type: 'cancelled',
+          message: `${battle.player1.userId === userId ? battle.player1.username : battle.player2.username} left during team selection`,
+          timestamp: new Date().toISOString()
         }
-      );
-
-      await database.collection('users').updateMany(
-        { id: { $in: [battle.player1.userId, battle.player2.userId] } },
-        { $unset: { activeBattleId: '' } }
-      );
-
-      return NextResponse.json({ success: true });
+      }
     }
+  );
+
+  await database.collection('users').updateMany(
+    { id: { $in: [battle.player1.userId, battle.player2.userId] } },
+    { $unset: { activeBattleId: '' } }
+  );
+
+  return NextResponse.json({ success: true });
+}
     // Forfeit battle
     if (pathname.includes('/api/battles/forfeit')) {
       const { battleId, userId } = body;
