@@ -91,14 +91,23 @@ export default function SafariZonePage() {
     loadSafariZone(user.id);
   }, [user?.id]);
 
+   useEffect(() => {
+    const clockInterval = setInterval(() => {
+    setNow(Date.now());
+  }, 1000);
+
+  return () => clearInterval(clockInterval);
+}, []);
+
   useEffect(() => {
     if (!user?.id) return;
-    const interval = setInterval(() => {
-      setNow(Date.now());
-      loadSafariZone(user.id);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [user?.id]);
+
+  const fetchInterval = setInterval(() => {
+    loadSafariZone(user.id);
+  }, 3000);
+
+  return () => clearInterval(fetchInterval);
+}, [user?.id]);
 
   const countdown = useMemo(() => {
     if (!nextSpawnAt) return null;
