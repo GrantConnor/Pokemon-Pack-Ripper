@@ -512,7 +512,7 @@ function BattlePageContent() {
     );
   }
 
-  if (battle.status === 'active' || battle.status === 'finished') {
+  if (battle.status === 'active' || battle.status === 'finished' || battle.status === 'cancelled') {
     return (
       <div
         className="min-h-screen p-4 md:p-6 lg:p-8 relative overflow-hidden bg-cover bg-center"
@@ -612,7 +612,8 @@ function BattlePageContent() {
               <Card className="border-4 border-yellow-500 bg-slate-900/95">
                 <CardContent className="p-8 text-center">
                   <p className="text-4xl font-bold text-white mb-4">
-                    {battle.winner === user.id ? '🎉 Victory!' : '💀 Defeat!'}
+                    {battle.status === 'cancelled'
+                        ? '⚪ Battle Cancelled' : (battle.winner === user.id ? '🎉 Victory!' : '💀 Defeat!')}
                   </p>
                   <Link href="/wilds">
                     <Button className="bg-cyan-600 hover:bg-cyan-500">Return to Wilds</Button>
