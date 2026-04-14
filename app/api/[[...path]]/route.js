@@ -4841,19 +4841,18 @@ if (pathname.includes('/api/battles/cancel-selection')) {
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (error) {
-  console.error('POST Error:', {
-    message: error?.message,
-    stack: error?.stack,
-    name: error?.name,
-    cause: error?.cause,
-  });
-  return NextResponse.json(
-    {
-      error: error.message,
-      stack: process.env.NODE_ENV !== 'production' ? error.stack : undefined
-    },
-    { status: 500 }
-  );
+    console.error('POST Error:', {
+      message: error?.message,
+      stack: error?.stack,
+      pathname,
+      body
+    });
+
+    return NextResponse.json(
+      { error: error?.message || 'Internal server error' },
+      { status: 500 }
+    );
+  }
 }
 
 
