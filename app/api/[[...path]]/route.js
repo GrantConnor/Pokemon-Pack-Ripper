@@ -2288,114 +2288,302 @@ if (pathname.includes('/api/auth/signin')) {
       const database = await connectDB();
       
       // Verify admin is Spheal
-      const admin = await database.collection('users').findOne({ id: adminId });
-      if (!admin || admin.username !== 'Spheal') {
-        return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
-      }
+      // Admin: Send points to user (Spheal only)
+if (pathname.includes('/api/admin/send-points')) {
+  const { adminId, targetUsername, points } = body;
 
-      // Find target user
-      const targetUser = await database.collection('users').findOne({ 
-        username: { $regex: new RegExp(`^${targetUsername}$`, 'i') } 
-      });
+  const parsedPoints = Number(points);
+  const safeUsername = String(targetUsername || '').trim();
 
-      if (!targetUser) {
-        return NextResponse.json({ error: `User '${targetUsername}' not found` }, { status: 404 });
-      }
+  if (!adminId || !safeUsername || !Number.isFinite(parsedPoints) || parsedPoints <= 0) {
+    return NextResponse.json(
+      { error: 'Admin ID, target username, and a valid positive points amount are required' },
+      { status: 400 }
+    );
+  }
 
-      // Add points to target user
-      await database.collection('users').updateOne(
-        { id: targetUser.id },
-        { $inc: { points: points } }
-      );
+  const database = await connectDB();
 
-      return NextResponse.json({ 
-        success: true, 
-        message: `Successfully sent ${points} points to ${targetUser.username}`,
-        newBalance: targetUser.points + points
-      });
-    }
+  // Verify admin is Spheal
+  const admin = await database.collection('users').findOne({ id: adminId });
+  if (!admin || admin.username !== 'Spheal') {
+    return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
+  }
+
+  // Escape special regex chars in username
+  const escapedUsername = safeUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // Find target user
+  const targetUser = await database.collection('users').findOne({
+    username: { $regex: new RegExp(`^${escapedUsername}$`, 'i') }
+  });
+
+  if (!targetUser) {
+    return NextResponse.json({ error: `User '${safeUsername}' not found` }, { status: 404 });
+  }
+
+  // Normalize points field if it's missing or not numeric
+  const currentPoints = Number(targetUser.points);
+  if (!Number.isFinite(currentPoints)) {
+    await database.collection('users').updateOne(
+      { id: targetUser.id },
+      { $set: { points: 0 } }
+    );
+  }
+
+  const result = await database.collection('users').updateOne(
+    { id: targetUser.id },
+    { $inc: { points: parsedPoints } }
+  );
+
+  if (!result.modifiedCount) {
+    return NextResponse.json({ error: 'Failed to update user points' }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    success: true,
+    message: `Successfully sent ${parsedPoints} points to ${targetUser.username}`,
+    newBalance: (Number.isFinite(currentPoints) ? currentPoints : 0) + parsedPoints
+  });
+}
 
     // Admin: Remove user's collection (Spheal only)
     if (pathname.includes('/api/admin/remove-collection')) {
-      const { adminId, targetUsername } = body;
-      
-      if (!adminId || !targetUsername) {
-        return NextResponse.json({ error: 'Admin ID and target username required' }, { status: 400 });
-      }
+  const { adminId, targetUsername } = body;
 
-      const database = await connectDB();
-      
-      // Verify admin is Spheal
-      const admin = await database.collection('users').findOne({ id: adminId });
-      if (!admin || admin.username !== 'Spheal') {
-        return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
-      }
+  const safeUsername = String(targetUsername || '').trim();
 
-      // Find target user
-      const targetUser = await database.collection('users').findOne({ 
-        username: { $regex: new RegExp(`^${targetUsername}$`, 'i') } 
-      });
+  if (!adminId || !safeUsername) {
+    return NextResponse.json(
+      { error: 'Admin ID and target username are required' },
+      { status: 400 }
+    );
+  }
 
-      if (!targetUser) {
-        return NextResponse.json({ error: `User '${targetUsername}' not found` }, { status: 404 });
-      }
+  const database = await connectDB();
 
-      // Remove entire collection and reset achievements
-      await database.collection('users').updateOne(
-        { id: targetUser.id },
-        { 
-          $set: { 
-            collection: [],
-            setAchievements: {}
-          } 
+  const admin = await database.collection('users').findOne(
+    { id: adminId },
+    { projection: { id: 1, username: 1 } }
+  );
+
+  if (!admin || admin.username !== 'Spheal') {
+    return NextResponse.json(
+      { error: 'Unauthorized: Admin access required' },
+      { status: 403 }
+    );
+  }
+
+  const escapedUsername = safeUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  const targetUser = await database.collection('users').findOne(
+    { username: { $regex: new RegExp(`^${escapedUsername}$`, 'i') } },
+    { projection: { id: 1, username: 1 } }
+  );
+
+  if (!targetUser) {
+    return NextResponse.json(
+      { error: `User '${safeUsername}' not found` },
+      { status: 404 }
+    );
+  }
+
+  const [userUpdate, pokemonDelete, tradeCleanup, battleCleanup] = await Promise.allSettled([
+    database.collection('users').updateOne(
+      { id: targetUser.id },
+      {
+        $set: {
+          collection: [],
+          lockedTradeCards: [],
+          openedPacks: [],
+          setAchievements: {},
+          activeTradeId: null,
+          lastPackOpenedAt: null,
         }
-      );
+      }
+    ),
 
-      return NextResponse.json({ 
-        success: true, 
-        message: `Successfully removed collection for ${targetUser.username}`
-      });
-    }
+    database.collection('caught_pokemon').deleteMany({ userId: targetUser.id }),
+
+    database.collection('users').updateMany(
+      {},
+      {
+        $pull: {
+          tradeRequests: {
+            $or: [
+              { fromUserId: targetUser.id },
+              { toUserId: targetUser.id },
+              { userId: targetUser.id },
+            ]
+          }
+        }
+      }
+    ),
+
+    database.collection('battles').updateMany(
+      {
+        $or: [
+          { 'player1.userId': targetUser.id },
+          { 'player2.userId': targetUser.id }
+        ],
+        status: { $in: ['pending', 'selecting', 'active'] }
+      },
+      {
+        $set: {
+          status: 'cancelled',
+          cancelledAt: new Date().toISOString(),
+          cancelReason: 'admin-remove-collection'
+        }
+      }
+    )
+  ]);
+
+  const failed = [userUpdate, pokemonDelete, tradeCleanup, battleCleanup].filter(
+    (result) => result.status === 'rejected'
+  );
+
+  if (failed.length > 0) {
+    console.error('Admin remove-collection partial failure:', failed);
+    return NextResponse.json(
+      { error: 'Collection cleanup partially failed' },
+      { status: 500 }
+    );
+  }
+
+  await database.collection('users').updateOne(
+    { id: targetUser.id },
+    { $unset: { activeBattleId: '', activeTradeId: '' } }
+  );
+
+  return NextResponse.json({
+    success: true,
+    message: `Removed collection and Pokemon for ${targetUser.username}`
+  });
+}
 
     // Admin: Delete user completely (Spheal only)
     if (pathname.includes('/api/admin/delete-user')) {
-      const { adminId, targetUsername } = body;
-      
-      if (!adminId || !targetUsername) {
-        return NextResponse.json({ error: 'Admin ID and target username required' }, { status: 400 });
+  const { adminId, targetUsername } = body;
+
+  const safeUsername = String(targetUsername || '').trim();
+
+  if (!adminId || !safeUsername) {
+    return NextResponse.json(
+      { error: 'Admin ID and target username are required' },
+      { status: 400 }
+    );
+  }
+
+  const database = await connectDB();
+
+  const admin = await database.collection('users').findOne(
+    { id: adminId },
+    { projection: { id: 1, username: 1 } }
+  );
+
+  if (!admin || admin.username !== 'Spheal') {
+    return NextResponse.json(
+      { error: 'Unauthorized: Admin access required' },
+      { status: 403 }
+    );
+  }
+
+  const escapedUsername = safeUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  const targetUser = await database.collection('users').findOne(
+    { username: { $regex: new RegExp(`^${escapedUsername}$`, 'i') } },
+    { projection: { id: 1, username: 1 } }
+  );
+
+  if (!targetUser) {
+    return NextResponse.json(
+      { error: `User '${safeUsername}' not found` },
+      { status: 404 }
+    );
+  }
+
+  if (targetUser.id === adminId) {
+    return NextResponse.json(
+      { error: 'You cannot delete your own admin account' },
+      { status: 400 }
+    );
+  }
+
+  const now = new Date().toISOString();
+
+  const operations = await Promise.allSettled([
+    database.collection('caught_pokemon').deleteMany({ userId: targetUser.id }),
+
+    database.collection('battles').updateMany(
+      {
+        $or: [
+          { 'player1.userId': targetUser.id },
+          { 'player2.userId': targetUser.id }
+        ],
+        status: { $in: ['pending', 'selecting', 'active'] }
+      },
+      {
+        $set: {
+          status: 'cancelled',
+          cancelledAt: now,
+          cancelReason: 'admin-delete-user'
+        }
       }
+    ),
 
-      const database = await connectDB();
-      
-      // Verify admin is Spheal
-      const admin = await database.collection('users').findOne({ id: adminId });
-      if (!admin || admin.username !== 'Spheal') {
-        return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
+    database.collection('users').updateMany(
+      {},
+      {
+        $pull: {
+          friends: { id: targetUser.id },
+          friendRequests: { id: targetUser.id },
+          socialNotifications: {
+            $or: [
+              { fromUserId: targetUser.id },
+              { userId: targetUser.id }
+            ]
+          },
+          tradeRequests: {
+            $or: [
+              { fromUserId: targetUser.id },
+              { toUserId: targetUser.id },
+              { userId: targetUser.id }
+            ]
+          },
+          battleRequests: {
+            $or: [
+              { fromUserId: targetUser.id },
+              { toUserId: targetUser.id },
+              { userId: targetUser.id }
+            ]
+          }
+        }
       }
+    ),
 
-      // Prevent deleting Spheal
-      if (targetUsername.toLowerCase() === 'spheal') {
-        return NextResponse.json({ error: 'Cannot delete admin account' }, { status: 400 });
-      }
+    database.collection('users').updateMany(
+      { activeBattleId: { $exists: true } },
+      { $unset: { activeBattleId: '' } }
+    ),
 
-      // Find target user
-      const targetUser = await database.collection('users').findOne({ 
-        username: { $regex: new RegExp(`^${targetUsername}$`, 'i') } 
-      });
+    database.collection('users').deleteOne({ id: targetUser.id })
+  ]);
 
-      if (!targetUser) {
-        return NextResponse.json({ error: `User '${targetUsername}' not found` }, { status: 404 });
-      }
+  const failed = operations.filter((result) => result.status === 'rejected');
 
-      // Delete user and all their data
-      await database.collection('users').deleteOne({ id: targetUser.id });
-      await database.collection('caught_pokemon').deleteMany({ userId: targetUser.id });
+  if (failed.length > 0) {
+    console.error('Admin delete-user partial failure:', failed);
+    return NextResponse.json(
+      { error: 'User deletion partially failed' },
+      { status: 500 }
+    );
+  }
 
-      return NextResponse.json({ 
-        success: true, 
-        message: `Successfully deleted user '${targetUser.username}' and all associated data`
-      });
-    }
+  return NextResponse.json({
+    success: true,
+    message: `Deleted user ${targetUser.username}`
+  });
+}
 
     // Friends: Send friend request
 
