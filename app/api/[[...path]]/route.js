@@ -3660,6 +3660,7 @@ if (pathname.includes('/api/auth/signin')) {
     // ===== BATTLE SYSTEM ENDPOINTS =====
     
     // Send battle request
+       // Send battle request
     if (pathname.includes('/api/battles/request')) {
       const { fromUserId, toUserId } = body;
       
@@ -3669,16 +3670,16 @@ if (pathname.includes('/api/auth/signin')) {
 
       const database = await connectDB();
       
-     const [fromUser, toUser] = await Promise.all([
-      database.collection('users').findOne(
-        { id: fromUserId },
-        { projection: { id: 1, username: 1, battleRequests: 1 } }
-      ),
-      database.collection('users').findOne(
-        { id: toUserId },
-        { projection: { id: 1, username: 1, battleRequests: 1 } }
-      ),
-    ]);
+      const [fromUser, toUser] = await Promise.all([
+        database.collection('users').findOne(
+          { id: fromUserId },
+          { projection: { id: 1, username: 1, battleRequests: 1 } }
+        ),
+        database.collection('users').findOne(
+          { id: toUserId },
+          { projection: { id: 1, username: 1, battleRequests: 1 } }
+        ),
+      ]);
       
       if (!fromUser || !toUser) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -3694,6 +3695,22 @@ if (pathname.includes('/api/auth/signin')) {
       if (existingBattleRequest) {
         return NextResponse.json({ error: 'Only one pending battle request is allowed between these users at a time' }, { status: 409 });
       }
+
+      const battleRequest = {
+        id: uuidv4(),
+        from: { id: fromUser.id, username: fromUser.username },
+        to: { id: toUser.id, username: toUser.username },
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+
+      await database.collection('users').updateOne(
+        { id: toUserId },
+        { $push: { battleRequests: battleRequest } }
+      );
+
+      return NextResponse.json({ success: true, request: battleRequest });
+    }
 
       // Create battle request
       const battleRequest = {
@@ -3714,6 +3731,7 @@ if (pathname.includes('/api/auth/signin')) {
     }
 
     // Accept battle request
+       // Accept battle request
     if (pathname.includes('/api/battles/accept')) {
       const { userId, requestId } = body;
       
@@ -3723,7 +3741,10 @@ if (pathname.includes('/api/auth/signin')) {
 
       const database = await connectDB();
       
-      const user = await database.collection('users').findOne({ id: userId });
+      const user = await database.collection('users').findOne(
+        { id: userId },
+        { projection: { id: 1, battleRequests: 1 } }
+      );
       if (!user) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
@@ -3732,6 +3753,57 @@ if (pathname.includes('/api/auth/signin')) {
       if (!request) {
         return NextResponse.json({ error: 'Battle request not found' }, { status: 404 });
       }
+
+      const battle = {
+        id: uuidv4(),
+        player1: {
+          userId: request.from.id,
+          username: request.from.username,
+          pokemon: [],
+          currentPokemonIndex: 0,
+          ready: false,
+          sideConditions: defaultSideConditions()
+        },
+        player2: {
+          userId: request.to.id,
+          username: request.to.username,
+          pokemon: [],
+          currentPokemonIndex: 0,
+          ready: false,
+          sideConditions: defaultSideConditions()
+        },
+        currentTurn: null,
+        pendingActions: {
+          player1: null,
+          player2: null
+        },
+        awaitingSwitchFor: null,
+        roundNumber: 1,
+        status: 'selecting',
+        winner: null,
+        battleLog: [],
+        fieldState: defaultFieldState(),
+        createdAt: new Date().toISOString()
+      };
+
+      await database.collection('battles').insertOne(battle);
+
+      await database.collection('users').updateMany(
+        { id: { $in: [request.from.id, request.to.id] } },
+        { $set: { activeBattleId: battle.id } }
+      );
+
+      await database.collection('users').updateOne(
+        { id: userId },
+        { $pull: { battleRequests: { id: requestId } } }
+      );
+
+      return NextResponse.json({
+        success: true,
+        battleId: battle.id,
+        battleStatus: battle.status
+      });
+    }
 
       // Create battle
       const battle = {
