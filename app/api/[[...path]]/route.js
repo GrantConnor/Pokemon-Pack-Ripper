@@ -4855,7 +4855,7 @@ if (pathname.includes('/api/battles/cancel-selection')) {
     { status: 500 }
   );
 }
-}
+
 
 export async function DELETE(request) {
   const { pathname } = new URL(request.url);
