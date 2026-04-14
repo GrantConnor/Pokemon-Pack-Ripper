@@ -53,7 +53,9 @@ function PokemonCard({ pokemon, selected, selectedOrder = null, onClick, fainted
         <img src={pokemon.sprite} alt={pokemon.displayName} className="w-full mb-2 drop-shadow-[0_8px_12px_rgba(0,0,0,0.6)]" />
         <p className="text-white font-bold text-center">{pokemon.nickname || pokemon.displayName}</p>
         <p className="text-gray-400 text-sm text-center">Level {pokemon.level}</p>
-        <p className="text-green-400 text-xs text-center">HP: {pokemon.currentHP ?? pokemon.stats.hp}/{pokemon.maxHP ?? pokemon.stats.hp}</p>
+        <p className="text-green-400 text-xs text-center">
+          HP: {pokemon.currentHP ?? pokemon.stats.hp}/{pokemon.maxHP ?? pokemon.stats.hp}
+        </p>
       </CardContent>
     </Card>
   );
@@ -77,14 +79,20 @@ function BattlePokemonPanel({ label, pokemon, align = 'left', displayedHP }) {
   const hp = displayedHP ?? pokemon?.currentHP ?? 0;
   const maxHP = pokemon?.maxHP || 1;
   const barColor = getHpBarColor(hp, maxHP);
+
   return (
     <div className={`text-center ${align === 'left' ? 'lg:text-left' : 'lg:text-right'}`}>
       <p className="text-white font-bold mb-2">{label} {pokemon?.displayName}</p>
-      <div className={`flex ${align === 'left' ? 'justify-center lg:justify-start' : 'justify-center lg:justify-end'} mb-2`}><StatusBadge status={pokemon?.statusCondition} /></div>
+      <div className={`flex ${align === 'left' ? 'justify-center lg:justify-start' : 'justify-center lg:justify-end'} mb-2`}>
+        <StatusBadge status={pokemon?.statusCondition} />
+      </div>
       <div className={`flex ${align === 'left' ? 'justify-center lg:justify-start' : 'justify-center lg:justify-end'} mb-3`}>
         <div className="w-64">
           <div className="bg-slate-800/80 rounded-full h-4 overflow-hidden border-2 border-white">
-            <div className={`${barColor} h-full transition-all duration-500`} style={{ width: `${(hp / Math.max(1, maxHP)) * 100}%` }} />
+            <div
+              className={`${barColor} h-full transition-all duration-500`}
+              style={{ width: `${(hp / Math.max(1, maxHP)) * 100}%` }}
+            />
           </div>
           <p className="text-white text-sm mt-1">HP: {hp}/{maxHP}</p>
         </div>
@@ -149,6 +157,7 @@ function BattlePageContent() {
       .catch(() => {
         window.location.href = '/';
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -157,6 +166,7 @@ function BattlePageContent() {
       loadBattle();
     }, 2000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [battleId]);
 
   const loadMyPokemon = async (userId) => {
@@ -269,6 +279,41 @@ function BattlePageContent() {
   }, [user?.id, battle?.status, battle?.player1?.ready, battle?.player2?.ready]);
 
   useEffect(() => {
+    if (!battleId || !user?.id || battle?.status !== 'selecting') return;
+
+    const cancelSelection = () => {
+      const payload = JSON.stringify({ battleId, userId: user.id });
+
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(
+          '/api/battles/cancel-selection',
+          new Blob([payload], { type: 'application/json' })
+        );
+        return;
+      }
+
+      fetch('/api/battles/cancel-selection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        keepalive: true,
+      }).catch(() => {});
+    };
+
+    const handlePageExit = () => {
+      cancelSelection();
+    };
+
+    window.addEventListener('beforeunload', handlePageExit);
+    window.addEventListener('pagehide', handlePageExit);
+
+    return () => {
+      window.removeEventListener('beforeunload', handlePageExit);
+      window.removeEventListener('pagehide', handlePageExit);
+    };
+  }, [battleId, user?.id, battle?.status]);
+
+  useEffect(() => {
     if (!myCurrentPokemon || !opponentCurrentPokemon) return;
 
     setDisplayedMyHP(myCurrentPokemon.currentHP);
@@ -284,6 +329,7 @@ function BattlePageContent() {
     const startingHP = finalHP + damages.reduce((sum, dmg) => sum + dmg, 0);
     const setDisplayed = targetIsMine ? setDisplayedMyHP : setDisplayedOppHP;
     setDisplayed(startingHP);
+
     let runningHP = startingHP;
     damages.forEach((damage, index) => {
       setTimeout(() => {
@@ -314,6 +360,7 @@ function BattlePageContent() {
       alert('Please select at least 1 Pokemon');
       return;
     }
+
     try {
       const response = await fetch('/api/battles/select-pokemon', {
         method: 'POST',
@@ -324,7 +371,9 @@ function BattlePageContent() {
           pokemonIds: selectedPokemon.map(p => p._id.toString())
         })
       });
+
       const data = await response.json();
+
       if (data.success) {
         await loadBattle();
       } else {
@@ -338,16 +387,20 @@ function BattlePageContent() {
   const handleAttack = async (moveIndex) => {
     if (actionSubmitting) return;
     setActionSubmitting(true);
+
     try {
       const response = await fetch('/api/battles/attack', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ battleId, userId: user.id, moveIndex })
       });
+
       const data = await response.json();
+
       if (!data.success) {
         alert(data.error || 'Error using move');
       }
+
       await loadBattle();
     } catch {
       alert('Error using move');
@@ -359,6 +412,7 @@ function BattlePageContent() {
   const handleSwitchPokemon = async (pokemonIndex) => {
     if (actionSubmitting) return;
     setActionSubmitting(true);
+
     try {
       const endpoint = awaitingMySwitch ? '/api/battles/switch-pokemon' : '/api/battles/attack';
       const payload = awaitingMySwitch
@@ -370,12 +424,15 @@ function BattlePageContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
+
       const data = await response.json();
+
       if (!data.success) {
         alert(data.error || 'Error switching Pokemon');
       } else if (!awaitingMySwitch) {
         setActionPanelTab('fight');
       }
+
       await loadBattle();
     } catch {
       alert('Error switching Pokemon');
@@ -384,37 +441,40 @@ function BattlePageContent() {
     }
   };
 
-   const handleCancelSelectingBattle = async () => {
-  if (!battleId || !user?.id) return;
+  const handleCancelSelectingBattle = async () => {
+    if (!battleId || !user?.id) return;
 
-  try {
-    const response = await fetch('/api/battles/cancel-selection', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ battleId, userId: user.id })
-    });
+    try {
+      const response = await fetch('/api/battles/cancel-selection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ battleId, userId: user.id })
+      });
 
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.success) {
-      throw new Error(data.error || 'Failed to leave battle');
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to leave battle');
+      }
+
+      window.location.replace('/wilds');
+    } catch (error) {
+      alert(error.message || 'Failed to leave battle');
     }
+  };
 
-    // Force navigation away only after backend clears activeBattleId
-    window.location.replace('/wilds');
-  } catch (error) {
-    alert(error.message || 'Failed to leave battle');
-  }
-};
-//handle forfeit
   const handleForfeit = async () => {
     if (!confirm('Are you sure you want to forfeit?')) return;
+
     try {
       const response = await fetch('/api/battles/forfeit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ battleId, userId: user.id })
       });
+
       const data = await response.json();
+
       if (data.success) {
         alert('you forfeit');
         window.location.href = '/wilds';
@@ -429,16 +489,14 @@ function BattlePageContent() {
       <div className="min-h-screen bg-gradient-to-b from-slate-900 via-blue-900 to-slate-900 p-8">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center gap-4 mb-8">
-            <Link href="/wilds">
-             <Button
+            <Button
               variant="outline"
               className="bg-slate-800 border-cyan-500"
               onClick={handleCancelSelectingBattle}
-              >
-  <ArrowLeft className="h-4 w-4 mr-2" />
-  Back to Pokemon Wilds
-</Button>
-            </Link>
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Pokemon Wilds
+            </Button>
             <h1 className="text-3xl font-bold text-white">Select Your Battle Team</h1>
           </div>
 
@@ -500,14 +558,19 @@ function BattlePageContent() {
     return (
       <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-8">
         <div className="text-center space-y-6">
-          <Link href="/wilds">
-            <Button variant="outline" className="bg-slate-800 border-cyan-500">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Pokemon Wilds
-            </Button>
-          </Link>
+          <Button
+            variant="outline"
+            className="bg-slate-800 border-cyan-500"
+            onClick={handleCancelSelectingBattle}
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Pokemon Wilds
+          </Button>
+
           <div className="animate-spin text-6xl">⚔️</div>
-          <p className="text-white text-2xl">Waiting for {opponentPlayer.username} to lock in their team...</p>
+          <p className="text-white text-2xl">
+            Waiting for {opponentPlayer.username} to lock in their team...
+          </p>
         </div>
       </div>
     );
@@ -534,11 +597,13 @@ function BattlePageContent() {
             <p className="text-green-200 drop-shadow">
               {battle.status === 'finished'
                 ? `Winner: ${battle.winner === user.id ? 'You!' : opponentPlayer.username}`
-                : awaitingMySwitch
-                  ? 'Choose your next Pokemon'
-                  : myMoveLocked
-                    ? opponentMoveLocked ? 'Resolving round...' : 'Move locked in — waiting for opponent'
-                    : 'Choose your move'}
+                : battle.status === 'cancelled'
+                  ? 'Battle cancelled'
+                  : awaitingMySwitch
+                    ? 'Choose your next Pokemon'
+                    : myMoveLocked
+                      ? opponentMoveLocked ? 'Resolving round...' : 'Move locked in — waiting for opponent'
+                      : 'Choose your move'}
             </p>
           </div>
 
@@ -608,13 +673,14 @@ function BattlePageContent() {
             </div>
           )}
 
-          {battle.status === 'finished' && (
+          {(battle.status === 'finished' || battle.status === 'cancelled') && (
             <div className="max-w-xl mx-auto mt-6 lg:absolute lg:left-1/2 lg:bottom-24 lg:-translate-x-1/2 lg:w-[520px]">
               <Card className="border-4 border-yellow-500 bg-slate-900/95">
                 <CardContent className="p-8 text-center">
                   <p className="text-4xl font-bold text-white mb-4">
                     {battle.status === 'cancelled'
-                        ? '⚪ Battle Cancelled' : (battle.winner === user.id ? '🎉 Victory!' : '💀 Defeat!')}
+                      ? '⚪ Battle Cancelled'
+                      : (battle.winner === user.id ? '🎉 Victory!' : '💀 Defeat!')}
                   </p>
                   <Link href="/wilds">
                     <Button className="bg-cyan-600 hover:bg-cyan-500">Return to Wilds</Button>
@@ -700,7 +766,9 @@ function BattlePageContent() {
                               <img src={pokemon.sprite} alt={pokemon.displayName} className="h-12 w-12 object-contain" />
                               <div>
                                 <div className="font-bold text-white">{pokemon.nickname || pokemon.displayName}</div>
-                                <div className="text-xs text-emerald-100">Level {pokemon.level} • HP {pokemon.currentHP}/{pokemon.maxHP || pokemon.stats?.hp}</div>
+                                <div className="text-xs text-emerald-100">
+                                  Level {pokemon.level} • HP {pokemon.currentHP}/{pokemon.maxHP || pokemon.stats?.hp}
+                                </div>
                               </div>
                             </div>
                           </Button>
