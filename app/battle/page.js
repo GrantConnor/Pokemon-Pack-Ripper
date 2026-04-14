@@ -184,31 +184,31 @@ function BattlePageContent() {
     }
   };
 
- const filteredPokemon = useMemo(() => {
-  const term = teamSearch.trim().toLowerCase();
+  const filteredPokemon = useMemo(() => {
+    const term = teamSearch.trim().toLowerCase();
 
-  let filtered = !term
-    ? [...myPokemon]
-    : myPokemon.filter((pokemon) => {
-        const name = (pokemon.nickname || pokemon.displayName || '').toLowerCase();
-        return name.includes(term) || String(pokemon.id || '').includes(term);
-      });
+    let filtered = !term
+      ? [...myPokemon]
+      : myPokemon.filter((pokemon) => {
+          const name = (pokemon.nickname || pokemon.displayName || '').toLowerCase();
+          return name.includes(term) || String(pokemon.id || '').includes(term);
+        });
 
-  filtered.sort((a, b) => {
-    if (teamSortMode === 'level-desc') return (b.level || 0) - (a.level || 0);
-    if (teamSortMode === 'level-asc') return (a.level || 0) - (b.level || 0);
-    if (teamSortMode === 'newest') return new Date(b.caughtAt || 0) - new Date(a.caughtAt || 0);
-    if (teamSortMode === 'oldest') return new Date(a.caughtAt || 0) - new Date(b.caughtAt || 0);
-    if (teamSortMode === 'alpha') {
-      return String(a.nickname || a.displayName || '').localeCompare(
-        String(b.nickname || b.displayName || '')
-      );
-    }
-    return 0;
-  });
+    filtered.sort((a, b) => {
+      if (teamSortMode === 'level-desc') return (b.level || 0) - (a.level || 0);
+      if (teamSortMode === 'level-asc') return (a.level || 0) - (b.level || 0);
+      if (teamSortMode === 'newest') return new Date(b.caughtAt || 0) - new Date(a.caughtAt || 0);
+      if (teamSortMode === 'oldest') return new Date(a.caughtAt || 0) - new Date(b.caughtAt || 0);
+      if (teamSortMode === 'alpha') {
+        return String(a.nickname || a.displayName || '').localeCompare(
+          String(b.nickname || b.displayName || '')
+        );
+      }
+      return 0;
+    });
 
-  return filtered;
-}, [myPokemon, teamSearch, teamSortMode]);
+    return filtered;
+  }, [myPokemon, teamSearch, teamSortMode]);
 
   const isPlayer1 = battle?.player1?.userId === user?.id;
   const myPlayerKey = isPlayer1 ? 'player1' : 'player2';
@@ -239,7 +239,6 @@ function BattlePageContent() {
       clearTimeout(timeout2);
     };
   }, [battleLog.length, battle?.status]);
-
 
   useEffect(() => {
     if (awaitingMySwitch) {
@@ -421,12 +420,28 @@ function BattlePageContent() {
             <CardContent className="pt-6 space-y-4">
               <p className="text-white text-center">Choose up to 6 Pokemon for battle ({selectedPokemon.length}/6)</p>
               <p className="text-cyan-300 text-center text-sm">Selection order = send-out order (1 → 6)</p>
-              <Input
-                value={teamSearch}
-                onChange={(e) => setTeamSearch(e.target.value)}
-                placeholder="Search your Pokemon by name or number..."
-                className="bg-slate-900 border-cyan-500 text-white"
-              />
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  value={teamSearch}
+                  onChange={(e) => setTeamSearch(e.target.value)}
+                  placeholder="Search your Pokemon by name or number..."
+                  className="bg-slate-900 border-cyan-500 text-white"
+                />
+
+                <select
+                  value={teamSortMode}
+                  onChange={(e) => setTeamSortMode(e.target.value)}
+                  className="rounded-md border border-cyan-500 bg-slate-900 px-3 py-2 text-white"
+                >
+                  <option value="level-desc">Level: High to Low</option>
+                  <option value="level-asc">Level: Low to High</option>
+                  <option value="newest">Newest</option>
+                  <option value="oldest">Oldest</option>
+                  <option value="alpha">Name A-Z</option>
+                </select>
+              </div>
+
               <Button
                 onClick={handleConfirmSelection}
                 disabled={selectedPokemon.length === 0}
@@ -581,6 +596,7 @@ function BattlePageContent() {
               </Card>
             </div>
           )}
+
           {battle.status === 'active' && !awaitingMySwitch && (
             <div className="fixed bottom-3 left-1/2 z-30 w-full max-w-4xl -translate-x-1/2 px-4">
               <Card className="border-2 border-green-500/50 bg-slate-900/95 backdrop-blur-sm shadow-2xl">
@@ -668,7 +684,6 @@ function BattlePageContent() {
               </Card>
             </div>
           )}
-
         </div>
       </div>
     );
