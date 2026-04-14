@@ -429,10 +429,14 @@ function BattlePageContent() {
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center gap-4 mb-8">
             <Link href="/wilds">
-              <Button variant="outline" className="bg-slate-800 border-cyan-500">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Pokemon Wilds
-              </Button>
+             <Button
+              variant="outline"
+              className="bg-slate-800 border-cyan-500"
+              onClick={handleCancelSelectingBattle}
+              >
+  <ArrowLeft className="h-4 w-4 mr-2" />
+  Back to Pokemon Wilds
+</Button>
             </Link>
             <h1 className="text-3xl font-bold text-white">Select Your Battle Team</h1>
           </div>
