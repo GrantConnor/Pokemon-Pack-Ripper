@@ -14,7 +14,25 @@ export async function GET(request) {
     }
 
     const database = await connectDB();
-    const caughtPokemon = await database.collection('caught_pokemon').find({ userId }).sort({ caughtAt: -1 }).toArray();
+    const caughtPokemon = await database.collection('caught_pokemon')
+      .find(
+        { userId },
+        {
+          projection: {
+            _id: 1,
+            id: 1,
+            displayName: 1,
+            nickname: 1,
+            sprite: 1,
+            isShiny: 1,
+            level: 1,
+            caughtAt: 1,
+          },
+        }
+      )
+      
+  .sort({ caughtAt: -1 })
+  .toArray();
 
     const fixedPokemon = caughtPokemon.map(pokemon => {
       const normalizedPokemon = normalizeStoredSprite(pokemon);
