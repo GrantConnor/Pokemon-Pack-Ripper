@@ -118,6 +118,7 @@ function BattlePageContent() {
   const [myPokemon, setMyPokemon] = useState([]);
   const [selectedPokemon, setSelectedPokemon] = useState([]);
   const [teamSearch, setTeamSearch] = useState('');
+  const [teamSortMode, setTeamSortMode] = useState('level-desc');
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [backgroundImage, setBackgroundImage] = useState(BATTLE_BACKGROUNDS[0]);
   const [displayedMyHP, setDisplayedMyHP] = useState(null);
