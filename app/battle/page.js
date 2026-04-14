@@ -184,14 +184,31 @@ function BattlePageContent() {
     }
   };
 
-  const filteredPokemon = useMemo(() => {
-    const term = teamSearch.trim().toLowerCase();
-    if (!term) return myPokemon;
-    return myPokemon.filter((pokemon) => {
-      const name = (pokemon.nickname || pokemon.displayName || '').toLowerCase();
-      return name.includes(term) || String(pokemon.id || '').includes(term);
-    });
-  }, [myPokemon, teamSearch]);
+ const filteredPokemon = useMemo(() => {
+  const term = teamSearch.trim().toLowerCase();
+
+  let filtered = !term
+    ? [...myPokemon]
+    : myPokemon.filter((pokemon) => {
+        const name = (pokemon.nickname || pokemon.displayName || '').toLowerCase();
+        return name.includes(term) || String(pokemon.id || '').includes(term);
+      });
+
+  filtered.sort((a, b) => {
+    if (teamSortMode === 'level-desc') return (b.level || 0) - (a.level || 0);
+    if (teamSortMode === 'level-asc') return (a.level || 0) - (b.level || 0);
+    if (teamSortMode === 'newest') return new Date(b.caughtAt || 0) - new Date(a.caughtAt || 0);
+    if (teamSortMode === 'oldest') return new Date(a.caughtAt || 0) - new Date(b.caughtAt || 0);
+    if (teamSortMode === 'alpha') {
+      return String(a.nickname || a.displayName || '').localeCompare(
+        String(b.nickname || b.displayName || '')
+      );
+    }
+    return 0;
+  });
+
+  return filtered;
+}, [myPokemon, teamSearch, teamSortMode]);
 
   const isPlayer1 = battle?.player1?.userId === user?.id;
   const myPlayerKey = isPlayer1 ? 'player1' : 'player2';
