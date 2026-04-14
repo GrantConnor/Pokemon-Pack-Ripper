@@ -384,26 +384,27 @@ function BattlePageContent() {
     }
   };
 
-    const handleCancelSelectingBattle = async () => {
-    if (!battleId || !user?.id) return;
+   const handleCancelSelectingBattle = async () => {
+  if (!battleId || !user?.id) return;
 
-    try {
-      const response = await fetch('/api/battles/cancel-selection', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ battleId, userId: user.id })
-      });
+  try {
+    const response = await fetch('/api/battles/cancel-selection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ battleId, userId: user.id })
+    });
 
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to leave battle');
-      }
-
-      window.location.href = '/wilds';
-    } catch (error) {
-      alert(error.message || 'Failed to leave battle');
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Failed to leave battle');
     }
-  };
+
+    // Force navigation away only after backend clears activeBattleId
+    window.location.replace('/wilds');
+  } catch (error) {
+    alert(error.message || 'Failed to leave battle');
+  }
+};
 //handle forfeit
   const handleForfeit = async () => {
     if (!confirm('Are you sure you want to forfeit?')) return;
