@@ -404,7 +404,7 @@ function BattlePageContent() {
       alert(error.message || 'Failed to leave battle');
     }
   };
-
+//handle forfeit
   const handleForfeit = async () => {
     if (!confirm('Are you sure you want to forfeit?')) return;
     try {
