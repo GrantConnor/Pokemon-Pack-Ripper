@@ -3820,97 +3820,129 @@ if (pathname.includes('/api/auth/signin')) {
 
     // Select Pokemon for battle
     if (pathname.includes('/api/battles/select-pokemon')) {
-      const { battleId, userId, pokemonIds } = body;
+  const { battleId, userId, pokemonIds } = body;
 
-      if (!battleId || !userId || !Array.isArray(pokemonIds)) {
-        return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
-      }
+  if (!battleId || !userId || !Array.isArray(pokemonIds)) {
+    return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+  }
 
-      if (pokemonIds.length > 6 || pokemonIds.length === 0) {
-        return NextResponse.json({ error: 'Must select 1-6 Pokemon' }, { status: 400 });
-      }
+  if (pokemonIds.length > 6 || pokemonIds.length === 0) {
+    return NextResponse.json({ error: 'Must select 1-6 Pokemon' }, { status: 400 });
+  }
 
-      const database = await connectDB();
-      const battle = await database.collection('battles').findOne({ id: battleId });
+  const database = await connectDB();
+  const battle = await database.collection('battles').findOne({ id: battleId });
 
-      if (!battle) {
-        return NextResponse.json({ error: 'Battle not found' }, { status: 404 });
-      }
+  if (!battle) {
+    return NextResponse.json({ error: 'Battle not found' }, { status: 404 });
+  }
 
-      const pokemon = await database.collection('caught_pokemon')
-        .find({
-          _id: { $in: pokemonIds.map((id) => new ObjectId(id)) },
-          userId,
-        })
-        .toArray();
+  const isPlayer1 = battle.player1.userId === userId;
+  const isPlayer2 = battle.player2.userId === userId;
 
-      const pokemonOrder = new Map(
-        pokemonIds.map((id, index) => [String(id), index])
-      );
-      pokemon.sort(
-        (a, b) =>
-          (pokemonOrder.get(String(a._id)) ?? 999) -
-          (pokemonOrder.get(String(b._id)) ?? 999)
-      );
+  if (!isPlayer1 && !isPlayer2) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+  }
 
-      const pokemonWithHP = pokemon.map((p) => {
-        const supportedMoves = (p.allMovesData || []).filter(
-          (move) => !isUnsupportedBattleMove(move)
-        );
-        const supportedMoveNames = supportedMoves.map((move) => move.name);
-        const sanitizedMoveset = (p.moveset || []).filter((moveName) =>
-          supportedMoveNames.includes(moveName)
-        );
+  if (battle.status !== 'selecting') {
+    return NextResponse.json({ error: 'Battle is no longer in team selection' }, { status: 400 });
+  }
 
-        return {
-          ...p,
-          allMovesData: supportedMoves,
-          allMoves: supportedMoveNames,
-          moveset: sanitizedMoveset.length
-            ? sanitizedMoveset.slice(0, 4)
-            : supportedMoveNames.slice(0, 4),
-          currentHP: p.stats.hp,
-          maxHP: p.stats.hp,
-          statusCondition: null,
-          sleepTurns: 0,
-          poisonCounter: 0,
-          burnCounter: 0,
-          statStages: defaultStatStages(),
-        };
-      });
-
-      const isPlayer1 = battle.player1.userId === userId;
-      const playerField = isPlayer1 ? 'player1' : 'player2';
-
-      await database.collection('battles').updateOne(
-        { id: battleId },
-        {
-          $set: {
-            [`${playerField}.pokemon`]: pokemonWithHP,
-            [`${playerField}.ready`]: true,
-          },
-        }
-      );
-
-      await database.collection('battles').updateOne(
-        {
-          id: battleId,
-          status: 'selecting',
-          'player1.ready': true,
-          'player2.ready': true,
-        },
-        {
-          $set: {
-            status: 'active',
-            pendingActions: { player1: null, player2: null },
-            awaitingSwitchFor: null,
-            currentTurn: null,
-          },
-        }
-      );
-
-      return NextResponse.json({ success: true });
+  const objectIds = [];
+  try {
+    for (const id of pokemonIds) {
+      objectIds.push(new ObjectId(id));
     }
+  } catch {
+    return NextResponse.json({ error: 'Invalid Pokemon ID format' }, { status: 400 });
+  }
+
+  const pokemon = await database.collection('caught_pokemon')
+    .find({
+      _id: { $in: objectIds },
+      userId,
+    })
+    .toArray();
+
+  if (pokemon.length !== pokemonIds.length) {
+    return NextResponse.json({ error: 'Some selected Pokemon were not found' }, { status: 400 });
+  }
+
+  const pokemonOrder = new Map(
+    pokemonIds.map((id, index) => [String(id), index])
+  );
+
+  pokemon.sort(
+    (a, b) =>
+      (pokemonOrder.get(String(a._id)) ?? 999) -
+      (pokemonOrder.get(String(b._id)) ?? 999)
+  );
+
+  const pokemonWithHP = pokemon.map((p) => {
+    const supportedMoves = (p.allMovesData || []).filter(
+      (move) => !isUnsupportedBattleMove(move)
+    );
+    const supportedMoveNames = supportedMoves.map((move) => move.name);
+    const sanitizedMoveset = (p.moveset || []).filter((moveName) =>
+      supportedMoveNames.includes(moveName)
+    );
+
+    return {
+      ...p,
+      allMovesData: supportedMoves,
+      allMoves: supportedMoveNames,
+      moveset: sanitizedMoveset.length
+        ? sanitizedMoveset.slice(0, 4)
+        : supportedMoveNames.slice(0, 4),
+      currentHP: p.stats.hp,
+      maxHP: p.stats.hp,
+      statusCondition: null,
+      sleepTurns: 0,
+      poisonCounter: 0,
+      burnCounter: 0,
+      statStages: defaultStatStages(),
+    };
+  });
+
+  const playerField = isPlayer1 ? 'player1' : 'player2';
+
+  await database.collection('battles').updateOne(
+    { id: battleId, status: 'selecting' },
+    {
+      $set: {
+        [`${playerField}.pokemon`]: pokemonWithHP,
+        [`${playerField}.ready`]: true,
+      },
+    }
+  );
+
+  // Re-read after writing to avoid the "both ready but still selecting" race.
+  const updatedBattle = await database.collection('battles').findOne({ id: battleId });
+
+  if (!updatedBattle) {
+    return NextResponse.json({ error: 'Battle not found after update' }, { status: 404 });
+  }
+
+  if (
+    updatedBattle.status === 'selecting' &&
+    updatedBattle.player1?.ready &&
+    updatedBattle.player2?.ready
+  ) {
+    await database.collection('battles').updateOne(
+      { id: battleId, status: 'selecting' },
+      {
+        $set: {
+          status: 'active',
+          pendingActions: { player1: null, player2: null },
+          awaitingSwitchFor: null,
+          currentTurn: null,
+        },
+      }
+    );
+  }
+
+  return NextResponse.json({ success: true });
+}
     // Switch Pokemon after a faint
     if (pathname.includes('/api/battles/switch-pokemon')) {
       const { battleId, userId, pokemonIndex } = body;
