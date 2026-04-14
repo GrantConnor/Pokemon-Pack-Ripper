@@ -3844,9 +3844,17 @@ if (pathname.includes('/api/auth/signin')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 
-  if (battle.status !== 'selecting') {
-    return NextResponse.json({ error: 'Battle is no longer in team selection' }, { status: 400 });
-  }
+  if (battle.status === 'cancelled') {
+  await database.collection('users').updateMany(
+    { id: { $in: [battle.player1.userId, battle.player2.userId] } },
+    { $unset: { activeBattleId: '' } }
+  );
+  return NextResponse.json({ success: true });
+}
+
+if (battle.status !== 'selecting') {
+  return NextResponse.json({ error: 'Battle is no longer in team selection' }, { status: 400 });
+}
 
   const objectIds = [];
   try {
