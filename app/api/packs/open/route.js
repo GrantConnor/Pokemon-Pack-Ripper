@@ -11,21 +11,20 @@ export const dynamic = 'force-dynamic';
 const BULK_PACK_COUNT = 10;
 
 const LEGACY_SETS = [
-  'base1', 'base2', 'basep', 'jungle', 'fossil', 'base3',
-  'gym1', 'gym2', 'neo1', 'neo2', 'neo3', 'neo4',
-  'base4', 'ecard1', 'ecard2', 'ecard3',
-  'ex1', 'ex2', 'ex3', 'ex4', 'ex5', 'ex6',
-  'ex7', 'ex8', 'ex9', 'ex10', 'ex11', 'ex12',
-  'ex13', 'ex14', 'ex15', 'ex16'
+  'base1', 'base2', 'basep', 'jungle', 'fossil', 'base3', 'gym1', 'gym2',
+  'neo1', 'neo2', 'neo3', 'neo4', 'base4', 'ecard1', 'ecard2', 'ecard3',
+  'ex1', 'ex2', 'ex3', 'ex4', 'ex5', 'ex6', 'ex7', 'ex8', 'ex9', 'ex10',
+  'ex11', 'ex12', 'ex13', 'ex14', 'ex15', 'ex16'
 ];
 
 const HS_SETS = ['hgss1', 'hgss2', 'hgss3', 'hgss4'];
 const HS_SET_NAMES = ['HeartGold & SoulSilver', 'HS—Unleashed', 'HS—Undaunted', 'HS—Triumphant'];
-const EX_GOLD_STAR_SETS = ['ex8', 'ex10', 'ex11', 'ex12', 'ex13', 'ex14', 'ex15', 'ex16'];
 
+const EX_GOLD_STAR_SETS = ['ex8', 'ex10', 'ex11', 'ex12', 'ex13', 'ex14', 'ex15', 'ex16'];
 
 export function openPack(cards, setId = null) {
   const nonEnergyCards = cards.filter(card => card.supertype !== 'Energy');
+
   if (nonEnergyCards.length < 10) {
     const pulledCards = [];
     for (let i = 0; i < 10; i++) {
@@ -55,38 +54,72 @@ export function openPack(cards, setId = null) {
   const buildGodPack = (pool) => {
     const godPack = [];
     const usedIds = new Set();
+
     for (let i = 0; i < 10; i++) {
       const available = pool.filter(card => !usedIds.has(card.id));
       const sourcePool = available.length > 0 ? available : pool;
       if (!sourcePool.length) break;
+
       const card = sourcePool[Math.floor(Math.random() * sourcePool.length)];
       usedIds.add(card.id);
       godPack.push(card);
     }
+
     return godPack;
   };
 
   const rarityValue = (card) => String(card?.rarity || '').trim().toLowerCase();
-  const subtypeValues = (card) => Array.isArray(card?.subtypes) ? card.subtypes.map(subtype => String(subtype).trim().toLowerCase()) : [];
+
+  const subtypeValues = (card) =>
+    Array.isArray(card?.subtypes)
+      ? card.subtypes.map(subtype => String(subtype).trim().toLowerCase())
+      : [];
+
   const isRegularRareShinyCard = (card) => {
     const rarity = rarityValue(card);
     const subtypes = subtypeValues(card);
     const isShiningFatesVault = card?.set?.id === 'swsh45sv';
-    const isFullArtStyle = subtypes.some(subtype => ['v', 'vmax', 'gx', 'ex', 'ultra beast'].includes(subtype));
-    return (rarity === 'rare shiny' || rarity === 'shiny rare' || subtypes.includes('shiny rare') || (isShiningFatesVault && rarity.includes('shiny'))) && !isFullArtStyle;
+    const isFullArtStyle = subtypes.some(subtype =>
+      ['v', 'vmax', 'gx', 'ex', 'ultra beast'].includes(subtype)
+    );
+
+    return (
+      (
+        rarity === 'rare shiny' ||
+        rarity === 'shiny rare' ||
+        subtypes.includes('shiny rare') ||
+        (isShiningFatesVault && rarity.includes('shiny'))
+      ) &&
+      !isFullArtStyle
+    );
   };
+
   const isRareHoloVFamilyCard = (card) => {
     const rarity = String(card?.rarity || '').trim();
     return rarity.includes('Rare Holo VMAX') || rarity.includes('Rare Holo V');
   };
+
+  const isSecretRareStyleCard = (card) => {
+    const rarity = rarityValue(card);
+    return (
+      rarity.includes('secret rare') ||
+      rarity.includes('rare secret') ||
+      rarity.includes('rare shining') ||
+      isRareHoloVFamilyCard(card)
+    );
+  };
+
   const isStandardRareCard = (card) => {
     const rarity = rarityValue(card);
     return rarity === 'rare' || rarity === 'rare holo';
   };
+
   const isSpecialRareCard = (card) => {
     const rarity = rarityValue(card);
+
     if (!rarity || rarity === 'common' || rarity === 'uncommon') return false;
     if (rarity === 'rare' || rarity === 'rare holo') return false;
+
     return (
       rarity.includes('double rare') ||
       isRegularRareShinyCard(card) ||
@@ -100,6 +133,7 @@ export function openPack(cards, setId = null) {
       rarity.includes('hyper rare') ||
       rarity.includes('secret rare') ||
       rarity.includes('rare secret') ||
+      rarity.includes('rare shining') ||
       rarity.includes('amazing rare') ||
       rarity.includes('ace spec') ||
       rarity.includes('rare')
@@ -108,19 +142,34 @@ export function openPack(cards, setId = null) {
 
   const commons = nonEnergyCards.filter(card => rarityValue(card) === 'common');
   const uncommons = nonEnergyCards.filter(card => rarityValue(card) === 'uncommon');
-  const lowRarityCards = nonEnergyCards.filter(card => !isStandardRareCard(card) && !isSpecialRareCard(card));
+
+  const lowRarityCards = nonEnergyCards.filter(
+    card => !isStandardRareCard(card) && !isSpecialRareCard(card)
+  );
+
   const hsStandardRares = nonEnergyCards.filter(card => {
     const rarity = rarityValue(card);
     return rarity.includes('rare') && !rarity.includes('legend') && !rarity.includes('secret');
   });
+
   const standardRares = nonEnergyCards.filter(isStandardRareCard);
 
   const specialPools = {
     rareHoloEx: nonEnergyCards.filter(card => rarityValue(card).includes('rare holo ex')),
     doubleRare: nonEnergyCards.filter(card => rarityValue(card).includes('double rare')),
-    illustrationRare: nonEnergyCards.filter(card => rarityValue(card).includes('illustration rare') && !rarityValue(card).includes('special')),
-    specialIllustrationRare: nonEnergyCards.filter(card => rarityValue(card).includes('special illustration rare')),
-    ultraRare: nonEnergyCards.filter(card => rarityValue(card).includes('ultra rare') || rarityValue(card).includes('rare ultra')),
+    illustrationRare: nonEnergyCards.filter(
+      card =>
+        rarityValue(card).includes('illustration rare') &&
+        !rarityValue(card).includes('special')
+    ),
+    specialIllustrationRare: nonEnergyCards.filter(card =>
+      rarityValue(card).includes('special illustration rare')
+    ),
+    ultraRare: nonEnergyCards.filter(
+      card =>
+        rarityValue(card).includes('ultra rare') ||
+        rarityValue(card).includes('rare ultra')
+    ),
     shinyRare: nonEnergyCards.filter(isRegularRareShinyCard),
     amazingRare: nonEnergyCards.filter(card => rarityValue(card).includes('amazing rare')),
     radiantRare: nonEnergyCards.filter(card => rarityValue(card).includes('radiant rare')),
@@ -131,10 +180,7 @@ export function openPack(cards, setId = null) {
     legend: nonEnergyCards.filter(card => rarityValue(card).includes('legend')),
     rainbowRare: nonEnergyCards.filter(card => rarityValue(card).includes('rare rainbow')),
     hyperRare: nonEnergyCards.filter(card => rarityValue(card).includes('hyper rare')),
-    secretRare: nonEnergyCards.filter(card => {
-      const rarity = rarityValue(card);
-      return rarity.includes('secret rare') || rarity.includes('rare secret') || isRareHoloVFamilyCard(card);
-    }),
+    secretRare: nonEnergyCards.filter(isSecretRareStyleCard),
   };
 
   const godPackPool = [
@@ -152,18 +198,18 @@ export function openPack(cards, setId = null) {
   for (let i = 0; i < 5; i++) {
     pulledCards.push(
       getUniqueCard(commons) ||
-      getUniqueCard(lowPool) ||
-      getRandomCard(commons) ||
-      getRandomCard(lowPool)
+        getUniqueCard(lowPool) ||
+        getRandomCard(commons) ||
+        getRandomCard(lowPool)
     );
   }
 
   for (let i = 0; i < 3; i++) {
     pulledCards.push(
       getUniqueCard(uncommons) ||
-      getUniqueCard(lowPool) ||
-      getRandomCard(uncommons) ||
-      getRandomCard(lowPool)
+        getUniqueCard(lowPool) ||
+        getRandomCard(uncommons) ||
+        getRandomCard(lowPool)
     );
   }
 
@@ -174,8 +220,18 @@ export function openPack(cards, setId = null) {
 
   const setName = cards[0]?.set?.name || '';
   const setSeries = cards[0]?.set?.series || '';
-  const isHsPack = (setId && HS_SETS.includes(setId)) || HS_SET_NAMES.includes(setName) || setSeries === 'HeartGold & SoulSilver';
-  const isExGoldStarPack = EX_GOLD_STAR_SETS.includes(setId) || /ex deoxys|unseen forces|delta species|legend maker|holon phantoms|crystal guardians|dragon frontiers|power keepers/i.test(setName);
+
+  const isHsPack =
+    (setId && HS_SETS.includes(setId)) ||
+    HS_SET_NAMES.includes(setName) ||
+    setSeries === 'HeartGold & SoulSilver';
+
+  const isExGoldStarPack =
+    EX_GOLD_STAR_SETS.includes(setId) ||
+    /ex deoxys|unseen forces|delta species|legend maker|holon phantoms|crystal guardians|dragon frontiers|power keepers/i.test(
+      setName
+    );
+
   const weightedSpecialTable = isHsPack
     ? [
         { key: 'legend', weight: 4 },
@@ -198,116 +254,123 @@ export function openPack(cards, setId = null) {
         { key: 'hyperRare', weight: 0.5 },
         { key: 'secretRare', weight: 1 },
       ];
-  const availableSpecialPoolKeys = weightedSpecialTable.filter(entry => specialPools[entry.key]?.length > 0);
+
+  const availableSpecialPoolKeys = weightedSpecialTable.filter(
+    entry => specialPools[entry.key]?.length > 0
+  );
+
   const hitSpecialTable = Math.random() < (isHsPack ? 0.05 : 0.10);
 
   const pickWeightedSpecialPoolKey = () => {
     const totalWeight = availableSpecialPoolKeys.reduce((sum, entry) => sum + entry.weight, 0);
     if (!totalWeight) return null;
+
     let roll = Math.random() * totalWeight;
     for (const entry of availableSpecialPoolKeys) {
       roll -= entry.weight;
       if (roll <= 0) return entry.key;
     }
+
     return availableSpecialPoolKeys[availableSpecialPoolKeys.length - 1]?.key || null;
   };
 
   const isLegacyPack = !!(setId && LEGACY_SETS.includes(setId));
 
-// Secret-rare odds overrides for sets that need bespoke vintage handling.
-const LEGACY_SECRET_RARE_ODDS = {
-  neo3: 1 / 18, // Neo Revelation: Shining Gyarados / Shining Magikarp
-};
+  const LEGACY_SECRET_RARE_ODDS = {
+    neo3: 1 / 18,
+  };
 
-if (!isLegacyPack && !isHsPack && hitSpecialTable && godPackPool.length > 0) {
-  const godPackRoll = Math.floor(Math.random() * 100) + 1;
-  if (godPackRoll === 100) {
-    return buildGodPack(godPackPool);
+  if (!isLegacyPack && !isHsPack && hitSpecialTable && godPackPool.length > 0) {
+    const godPackRoll = Math.floor(Math.random() * 100) + 1;
+    if (godPackRoll === 100) {
+      return buildGodPack(godPackPool);
+    }
   }
-}
 
-let rareSlotCard = null;
+  let rareSlotCard = null;
 
-// EX-era Gold Star handling stays bespoke.
-if (isExGoldStarPack) {
-  const exDeoxysRoll = Math.random();
+  if (isExGoldStarPack) {
+    const exDeoxysRoll = Math.random();
 
-  if (exDeoxysRoll < 0.80) {
-    rareSlotCard = getUniqueCard(standardRares) || getRandomCard(standardRares);
-  } else if (exDeoxysRoll < 0.95) {
-    rareSlotCard = getUniqueCard(specialPools.rareHoloEx) || getRandomCard(specialPools.rareHoloEx);
-  } else if (exDeoxysRoll < 0.975) {
-    rareSlotCard = getUniqueCard(specialPools.secretRare) || getRandomCard(specialPools.secretRare);
+    if (exDeoxysRoll < 0.80) {
+      rareSlotCard = getUniqueCard(standardRares) || getRandomCard(standardRares);
+    } else if (exDeoxysRoll < 0.95) {
+      rareSlotCard = getUniqueCard(specialPools.rareHoloEx) || getRandomCard(specialPools.rareHoloEx);
+    } else if (exDeoxysRoll < 0.975) {
+      rareSlotCard = getUniqueCard(specialPools.secretRare) || getRandomCard(specialPools.secretRare);
+    } else {
+      rareSlotCard = getUniqueCard(specialPools.rareHoloStar) || getRandomCard(specialPools.rareHoloStar);
+    }
+  } else if (isHsPack) {
+    if (hitSpecialTable && availableSpecialPoolKeys.length) {
+      const selectedPoolKey = pickWeightedSpecialPoolKey();
+      if (selectedPoolKey) {
+        rareSlotCard =
+          getUniqueCard(specialPools[selectedPoolKey]) ||
+          getRandomCard(specialPools[selectedPoolKey]);
+      }
+    }
+
+    if (!rareSlotCard) {
+      rareSlotCard = getUniqueCard(hsStandardRares) || getRandomCard(hsStandardRares);
+    }
+  } else if (isLegacyPack) {
+    const legacyHitRare = Math.random() < 0.15;
+
+    if (!legacyHitRare) {
+      rareSlotCard =
+        getUniqueCard(uncommons) ||
+        getUniqueCard(lowPool) ||
+        getRandomCard(uncommons) ||
+        getRandomCard(lowPool);
+    } else {
+      const secretRareOdds = LEGACY_SECRET_RARE_ODDS[setId] || 0;
+      const shouldHitSecretRare =
+        secretRareOdds > 0 &&
+        specialPools.secretRare.length > 0 &&
+        Math.random() < secretRareOdds;
+
+      if (shouldHitSecretRare) {
+        rareSlotCard =
+          getUniqueCard(specialPools.secretRare) ||
+          getRandomCard(specialPools.secretRare);
+      }
+
+      if (!rareSlotCard) {
+        rareSlotCard =
+          getUniqueCard(standardRares) ||
+          getRandomCard(standardRares) ||
+          getUniqueCard(lowPool) ||
+          getRandomCard(lowPool);
+      }
+    }
   } else {
-    rareSlotCard = getUniqueCard(specialPools.rareHoloStar) || getRandomCard(specialPools.rareHoloStar);
-  }
-}
+    if (hitSpecialTable && availableSpecialPoolKeys.length) {
+      const selectedPoolKey = pickWeightedSpecialPoolKey();
+      if (selectedPoolKey) {
+        rareSlotCard = getUniqueCard(specialPools[selectedPoolKey]);
+      }
+    }
 
-// HeartGold/SoulSilver handling stays bespoke.
-else if (isHsPack) {
-  if (hitSpecialTable && availableSpecialPoolKeys.length) {
-    const selectedPoolKey = pickWeightedSpecialPoolKey();
-    if (selectedPoolKey) {
-      rareSlotCard = getUniqueCard(specialPools[selectedPoolKey]) || getRandomCard(specialPools[selectedPoolKey]);
+    if (!rareSlotCard) {
+      rareSlotCard = getUniqueCard(standardRares) || getRandomCard(standardRares);
+    }
+
+    if (!rareSlotCard && availableSpecialPoolKeys.length) {
+      for (const entry of availableSpecialPoolKeys) {
+        rareSlotCard = getUniqueCard(specialPools[entry.key]);
+        if (rareSlotCard) break;
+      }
     }
   }
 
   if (!rareSlotCard) {
-    rareSlotCard = getUniqueCard(hsStandardRares) || getRandomCard(hsStandardRares);
+    rareSlotCard =
+      getUniqueCard(standardRares) ||
+      getRandomCard(standardRares) ||
+      getUniqueCard(lowPool) ||
+      getRandomCard(lowPool);
   }
-}
-
-// Legacy vintage packs should ALWAYS have a rare-slot card.
-// For Neo Revelation, let Shinings replace that rare slot at a custom rate.
-else if (isLegacyPack) {
-  const secretRareOdds = LEGACY_SECRET_RARE_ODDS[setId] || 0;
-  const shouldHitSecretRare =
-    secretRareOdds > 0 &&
-    specialPools.secretRare.length > 0 &&
-    Math.random() < secretRareOdds;
-
-  if (shouldHitSecretRare) {
-    rareSlotCard = getUniqueCard(specialPools.secretRare) || getRandomCard(specialPools.secretRare);
-  }
-
-  if (!rareSlotCard) {
-    rareSlotCard = getUniqueCard(standardRares) || getRandomCard(standardRares);
-  }
-
-  // Safety fallback for oddball legacy sets with bad rarity data
-  if (!rareSlotCard && specialPools.secretRare.length > 0) {
-    rareSlotCard = getUniqueCard(specialPools.secretRare) || getRandomCard(specialPools.secretRare);
-  }
-}
-
-// Modern sets keep weighted special-hit behavior.
-else {
-  if (hitSpecialTable && availableSpecialPoolKeys.length) {
-    const selectedPoolKey = pickWeightedSpecialPoolKey();
-    if (selectedPoolKey) {
-      rareSlotCard = getUniqueCard(specialPools[selectedPoolKey]);
-    }
-  }
-
-  if (!rareSlotCard) {
-    rareSlotCard = getUniqueCard(standardRares) || getRandomCard(standardRares);
-  }
-
-  if (!rareSlotCard && availableSpecialPoolKeys.length) {
-    for (const entry of availableSpecialPoolKeys) {
-      rareSlotCard = getUniqueCard(specialPools[entry.key]);
-      if (rareSlotCard) break;
-    }
-  }
-}
-
-if (!rareSlotCard) {
-  rareSlotCard =
-    getUniqueCard(standardRares) ||
-    getRandomCard(standardRares) ||
-    getUniqueCard(lowPool) ||
-    getRandomCard(lowPool);
-}
 
   if (rareSlotCard) {
     pulledCards.push(rareSlotCard);
@@ -334,6 +397,7 @@ export async function POST(request) {
 
     const database = await connectDB();
     const users = database.collection('users');
+
     let user = await users.findOne(
       { id: userId },
       { projection: { _id: 1, id: 1, username: 1, points: 1, createdAt: 1, lastPointsRefresh: 1 } }
@@ -349,29 +413,39 @@ export async function POST(request) {
     const totalCost = getPackCost(setId, bulk);
 
     if (user.username !== 'Spheal' && user.points < totalCost) {
-      return NextResponse.json({
-        error: 'Insufficient points',
-        pointsNeeded: totalCost - user.points,
-      }, { status: 402 });
+      return NextResponse.json(
+        {
+          error: 'Insufficient points',
+          pointsNeeded: totalCost - user.points,
+        },
+        { status: 402 }
+      );
     }
 
     const { cards: allCards } = await getCardsForSet(setId);
+
     if (!allCards.length) {
       return NextResponse.json({ error: 'No cards found for this set' }, { status: 404 });
     }
 
     let allPulledCards = [];
     const individualPacks = [];
+
     for (let i = 0; i < packCount; i++) {
       const pulledCards = openPack(allCards, setId);
       allPulledCards.push(...pulledCards);
+
       if (bulk) {
-        individualPacks.push({ packNumber: i + 1, cards: pulledCards });
+        individualPacks.push({
+          packNumber: i + 1,
+          cards: pulledCards,
+        });
       }
     }
 
     const newPoints = user.username === 'Spheal' ? 999999 : user.points - totalCost;
     const pulledAt = new Date().toISOString();
+
     const cardsWithTimestamp = allPulledCards.map((card, index) => ({
       ...card,
       pulledAt,
@@ -381,7 +455,11 @@ export async function POST(request) {
     const packsWithTimestamps = bulk
       ? individualPacks.map(pack => ({
           packNumber: pack.packNumber,
-          cards: pack.cards.map(card => ({ ...card, pulledAt, packNumber: pack.packNumber })),
+          cards: pack.cards.map(card => ({
+            ...card,
+            pulledAt,
+            packNumber: pack.packNumber,
+          })),
         }))
       : null;
 
@@ -391,19 +469,25 @@ export async function POST(request) {
         $push: {
           collection: { $each: cardsWithTimestamp },
         },
-        $set: { points: newPoints },
+        $set: {
+          points: newPoints,
+        },
       }
     );
 
     let dailyObjectiveResult = { pointsAwarded: 0 };
     try {
-      dailyObjectiveResult = await applyDailyObjectiveEvent(users, userId, 'open-pack', { count: packCount }) || { pointsAwarded: 0 };
+      dailyObjectiveResult =
+        (await applyDailyObjectiveEvent(users, userId, 'open-pack', { count: packCount })) ||
+        { pointsAwarded: 0 };
     } catch (error) {
       console.error('[PACK OPEN] Daily objective step failed:', error);
     }
+
     const finalPointsRemaining = newPoints + (dailyObjectiveResult?.pointsAwarded || 0);
 
     let revealId = uuidv4();
+
     try {
       await database.collection('pack_reveals').deleteMany({ userId });
       await database.collection('pack_reveals').insertOne({
@@ -434,9 +518,12 @@ export async function POST(request) {
       dailyObjectivePointsAwarded: dailyObjectiveResult?.pointsAwarded || 0,
     });
   } catch (error) {
-    return NextResponse.json({
-      error: error?.message || 'Failed to open pack',
-      timestamp: new Date().toISOString(),
-    }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: error?.message || 'Failed to open pack',
+        timestamp: new Date().toISOString(),
+      },
+      { status: 500 }
+    );
   }
 }
