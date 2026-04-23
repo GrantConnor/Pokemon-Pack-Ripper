@@ -212,65 +212,102 @@ export function openPack(cards, setId = null) {
     return availableSpecialPoolKeys[availableSpecialPoolKeys.length - 1]?.key || null;
   };
 
-  const isLegacyPack = setId && LEGACY_SETS.includes(setId);
-  const legacyHitRare = isExGoldStarPack ? true : (!isLegacyPack || Math.random() < 0.15);
+  const isLegacyPack = !!(setId && LEGACY_SETS.includes(setId));
 
-  if (!isLegacyPack && !isHsPack && hitSpecialTable && godPackPool.length > 0) {
-    const godPackRoll = Math.floor(Math.random() * 100) + 1;
-    if (godPackRoll === 100) {
-      return buildGodPack(godPackPool);
+// Secret-rare odds overrides for sets that need bespoke vintage handling.
+const LEGACY_SECRET_RARE_ODDS = {
+  neo3: 1 / 18, // Neo Revelation: Shining Gyarados / Shining Magikarp
+};
+
+if (!isLegacyPack && !isHsPack && hitSpecialTable && godPackPool.length > 0) {
+  const godPackRoll = Math.floor(Math.random() * 100) + 1;
+  if (godPackRoll === 100) {
+    return buildGodPack(godPackPool);
+  }
+}
+
+let rareSlotCard = null;
+
+// EX-era Gold Star handling stays bespoke.
+if (isExGoldStarPack) {
+  const exDeoxysRoll = Math.random();
+
+  if (exDeoxysRoll < 0.80) {
+    rareSlotCard = getUniqueCard(standardRares) || getRandomCard(standardRares);
+  } else if (exDeoxysRoll < 0.95) {
+    rareSlotCard = getUniqueCard(specialPools.rareHoloEx) || getRandomCard(specialPools.rareHoloEx);
+  } else if (exDeoxysRoll < 0.975) {
+    rareSlotCard = getUniqueCard(specialPools.secretRare) || getRandomCard(specialPools.secretRare);
+  } else {
+    rareSlotCard = getUniqueCard(specialPools.rareHoloStar) || getRandomCard(specialPools.rareHoloStar);
+  }
+}
+
+// HeartGold/SoulSilver handling stays bespoke.
+else if (isHsPack) {
+  if (hitSpecialTable && availableSpecialPoolKeys.length) {
+    const selectedPoolKey = pickWeightedSpecialPoolKey();
+    if (selectedPoolKey) {
+      rareSlotCard = getUniqueCard(specialPools[selectedPoolKey]) || getRandomCard(specialPools[selectedPoolKey]);
     }
   }
 
-  let rareSlotCard = null;
-  if (isExGoldStarPack) {
-    const exDeoxysRoll = Math.random();
-    if (exDeoxysRoll < 0.80) {
-      rareSlotCard = getUniqueCard(standardRares) || getRandomCard(standardRares);
-    } else if (exDeoxysRoll < 0.95) {
-      rareSlotCard = getUniqueCard(specialPools.rareHoloEx) || getRandomCard(specialPools.rareHoloEx);
-    } else if (exDeoxysRoll < 0.975) {
-      rareSlotCard = getUniqueCard(specialPools.secretRare) || getRandomCard(specialPools.secretRare);
-    } else {
-      rareSlotCard = getUniqueCard(specialPools.rareHoloStar) || getRandomCard(specialPools.rareHoloStar);
-    }
+  if (!rareSlotCard) {
+    rareSlotCard = getUniqueCard(hsStandardRares) || getRandomCard(hsStandardRares);
   }
-  if (!isExGoldStarPack && legacyHitRare && hitSpecialTable && availableSpecialPoolKeys.length) {
+}
+
+// Legacy vintage packs should ALWAYS have a rare-slot card.
+// For Neo Revelation, let Shinings replace that rare slot at a custom rate.
+else if (isLegacyPack) {
+  const secretRareOdds = LEGACY_SECRET_RARE_ODDS[setId] || 0;
+  const shouldHitSecretRare =
+    secretRareOdds > 0 &&
+    specialPools.secretRare.length > 0 &&
+    Math.random() < secretRareOdds;
+
+  if (shouldHitSecretRare) {
+    rareSlotCard = getUniqueCard(specialPools.secretRare) || getRandomCard(specialPools.secretRare);
+  }
+
+  if (!rareSlotCard) {
+    rareSlotCard = getUniqueCard(standardRares) || getRandomCard(standardRares);
+  }
+
+  // Safety fallback for oddball legacy sets with bad rarity data
+  if (!rareSlotCard && specialPools.secretRare.length > 0) {
+    rareSlotCard = getUniqueCard(specialPools.secretRare) || getRandomCard(specialPools.secretRare);
+  }
+}
+
+// Modern sets keep weighted special-hit behavior.
+else {
+  if (hitSpecialTable && availableSpecialPoolKeys.length) {
     const selectedPoolKey = pickWeightedSpecialPoolKey();
     if (selectedPoolKey) {
       rareSlotCard = getUniqueCard(specialPools[selectedPoolKey]);
     }
   }
 
-  if (legacyHitRare && !rareSlotCard) {
-    rareSlotCard = isHsPack
-      ? (getUniqueCard(hsStandardRares) || getRandomCard(hsStandardRares))
-      : (getUniqueCard(standardRares) || getRandomCard(standardRares));
+  if (!rareSlotCard) {
+    rareSlotCard = getUniqueCard(standardRares) || getRandomCard(standardRares);
   }
 
-  if (legacyHitRare && !rareSlotCard && availableSpecialPoolKeys.length) {
-    if (isHsPack) {
-      for (const entry of availableSpecialPoolKeys) {
-        rareSlotCard = getUniqueCard(specialPools[entry.key]) || getRandomCard(specialPools[entry.key]);
-        if (rareSlotCard) break;
-      }
-    } else {
-      for (const entry of availableSpecialPoolKeys) {
-        rareSlotCard = getUniqueCard(specialPools[entry.key]);
-        if (rareSlotCard) break;
-      }
+  if (!rareSlotCard && availableSpecialPoolKeys.length) {
+    for (const entry of availableSpecialPoolKeys) {
+      rareSlotCard = getUniqueCard(specialPools[entry.key]);
+      if (rareSlotCard) break;
     }
   }
+}
 
-  if (!legacyHitRare) {
-    rareSlotCard = getUniqueCard(uncommons) || getUniqueCard(lowPool) || getRandomCard(uncommons) || getRandomCard(lowPool);
-  }
-
-  if (!rareSlotCard) {
-    rareSlotCard = legacyHitRare
-      ? (getUniqueCard(standardRares) || getRandomCard(standardRares) || getUniqueCard(lowPool) || getRandomCard(lowPool))
-      : (getUniqueCard(lowPool) || getRandomCard(lowPool));
-  }
+if (!rareSlotCard) {
+  rareSlotCard =
+    getUniqueCard(standardRares) ||
+    getRandomCard(standardRares) ||
+    getUniqueCard(lowPool) ||
+    getRandomCard(lowPool);
+}
 
   if (rareSlotCard) {
     pulledCards.push(rareSlotCard);
